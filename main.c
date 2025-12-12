@@ -3,23 +3,26 @@
 
 int main() {
 
-	const char *plugin_path = "examples/tibia_test/plugin.so";
+	const char *tibia_test_path = "examples/tibia_test/plugin.so";
+	const char *synth_mono_path = "examples/synth_mono/plugin.so";
 
-	printf("Loading plugin from: %s\n", plugin_path);
+	TibiaModule *synth_mono = tibia_loader_load(synth_mono_path);
+	TibiaModule *tibia_test = tibia_loader_load(tibia_test_path);
 
-	TibiaModule *mod = tibia_loader_load(plugin_path);
-
-	if (!mod) {
+	if (!synth_mono || !tibia_test) {
 		fprintf(stderr, "FAILED to load plugin.\n");
 		return 1;
 	}
 
-	printf("OK: Plugin loaded.\n");
+	printf("OK: Plugins loaded.\n");
 
-	printf("process address: %p\n", (void*)mod->process);
+	printf("synth_mono process address: %p\n", (void*)synth_mono->process);
+	printf("tibia_test process address: %p\n", (void*)tibia_test->process);
 
-	tibia_loader_unload(mod);
-	printf("Plugin unloaded.\n");
+	tibia_loader_unload(tibia_test);
+	tibia_loader_unload(synth_mono);
+
+	printf("Plugins unloaded.\n");
 
 	return 0;
 }
