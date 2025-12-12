@@ -1,12 +1,23 @@
 CC = gcc
 
-CFLAGS = -Wall -O2
-LIBS = -ldl
-TARGET = build/loader_test
-SRC = loader_test.c loader.c
+# Standard flags + pthread for miniaudio
+CFLAGS = -Wall -O0 -g -pthread -I../../Orastron/repos/miniaudio
+# Linker flags: dynamic loader and math
+LIBS = -ldl -lm
 
-all:
+# Build output folder
+BUILD_DIR = build
+TARGET = $(BUILD_DIR)/host
+
+SRC = main.c loader.c
+
+all: $(BUILD_DIR) $(TARGET)
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+$(TARGET): $(SRC)
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LIBS)
 
 clean:
-	rm -f $(TARGET)
+	rm -rf $(BUILD_DIR)
