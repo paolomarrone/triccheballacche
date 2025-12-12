@@ -41,10 +41,10 @@ typedef struct {
 
 
 enum {
-	tibia_parameter_gain,
-	tibia_parameter_delay,
-	tibia_parameter_cutoff,
-	tibia_parameter_bypass,
+	parameter_gain,
+	parameter_delay,
+	parameter_cutoff,
+	parameter_bypass,
 };
 
 void tibia_init(void *vinstance, const tibia_callbacks *cbs) {
@@ -91,16 +91,16 @@ void tibia_set_parameter(void *vinstance, size_t index, float value) {
 	test *instance = (test*) vinstance;
 
 	switch (index) {
-	case tibia_parameter_gain:
+	case parameter_gain:
 		instance->gain = value;
 		break;
-	case tibia_parameter_delay:
+	case parameter_delay:
 		instance->delay = value;
 		break;
-	case tibia_parameter_cutoff:
+	case parameter_cutoff:
 		instance->cutoff = value;
 		break;
-	case tibia_parameter_bypass:
+	case parameter_bypass:
 		instance->bypass = value >= 0.5f;
 		break;
 	}
@@ -201,10 +201,10 @@ int tibia_state_load(const tibia_state_callbacks *cbs, float cur_sample_rate, co
 	if (x_isnan(gain) || x_isnan(delay) || x_isnan(cutoff))
 		return -1;
 	cbs->lock(cbs->handle);
-	cbs->set_parameter(cbs->handle, tibia_parameter_gain, gain);
-	cbs->set_parameter(cbs->handle, tibia_parameter_delay, delay);
-	cbs->set_parameter(cbs->handle, tibia_parameter_cutoff, cutoff);
-	cbs->set_parameter(cbs->handle, tibia_parameter_bypass, bypass);
+	cbs->set_parameter(cbs->handle, parameter_gain, gain);
+	cbs->set_parameter(cbs->handle, parameter_delay, delay);
+	cbs->set_parameter(cbs->handle, parameter_cutoff, cutoff);
+	cbs->set_parameter(cbs->handle, parameter_bypass, bypass);
 	cbs->unlock(cbs->handle);
 	return 0;
 }
