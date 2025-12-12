@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -fPIC -Wall -O2 -I../../../tibia/
+CFLAGS = -fPIC -Wall -O0 -g -I../../../tibia/
 LDFLAGS = -shared
 TARGET = ../plugin.so
 SRC = plugin.c

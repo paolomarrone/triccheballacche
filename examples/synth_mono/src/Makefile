@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -fPIC -Wall -O2 -I../../../tibia/ -I../../../../../Orastron/repos/brickworks/include
+CFLAGS = -fPIC -Wall -O0 -g -I../../../tibia/ -I../../../../../Orastron/repos/brickworks/include
 LDFLAGS = -shared
 TARGET = ../plugin.so
 SRC = plugin.c
