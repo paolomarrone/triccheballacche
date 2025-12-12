@@ -19,6 +19,8 @@
  * Modified by: Paolo Marrone
  */
 
+#define BW_NO_DEBUG
+
 #include <bw_phase_gen.h>
 #include <bw_osc_saw.h>
 #include <bw_osc_pulse.h>
