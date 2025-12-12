@@ -20,6 +20,7 @@ typedef struct {
 } tibia_state_callbacks;
 
 
+void*  tibia_new(             void);
 void   tibia_init(            void *instance, const tibia_callbacks *cbs);
 void   tibia_fini(            void *instance);
 void   tibia_set_sample_rate( void *instance, float sample_rate);

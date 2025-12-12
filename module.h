@@ -8,6 +8,7 @@
 typedef struct {
 	void *handle;
 
+	void*  (*new)(             void);
 	void   (*init)(            void *instance, const tibia_callbacks *cbs);
 	void   (*fini)(            void *instance);
 	void   (*set_sample_rate)( void *instance, float sample_rate);

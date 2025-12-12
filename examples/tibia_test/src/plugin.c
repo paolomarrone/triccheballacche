@@ -21,6 +21,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include "tibia.h"
 
 typedef struct {
@@ -46,6 +47,10 @@ enum {
 	parameter_cutoff,
 	parameter_bypass,
 };
+
+void* tibia_new(void) {
+	return malloc(sizeof(test));
+}
 
 void tibia_init(void *vinstance, const tibia_callbacks *cbs) {
 	(void)vinstance;

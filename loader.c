@@ -24,6 +24,7 @@ TibiaModule* tibia_loader_load(const char *path) {
 			return NULL; \
 		}
 
+	LOAD_SYM(new);
 	LOAD_SYM(init);
 	LOAD_SYM(fini);
 	LOAD_SYM(set_sample_rate);

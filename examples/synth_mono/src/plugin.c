@@ -33,6 +33,7 @@
 #include <bw_ppm.h>
 #include <bw_buf.h>
 
+#include <stdlib.h>
 #include "tibia.h"
 
 enum {
@@ -152,6 +153,10 @@ typedef struct {
 
 	float			buf[4][BUFFER_SIZE];
 } synth_mono;
+
+void *tibia_new(void) {
+	return malloc(sizeof(synth_mono));
+}
 
 void tibia_init(void *vinstance, const tibia_callbacks *cbs) {
 	synth_mono *instance = (synth_mono*) vinstance;

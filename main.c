@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "loader.h"
+#include <stdlib.h>
 
 int main() {
 
@@ -18,6 +19,12 @@ int main() {
 
 	printf("synth_mono process address: %p\n", (void*)synth_mono->process);
 	printf("tibia_test process address: %p\n", (void*)tibia_test->process);
+
+	void *sm = synth_mono->new();
+	synth_mono->init(sm, NULL);
+	printf("New synth_mono instance: %p\n", sm);
+	synth_mono->fini(sm);
+	free(sm);
 
 	tibia_loader_unload(tibia_test);
 	tibia_loader_unload(synth_mono);
