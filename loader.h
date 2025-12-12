@@ -1,5 +1,5 @@
-#ifndef TIBIA_LOADER_H
-#define TIBIA_LOADER_H
+#ifndef LOADER_H
+#define LOADER_H
 
 #include "module.h"
 

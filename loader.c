@@ -7,8 +7,6 @@ TibiaModule* tibia_loader_load(const char *path) {
 	TibiaModule *mod = (TibiaModule*)malloc(sizeof(TibiaModule));
 	if (!mod) return NULL;
 
-	// RTLD_NOW: Resolve all symbols immediately (fails fast if something is missing)
-	// RTLD_LOCAL: Symbols are not made available to other libs
 	mod->handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
 
 	if (!mod->handle) {
