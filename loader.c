@@ -34,8 +34,8 @@ TibiaModule* tibia_loader_load(const char *path) {
 	LOAD_SYM(get_parameter);
 	LOAD_SYM(process);
 	LOAD_SYM(midi_msg_in);
-	LOAD_SYM(state_save);
-	LOAD_SYM(state_load);
+//	LOAD_SYM(state_save);
+//	LOAD_SYM(state_load);
 
 	return mod;
 }

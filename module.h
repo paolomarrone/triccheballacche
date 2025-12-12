@@ -18,8 +18,8 @@ typedef struct {
 	float  (*get_parameter)(   void *instance, size_t index);
 	void   (*process)(         void *instance, const float **inputs, float **outputs, size_t n_samples);
 	void   (*midi_msg_in)(     void *instance, size_t index, const uint8_t *data);
-	int    (*state_save)(      void *instance, const tibia_state_callbacks *cbs, float last_sample_rate);
-	int    (*state_load)(const tibia_state_callbacks *cbs, float cur_sample_rate, const char *data, size_t length);
+//	int    (*state_save)(      void *instance, const tibia_state_callbacks *cbs, float last_sample_rate);
+//	int    (*state_load)(const tibia_state_callbacks *cbs, float cur_sample_rate, const char *data, size_t length);
 
 } TibiaModule;
 
