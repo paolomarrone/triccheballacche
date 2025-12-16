@@ -1,0 +1,482 @@
+{
+	"product": {
+		"name":	"Brickworks monophonic synth example",
+		"bundleName": "bw_example_synth_mono",
+		"buses": [
+			{
+				"type": "midi",
+				"direction": "input",
+				"name": "MIDI input",
+				"shortName": "MIDI input",
+				"id": "midi_in"
+			},
+			{
+				"type": "audio",
+				"direction": "output",
+				"channels": "mono",
+				"name": "Output",
+				"shortName": "Output",
+				"id": "output"
+			}
+		],
+		"parameters": [
+			{
+				"name": "Volume",
+				"shortName": "Volume",
+				"id": "volume",
+				"direction": "input",
+				"defaultValue": 50.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "Master tune",
+				"shortName": "Master tune",
+				"id": "master_tune",
+				"direction": "input",
+				"defaultValue": 440.0,
+				"minimum": 415.304697579945,
+				"maximum": 466.1637615180899,
+				"unit": "hz",
+				"map": "logarithmic"
+			},
+			{
+				"name": "Portamento",
+				"shortName": "Portamento",
+				"id": "portamento",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 1000.0,
+				"unit": "ms",
+				"map": "linear"
+			},
+			{
+				"name": "Modulation mix",
+				"shortName": "Modulation mix",
+				"id": "mod_mix",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCO1 modulation",
+				"shortName": "VCO1 modulation",
+				"id": "vco1_mod",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCO1 coarse tuning",
+				"shortName": "VCO1 coarse",
+				"id": "vco1_coarse",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": -3.0,
+				"maximum": 3.0,
+				"unit": "oct",
+				"map": "linear"
+			},
+			{
+				"name": "VCO1 fine tuning",
+				"shortName": "VCO1 fine",
+				"id": "vco1_fine",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": -100.0,
+				"maximum": 100.0,
+				"unit": "cent",
+				"map": "linear"
+			},
+			{
+				"name": "VCO1 waveform",
+				"shortName": "VCO1 waveform",
+				"id": "vco1_wave",
+				"direction": "input",
+				"defaultValue": 1.0,
+				"minimum": 1.0,
+				"maximum": 3.0,
+				"integer": true,
+				"scalePoints": {
+					"Saw": 1.0,
+					"Pulse": 2.0,
+					"Triangle": 3.0
+				},
+				"list": true,
+				"map": "linear"
+			},
+			{
+				"name": "VCO1 pulse width/slope",
+				"shortName": "VCO1 pw/slope",
+				"id": "vco1_pw",
+				"direction": "input",
+				"defaultValue": 50.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCO1 level",
+				"shortName": "VCO1 level",
+				"id": "vco1_level",
+				"direction": "input",
+				"defaultValue": 100.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCO2 modulation",
+				"shortName": "VCO2 modulation",
+				"id": "vco2_mod",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCO2 coarse tuning",
+				"shortName": "VCO2 coarse",
+				"id": "vco2_coarse",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": -3.0,
+				"maximum": 3.0,
+				"unit": "oct",
+				"map": "linear"
+			},
+			{
+				"name": "VCO2 fine tuning",
+				"shortName": "VCO2 fine",
+				"id": "vco2_fine",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": -100.0,
+				"maximum": 100.0,
+				"unit": "cent",
+				"map": "linear"
+			},
+			{
+				"name": "VCO2 waveform",
+				"shortName": "VCO2 waveform",
+				"id": "vco2_wave",
+				"direction": "input",
+				"defaultValue": 1.0,
+				"minimum": 1.0,
+				"maximum": 3.0,
+				"integer": true,
+				"scalePoints": {
+					"Saw": 1.0,
+					"Pulse": 2.0,
+					"Triangle": 3.0
+				},
+				"list": true,
+				"map": "linear"
+			},
+			{
+				"name": "VCO2 pulse width/slope",
+				"shortName": "VCO2 pw/slope",
+				"id": "vco2_pw",
+				"direction": "input",
+				"defaultValue": 50.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCO2 level",
+				"shortName": "VCO2 level",
+				"id": "vco2_level",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCO3 keyboard control",
+				"shortName": "VCO3 kbd ctrl",
+				"id": "vco3_kbd_ctrl",
+				"direction": "input",
+				"defaultValue": 1.0,
+				"minimum": 0.0,
+				"maximum": 1.0,
+				"toggled": true
+			},
+			{
+				"name": "VCO3 coarse tuning",
+				"shortName": "VCO3 coarse",
+				"id": "vco3_coarse",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": -3.0,
+				"maximum": 3.0,
+				"unit": "oct",
+				"map": "linear"
+			},
+			{
+				"name": "VCO3 fine tuning",
+				"shortName": "VCO3 fine",
+				"id": "vco3_fine",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": -100.0,
+				"maximum": 100.0,
+				"unit": "cent",
+				"map": "linear"
+			},
+			{
+				"name": "VCO3 waveform",
+				"shortName": "VCO3 waveform",
+				"id": "vco3_wave",
+				"direction": "input",
+				"defaultValue": 1.0,
+				"minimum": 1.0,
+				"maximum": 3.0,
+				"integer": true,
+				"scalePoints": {
+					"Saw": 1.0,
+					"Pulse": 2.0,
+					"Triangle": 3.0
+				},
+				"list": true,
+				"map": "linear"
+			},
+			{
+				"name": "VCO3 pulse width/slope",
+				"shortName": "VCO3 pw/slope",
+				"id": "vco3_pw",
+				"direction": "input",
+				"defaultValue": 50.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCO3 level",
+				"shortName": "VCO3 level",
+				"id": "vco3_level",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "Noise color",
+				"shortName": "Noise color",
+				"id": "noise_color",
+				"direction": "input",
+				"defaultValue": 1.0,
+				"minimum": 1.0,
+				"maximum": 2.0,
+				"integer": true,
+				"scalePoints": {
+					"White": 1.0,
+					"Pink": 2.0
+				},
+				"list": true,
+				"map": "linear"
+			},
+			{
+				"name": "Noise level",
+				"shortName": "Noise level",
+				"id": "noise_level",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCF modulation",
+				"shortName": "VCF modulation",
+				"id": "vcf_mod",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCF keyboard control",
+				"shortName": "VCF kbd ctrl",
+				"id": "vcf_kbd_ctrl",
+				"direction": "input",
+				"defaultValue": 1.0,
+				"minimum": 1.0,
+				"maximum": 4.0,
+				"integer": true,
+				"scalePoints": {
+					"Off": 1.0,
+					"1/3": 2.0,
+					"2/3": 3.0,
+					"Full": 4.0
+				},
+				"list": true,
+				"map": "linear"
+			},
+			{
+				"name": "VCF cutoff",
+				"shortName": "VCF cutoff",
+				"id": "vcf_cutoff",
+				"direction": "input",
+				"defaultValue": 20e3,
+				"minimum": 20.0,
+				"maximum": 20e3,
+				"unit": "hz",
+				"map": "logarithmic"
+			},
+			{
+				"name": "VCF resonance",
+				"shortName": "VCF resonance",
+				"id": "vcf_resonance",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCF contour",
+				"shortName": "VCF contour",
+				"id": "vcf_contour",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCF attack",
+				"shortName": "VCF attack",
+				"id": "vcf_attack",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 1000.0,
+				"unit": "ms",
+				"map": "linear"
+			},
+			{
+				"name": "VCF decay",
+				"shortName": "VCF decay",
+				"id": "vcf_decay",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 1000.0,
+				"unit": "ms",
+				"map": "linear"
+			},
+			{
+				"name": "VCF sustain",
+				"shortName": "VCF sustain",
+				"id": "vcf_sustain",
+				"direction": "input",
+				"defaultValue": 100.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCF release",
+				"shortName": "VCF release",
+				"id": "vcf_release",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 1000.0,
+				"unit": "ms",
+				"map": "linear"
+			},
+			{
+				"name": "VCA attack",
+				"shortName": "VCA attack",
+				"id": "vca_attack",
+				"direction": "input",
+				"defaultValue": 2.0,
+				"minimum": 2.0,
+				"maximum": 1000.0,
+				"unit": "ms",
+				"map": "linear"
+			},
+			{
+				"name": "VCA decay",
+				"shortName": "VCA decay",
+				"id": "vca_decay",
+				"direction": "input",
+				"defaultValue": 2.0,
+				"minimum": 2.0,
+				"maximum": 1000.0,
+				"unit": "ms",
+				"map": "linear"
+			},
+			{
+				"name": "VCA sustain",
+				"shortName": "VCA sustain",
+				"id": "vca_sustain",
+				"direction": "input",
+				"defaultValue": 100.0,
+				"minimum": 0.0,
+				"maximum": 100.0,
+				"unit": "pc",
+				"map": "linear"
+			},
+			{
+				"name": "VCA release",
+				"shortName": "VCA release",
+				"id": "vca_release",
+				"direction": "input",
+				"defaultValue": 2.0,
+				"minimum": 2.0,
+				"maximum": 1000.0,
+				"unit": "ms",
+				"map": "linear"
+			},
+			{
+				"name": "A440",
+				"shortName": "A440",
+				"id": "a440",
+				"direction": "input",
+				"defaultValue": 0.0,
+				"minimum": 0.0,
+				"maximum": 1.0,
+				"toggled": true
+			},
+			{
+				"name": "Level",
+				"shortName": "Level",
+				"id": "level",
+				"direction": "output",
+				"defaultValue": -60.0,
+				"minimum": -60.0,
+				"maximum": 0.0,
+				"unit": "db",
+				"map": "linear"
+			}
+		]
+	}
+}
