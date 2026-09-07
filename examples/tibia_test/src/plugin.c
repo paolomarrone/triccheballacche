@@ -53,7 +53,7 @@ void* tibia_new(void) {
 }
 
 void tibia_init(void *vinstance, const tibia_callbacks *cbs) {
-	(void)vinstance;
+	*(test *)vinstance = (test){.cutoff = 1000.f};
 	(void)cbs;
 }
 
@@ -100,7 +100,7 @@ void tibia_set_parameter(void *vinstance, size_t index, float value) {
 		instance->gain = value;
 		break;
 	case parameter_delay:
-		instance->delay = value;
+		instance->delay = value < 0.f ? 0.f : value > 1000.f ? 1000.f : value;
 		break;
 	case parameter_cutoff:
 		instance->cutoff = value;
@@ -166,7 +166,7 @@ static float parse_float(const uint8_t *data) {
 	v.u = data[0];
 	v.u |= data[1] << 8;
 	v.u |= data[2] << 16;
-	v.u |= data[3] << 24;
+	v.u |= (uint32_t)data[3] << 24;
 	return v.f;
 }
 

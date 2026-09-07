@@ -19,8 +19,6 @@
  * Modified by: Paolo Marrone
  */
 
-#define BW_NO_DEBUG
-
 #include <bw_phase_gen.h>
 #include <bw_osc_saw.h>
 #include <bw_osc_pulse.h>
@@ -196,6 +194,14 @@ void tibia_init(void *vinstance, const tibia_callbacks *cbs) {
 	bw_phase_gen_set_frequency(&instance->a440_phase_gen_coeffs, 440.f);
 	
 	instance->rand_state = 0xbaddecaf600dfeed;
+	// Input defaults in product.json order; init owns parameter initialization.
+	static const float defaults[] = {
+		50, 440, 0, 0, 0, 0, 0, 1, 50, 100,
+		0, 0, 0, 1, 50, 0, 1, 0, 0, 1, 50, 0,
+		1, 0, 0, 1, 20000, 0, 0, 0, 0, 100, 0, 2, 2, 100, 2, 0
+	};
+	for (size_t i = 0; i < sizeof(defaults) / sizeof(*defaults); ++i)
+		tibia_set_parameter(instance, i, defaults[i]);
 }
 
 void tibia_fini(void *vinstance) {
@@ -680,6 +686,7 @@ static void note_off(void *vinstance, char note) {
 void tibia_midi_msg_in(void *vinstance, size_t index, const uint8_t * data) {
 	synth_mono *instance = (synth_mono*) vinstance;
 	(void)index;
+	if (data[1] > 127 || data[2] > 127) return;
 	switch (data[0] & 0xf0) {
 	case 0x90: // note on
 		if (data[2] == 0) // no, note off actually
@@ -693,7 +700,7 @@ void tibia_midi_msg_in(void *vinstance, size_t index, const uint8_t * data) {
 	case 0xe0: // pitch bend
 	{
 		const uint16_t v = (data[2] << 7) | data[1];
-		instance->pitch_bend = 2.f * bw_maxf((1.f / 16383.f) * (v - 0x2000), -1.f) - 1.f;
+		instance->pitch_bend = ((int)v - 8192) / (v < 8192 ? 8192.f : 8191.f);
 		break;
 	}
 	case 0xb0: // control change

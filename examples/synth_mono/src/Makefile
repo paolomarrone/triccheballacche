@@ -1,11 +1,5 @@
-CC = gcc
-CFLAGS = -fPIC -Wall -O0 -g -I../../../tibia/ -I../../../../../Orastron/repos/brickworks/include
-LDFLAGS = -shared
-TARGET = ../plugin.so
-SRC = plugin.c
-
+.PHONY: all clean
 all:
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET) $(SRC)
-
+	$(MAKE) -C ../../.. examples/synth_mono/plugin.so
 clean:
-	rm -f $(TARGET)
+	rm -f ../plugin.so

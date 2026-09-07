@@ -1,35 +1,98 @@
-#include <stdio.h>
-#include "loader.h"
-#include <stdlib.h>
+#define main host_main
+#include "main.c"
+#undef main
+#include <assert.h>
+#include <math.h>
 
-int main() {
+static void mock_process(void *p, const float **in, float **out, size_t n) {
+	for (size_t i = 0; i < n; ++i) out[0][i] = in[0][i] + *(float *)p;
+}
+static void mock_param(void *p, size_t index, float v) { (void)index; *(float *)p = v; }
+static void mock_midi(void *p, size_t index, const uint8_t *v) { (void)index; *(float *)p = v[1]; }
 
-	const char *tibia_test_path = "examples/tibia_test/plugin.so";
-	const char *synth_mono_path = "examples/synth_mono/plugin.so";
+static void test_scheduler(void) {
+	float value = 0, out[8195] = {123};
+	out[8194] = 123;
+	TibiaModule module = {.process = mock_process, .set_parameter = mock_param, .midi_msg_in = mock_midi};
+	const Event events[] = {
+		{0, 0, 1, {0}}, {4, 0, 2, {0}}, {4, -1, 0, {0x90, 3, 100}},
+		{8, 0, 4, {0}}, {8192, 0, 5, {0}}
+	};
+	Engine e = {.module = &module, .instance = &value, .events = events, .count = 5};
+	render(&e, out + 1, NULL, 8);
+	assert(e.next == 3 && e.time == 8);
+	render(&e, out + 9, NULL, 8185);
+	for (int i = 0; i < 8193; ++i)
+		assert(out[i + 1] == (i < 4 ? 1 : i < 8 ? 3 : i < 8192 ? 4 : 5));
+	assert(out[0] == 123 && out[8194] == 123 && e.time == 8193 && e.next == 5);
+	puts("OK: sample timing, simultaneous events, callback boundaries, large buffers");
+}
 
-	TibiaModule *synth_mono = tibia_loader_load(synth_mono_path);
-	TibiaModule *tibia_test = tibia_loader_load(tibia_test_path);
-
-	if (!synth_mono || !tibia_test) {
-		fprintf(stderr, "FAILED to load plugin.\n");
-		return 1;
+static double measure(Engine *e, int *crossings) {
+	float out[257], previous = 0;
+	double energy = 0;
+	*crossings = 0;
+	for (size_t left = SAMPLE_RATE; left;) {
+		size_t n = left < 257 ? left : 257;
+		render(e, out, NULL, n);
+		for (size_t i = 0; i < n; ++i) {
+			assert(isfinite(out[i]));
+			energy += out[i] * out[i];
+			if (previous < 0 && out[i] >= 0) ++*crossings;
+			previous = out[i];
+		}
+		left -= n;
 	}
+	return energy / SAMPLE_RATE;
+}
 
-	printf("OK: Plugins loaded.\n");
+static void test_synth(void) {
+	Engine e = {0};
+	assert(!open_engine(&e, "examples/synth_mono/plugin.so"));
+	float warmup[4096];
+	int crossings;
+	assert(measure(&e, &crossings) < 1e-12);
+	const uint8_t note[] = {0x90, 69, 100};
+	e.module->midi_msg_in(e.instance, 0, note);
+	const uint8_t bends[][3] = {{0xe0, 0, 64}, {0xe0, 0, 0}, {0xe0, 127, 127}, {0xe0, 0, 64}};
+	const int expected[] = {440, 220, 880, 440};
+	for (size_t i = 0; i < 4; ++i) {
+		e.module->midi_msg_in(e.instance, 0, bends[i]);
+		render(&e, warmup, NULL, 4096);
+		assert(measure(&e, &crossings) > 1e-6);
+		assert(abs(crossings - expected[i]) <= 2);
+	}
+	const uint8_t off[] = {0x90, 69, 0};
+	e.module->midi_msg_in(e.instance, 0, off);
+	render(&e, warmup, NULL, 4096);
+	assert(measure(&e, &crossings) < 1e-12);
+	close_engine(&e);
+	puts("OK: synth defaults, note on/off, pitch bend 440/220/880/440 Hz");
+}
 
-	printf("synth_mono process address: %p\n", (void*)synth_mono->process);
-	printf("tibia_test process address: %p\n", (void*)tibia_test->process);
+static void test_effect(void) {
+	Engine e = {0};
+	assert(!open_engine(&e, "examples/tibia_test/plugin.so"));
+	float in[8193] = {1}, out[8193];
+	render(&e, out, in, 8193);
+	assert(out[0] > 0 && out[0] < 1);
+	for (size_t i = 0; i < 8193; ++i) assert(isfinite(out[i]));
+	e.module->set_parameter(e.instance, 3, 1);
+	render(&e, out, in, 8193);
+	for (size_t i = 0; i < 8193; ++i) assert(out[i] == in[i]);
+	e.module->set_parameter(e.instance, 1, 1e6f);
+	render(&e, out, NULL, 8193);
+	close_engine(&e);
+	puts("OK: effect memory, audio input, bypass, delay bounds");
+}
 
-	void *sm = synth_mono->new();
-	synth_mono->init(sm, NULL);
-	printf("New synth_mono instance: %p\n", sm);
-	synth_mono->fini(sm);
-	free(sm);
-
-	tibia_loader_unload(tibia_test);
-	tibia_loader_unload(synth_mono);
-
-	printf("Plugins unloaded.\n");
-
+int main(void) {
+	test_scheduler();
+	test_synth();
+	test_effect();
+	Engine missing = {0};
+	assert(open_engine(&missing, "build/nonexistent.so") != 0);
+	close_engine(&missing);
+	puts("All tests passed.");
 	return 0;
 }
