@@ -6,7 +6,7 @@ BRICKWORKS ?= .deps/brickworks
 BW_HEADER = $(BRICKWORKS)/include/bw_common.h
 PLUGINS = examples/synth_mono/plugin.so examples/tibia_test/plugin.so
 
-.PHONY: all test run keys clean
+.PHONY: all test run keys prog clean
 all: build/host $(PLUGINS) build/termux_synth
 
 build:
@@ -53,5 +53,11 @@ run: all
 keys: build/termux_synth
 	./build/termux_synth --keys
 
+build/prog: examples/prog/prog.c main.c loader.c loader.h module.h tibia/tibia.h $(MINIAUDIO) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $< loader.c $(LDFLAGS) $(LDLIBS) -o $@
+
+prog: build/prog examples/synth_mono/plugin.so
+	./build/prog examples/synth_mono/plugin.so build/il_polpo_a_sette_gomiti.wav
+
 clean:
-	rm -f build/host build/test build/termux_synth build/termux_test $(PLUGINS)
+	rm -f build/host build/test build/termux_synth build/termux_test build/prog $(PLUGINS)
