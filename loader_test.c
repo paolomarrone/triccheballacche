@@ -70,6 +70,33 @@ static void test_synth(void) {
 	puts("OK: synth defaults, note on/off, pitch bend 440/220/880/440 Hz");
 }
 
+static void test_synth_blocks(void) {
+	const Event events[] = {
+		{0, 26, 300, {0}, 0}, {0, 28, 80, {0}, 0}, // Filter cutoff and contour.
+		{0, 29, 100, {0}, 0}, {0, 30, 200, {0}, 0}, // Filter attack and decay.
+		{0, 31, 20, {0}, 0}, {0, 32, 80, {0}, 0}, // Filter sustain and release.
+		{0, -1, 0, {0x90, 60, 100}, 0}, {12345, 26, 800, {0}, 0},
+		{17001, -1, 0, {0x80, 60, 0}, 0}, {18001, -1, 0, {0x90, 64, 100}, 0},
+		{20001, -1, 0, {0x80, 64, 0}, 0}
+	};
+	const size_t blocks[] = {BLOCK, 1, 43, 44, 45, 257}; // Around the 44-sample control period.
+	float reference[SAMPLE_RATE / 2], out[BLOCK];
+	for (size_t b = 0; b < sizeof(blocks) / sizeof(*blocks); ++b) {
+		Engine e = {.events = events, .count = sizeof(events) / sizeof(*events)};
+		assert(!open_engine(&e, "examples/synth_mono/plugin.so"));
+		for (size_t pos = 0; pos < SAMPLE_RATE / 2;) {
+			size_t left = SAMPLE_RATE / 2 - pos, n = left < blocks[b] ? left : blocks[b];
+			render(&e, out, NULL, n);
+			for (size_t i = 0; i < n; ++i)
+				if (!b) reference[pos + i] = out[i];
+				else assert(out[i] == reference[pos + i]);
+			pos += n;
+		}
+		close_engine(&e);
+	}
+	puts("OK: synth filter envelope and automation are independent of block size");
+}
+
 static void test_effect(void) {
 	Engine e = {0};
 	assert(!open_engine(&e, "examples/tibia_test/plugin.so"));
@@ -89,6 +116,7 @@ static void test_effect(void) {
 int main(void) {
 	test_scheduler();
 	test_synth();
+	test_synth_blocks();
 	test_effect();
 	Engine missing = {0};
 	assert(open_engine(&missing, "build/nonexistent.so") != 0);
