@@ -71,7 +71,7 @@ static void test_pipeline(void) {
 static void test_master(void) {
 	Session s = {0}; float audio[64];
 	int source = mock(&s, 0, 1), tr = session_track(&s, source, NULL, 0, 0);
-	int fx = session_plugin(&s, "examples/shape/plugin.so");
+	int fx = session_plugin(&s, "plugins/shape/build/plugin.so");
 	assert(fx >= 0 && !session_set(&s, tr, 1, -1));
 	assert(session_track(&s, -1, &fx, 1, 1) >= 0);
 	assert(s.nodes[fx].dsp[0].instance != s.nodes[fx].dsp[1].instance);
@@ -103,7 +103,7 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 }
 static void test_plugins(void) {
 	Engine echo = {0}; float input[1025] = {1}, out[1025]; input[200] = .25f;
-	assert(!open_engine(&echo, "examples/echo/plugin.so"));
+	assert(!open_engine(&echo, "plugins/echo/build/plugin.so"));
 	echo.module->set_parameter(echo.instance, 0, 1); // 1 ms -> 44 samples.
 	echo.module->set_parameter(echo.instance, 3, 1);
 	echo.module->set_parameter(echo.instance, 4, 0);
@@ -115,7 +115,7 @@ static void test_plugins(void) {
 	for (int i = 0; i < 1025; ++i) assert(out[i] == (i == 44 ? 1 : i == 288 ? .25f : 0));
 	close_engine(&echo);
 	Engine a = {0}, b = {0}; float x[2000], y[2000];
-	assert(!open_engine(&a, "examples/drums/plugin.so") && !open_engine(&b, "examples/drums/plugin.so"));
+	assert(!open_engine(&a, "plugins/drums/build/plugin.so") && !open_engine(&b, "plugins/drums/build/plugin.so"));
 	const Event hits[] = {{0, -1, 0, {0x90, 4, 127}, 0}, {100, 0, .5f, {0}, 1},
 		{200, -1, 0, {0x90, 1, 100}, 2}, {800, -1, 0, {0x90, 2, 80}, 3}};
 	a.events = b.events = hits; a.count = b.count = 4;
@@ -156,7 +156,7 @@ int main(void) {
 	bad_script("("); bad_script("unknown-binding");
 	bad_script("(daw/end 1) (error \"expected failure after end\")");
 	bad_script("(+ 1 2)");
-	bad_script("(daw/plugin \"examples/synth_mono/plugin.so\") (daw/end 1)");
+	bad_script("(daw/plugin \"plugins/synth_mono/build/plugin.so\") (daw/end 1)");
 	puts("OK: parse/runtime errors, missing end and orphan plugins fail cleanly");
 	return 0;
 }

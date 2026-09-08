@@ -3,9 +3,9 @@
 
 (defn rejects [f]
   (assert (try (do (f) false) ([_] true)) "expected an API error"))
-(def path "examples/synth_mono/plugin.so")
+(def path "plugins/synth_mono/build/plugin.so")
 (def synth (daw/plugin path {:vcf_cutoff 500}))
-(def filter (daw/plugin "examples/tibia_test/plugin.so"))
+(def filter (daw/plugin "plugins/tibia_test/build/plugin.so"))
 (rejects (fn [] (daw/end 61))) # Unconnected plugins are never silently discarded.
 (def track (daw/track synth {:effects [filter]}))
 (def master (daw/master))

@@ -48,7 +48,7 @@ static double measure(Engine *e, int *crossings) {
 
 static void test_synth(void) {
 	Engine e = {0};
-	assert(!open_engine(&e, "examples/synth_mono/plugin.so"));
+	assert(!open_engine(&e, "plugins/synth_mono/build/plugin.so"));
 	float warmup[4096];
 	int crossings;
 	assert(measure(&e, &crossings) < 1e-12);
@@ -83,7 +83,7 @@ static void test_synth_blocks(void) {
 	float reference[SAMPLE_RATE / 2], out[BLOCK];
 	for (size_t b = 0; b < sizeof(blocks) / sizeof(*blocks); ++b) {
 		Engine e = {.events = events, .count = sizeof(events) / sizeof(*events)};
-		assert(!open_engine(&e, "examples/synth_mono/plugin.so"));
+		assert(!open_engine(&e, "plugins/synth_mono/build/plugin.so"));
 		for (size_t pos = 0; pos < SAMPLE_RATE / 2;) {
 			size_t left = SAMPLE_RATE / 2 - pos, n = left < blocks[b] ? left : blocks[b];
 			render(&e, out, NULL, n);
@@ -99,7 +99,7 @@ static void test_synth_blocks(void) {
 
 static void test_effect(void) {
 	Engine e = {0};
-	assert(!open_engine(&e, "examples/tibia_test/plugin.so"));
+	assert(!open_engine(&e, "plugins/tibia_test/build/plugin.so"));
 	float in[8193] = {1}, out[8193];
 	render(&e, out, in, 8193);
 	assert(out[0] > 0 && out[0] < 1);

@@ -4,28 +4,56 @@ Una base minimale per una DAW scriptabile: partiture in Janet, audio in C.
 Plugin Tibia mono a 44,1 kHz, tracce con effetti in serie e mix stereo.
 
 ```sh
-make
+make                    # Compila solo host e renderer Janet.
+make -C plugins         # Compilazione separata dei plugin di esempio.
 make test
 make prog
 ./build/daw examples/hello.janet build/hello.wav
 ./build/daw examples/automation.janet build/automation.wav
-./build/host examples/synth_mono/plugin.so --wav build/demo.wav
-./build/host examples/tibia_test/plugin.so --input
+./build/host plugins/synth_mono/build/plugin.so --wav build/demo.wav
+./build/host plugins/tibia_test/build/plugin.so --input
 make keys
 ```
 
 Servono compilatore C, make, git e curl. Su Termux:
 `pkg install clang make git curl libandroid-spawn`.
-Il build scarica in `.deps/` Brickworks v1.2.0, Janet v1.41.2 e miniaudio 0.11.25
+Il build dell'host scarica in `.deps/` Janet v1.41.2 e miniaudio 0.11.25
 (se non trova `../miniaudio.h`). Janet è collegato staticamente: non occorre installare
-Janet o jpm. I build successivi sono offline. Due costanti di `bw_sqrtf` vengono
-rese unsigned per evitare shift indefiniti nella dipendenza Brickworks.
+Janet o jpm. I build successivi sono offline.
+
+## Build separati: host e plugin
+
+Il Makefile principale produce `build/host` e `build/daw`. Triccheballacche carica
+plugin già compilati tramite il percorso del `.so`; codice DSP, dipendenze e
+descrittori JSON appartengono ai progetti dei plugin.
+
+I sorgenti di esempio sono in `plugins/<nome>/`, ciascuno con il proprio Makefile:
+`make -C plugins/synth_mono` produce `plugins/synth_mono/build/plugin.so`.
+`make -C plugins` compila tutta la raccolta, indipendentemente dal build dell'host.
+Solo il synth richiede Brickworks, scaricato nella propria directory `.deps/`.
+Il [README dei plugin](plugins/README.md) descrive build, metadati e dipendenze.
+Le partiture di un checkout precedente devono aggiornare i percorsi
+`examples/<nome>/plugin.so` in `plugins/<nome>/build/plugin.so`.
+
+`make test` e `make prog` richiedono i `.so` di esempio già presenti e segnalano
+come compilarli se mancano. Nessun target dell'host compila automaticamente plugin.
+`make clean` pulisce i programmi dell'host; `make -C plugins clean` pulisce i plugin.
+`make keys` compila e avvia il synth da terminale autonomo in `examples/termux_synth/`.
+
+```text
+*.c, *.h           host, sessione, loader e test
+tibia/tibia.h      interfaccia C condivisa con i plugin
+plugins/<nome>/    sorgenti, metadati e build autonomo del plugin
+lib/               funzioni musicali Janet
+examples/          partiture e demo da terminale
+build/             binari dell'host e render
+```
 
 ## API: plugin e tracce sono distinti
 
 ```janet
-(def synth (daw/plugin "examples/synth_mono/plugin.so" {:vcf_cutoff 900}))
-(def filter (daw/plugin "examples/tibia_test/plugin.so" {:cutoff 2000}))
+(def synth (daw/plugin "plugins/synth_mono/build/plugin.so" {:vcf_cutoff 900}))
+(def filter (daw/plugin "plugins/tibia_test/build/plugin.so" {:cutoff 2000}))
 (def track (daw/track synth {:effects [filter] :gain 0.5 :pan -0.2}))
 
 (daw/note synth 0 4 60)
@@ -83,7 +111,7 @@ Da una partitura nella radice del repository:
 
 (def bpm 154)
 (def step (music/seconds bpm 0.5)) # Un ottavo; BPM sempre riferiti ai quarti.
-(def bass (daw/plugin "examples/synth_mono/plugin.so" {:vcf_cutoff 900}))
+(def bass (daw/plugin "plugins/synth_mono/build/plugin.so" {:vcf_cutoff 900}))
 (daw/track bass)
 (def phrase [40 40 47 nil 40 50 44]) # nil occupa un passo senza emettere una nota.
 (music/sequence 0 step phrase
@@ -145,9 +173,9 @@ La normalizzazione usa un file temporaneo, non un buffer dell'intero brano.
 
 Plugin inclusi oltre al synth e all'effetto di test:
 
-- `examples/shape/plugin.so`: waveshaper, drive/level e filtri DC/lowpass a coefficienti espliciti.
-- `examples/echo/plugin.so`: tre tap regolabili in millisecondi, livelli indipendenti e segnale dry.
-- `examples/drums/plugin.so`: 32 voci; note MIDI 0–6 = kick, snare, hat, open-hat, crash, tom-high, tom-low.
+- `plugins/shape/build/plugin.so`: waveshaper, drive/level e filtri DC/lowpass a coefficienti espliciti.
+- `plugins/echo/build/plugin.so`: tre tap regolabili in millisecondi, livelli indipendenti e segnale dry.
+- `plugins/drums/build/plugin.so`: 32 voci; note MIDI 0–6 = kick, snare, hat, open-hat, crash, tom-high, tom-low.
   La velocity regola il singolo colpo; `:gain` regola l'intera istanza e `:seed` i colpi successivi.
   I suoni decadono naturalmente e ignorano il note-off; a voci esaurite viene sostituita la più vecchia.
 
@@ -187,7 +215,8 @@ e una curva della libreria collegata al synth tramite l'API reale.
 La vecchia API sperimentale cambia: `instrument` diventa `plugin` + `track`,
 `export` diventa `end`; `color`, `send` e `drum` non sono più casi speciali dell'host.
 
-`make run` suona la demo di otto secondi; `--input` elabora il microfono (usare cuffie).
+`make run` suona la demo di otto secondi usando il synth già compilato con
+`make -C plugins/synth_mono`; `--input` elabora il microfono (usare cuffie).
 `make keys` avvia il synth autonomo a 16 voci, 48 kHz stereo:
 `a w s e d f t g y h u j k`, `q` per uscire. Questi programmi non richiedono il renderer Janet.
 `sj.h` e `trash/` non partecipano al build. I sorgenti e le dipendenze conservano le rispettive licenze.
