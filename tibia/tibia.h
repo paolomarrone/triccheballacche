@@ -4,6 +4,19 @@
 #include <stdint.h>
 #include <stddef.h>
 
+// Optional metadata extension used by this host. Audio ports are mono.
+typedef struct {
+	const char *name, *unit;
+	float minimum, maximum, default_value;
+	int integer;
+} tibia_parameter;
+typedef struct {
+	int input, midi; // input: 0 generator, 1 effect
+	size_t count;
+	const tibia_parameter *parameters;
+} tibia_info;
+const tibia_info *tibia_get_info(void);
+
 typedef struct {
 	void *       handle;
 	const char * format;

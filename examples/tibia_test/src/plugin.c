@@ -24,6 +24,15 @@
 #include <stdlib.h>
 #include "tibia.h"
 
+const tibia_info *tibia_get_info(void) {
+	static const tibia_parameter params[] = {
+		{"gain", "dB", -60, 12, 0, 0}, {"delay", "ms", 0, 1000, 0, 0},
+		{"cutoff", "Hz", 20, 20000, 1000, 0}, {"bypass", "", 0, 1, 0, 1}
+	};
+	static const tibia_info info = {1, 1, 4, params};
+	return &info;
+}
+
 typedef struct {
 	float	sample_rate;
 	size_t	delay_line_length;

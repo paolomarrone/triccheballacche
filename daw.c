@@ -1,270 +1,206 @@
-// Janet prepares C-owned scores; the interpreter is gone before rendering.
-#define main host_main
-#include "main.c"
-#undef main
+#include "daw.h"
+#include "audio.h"
 #include "janet.h"
 #include <float.h>
-#include <limits.h>
 #include <math.h>
+#include <stdlib.h>
 
-enum { TRACKS = 16, EVENTS = 2048, DRUMS = 8192, MAX_SECONDS = 600 };
-enum { CLEAN, BASS, GUITAR };
-enum { KICK, SNARE, HAT, OPEN_HAT, CRASH, TOM_HIGH, TOM_LOW };
-typedef struct {
-	Engine engine;
-	Event score[EVENTS];
-	float pan, gain, send;
-	int color;
-} Track;
-typedef struct { size_t time; int type; float strength; } Hit;
-static Track tracks[TRACKS];
-static Hit hits[DRUMS];
-static int ntracks, nhits;
-static size_t frames;
-static float *mix, *send;
-static uint32_t seed = 0x706f6c70;
-static const float tau = 6.28318530718f;
-
-static double number(const Janet *args, int i, double lo, double hi) {
-	double x = janet_getnumber(args, i);
-	if (!isfinite(x) || x < lo || x > hi) janet_panic("number outside allowed range");
-	return x;
-}
-static int integer(const Janet *args, int i, int lo, int hi) {
-	int x = janet_getinteger(args, i);
-	if (x < lo || x > hi) janet_panic("integer outside allowed range");
-	return x;
+// Only the synchronous Janet adapter has a current context; the C engine does not.
+static Session *current;
+static Output *output;
+static int checked(int result) { if (result < 0) janet_panic(current->error); return result; }
+static double number(Janet x, double lo, double hi) {
+	double value = janet_getnumber(&x, 0);
+	if (!isfinite(value) || value < lo || value > hi) janet_panic("number outside range");
+	return value;
 }
 static size_t sample(double seconds) {
-	if (!isfinite(seconds) || seconds < 0 || seconds > MAX_SECONDS) janet_panic("invalid time");
+	if (!isfinite(seconds) || seconds < 0 || seconds > 3600) janet_panic("time outside 0..3600 seconds");
 	return (size_t)llround(seconds * SAMPLE_RATE);
 }
-static void editable(void) { if (frames) janet_panic("score already sealed by daw/export"); }
-static Track *track(const Janet *args) {
-	editable();
-	return tracks + integer(args, 0, 0, ntracks - 1);
+static int handle(Janet x) {
+	int id = janet_getinteger(&x, 0);
+	if (id < 0 || id >= current->nnodes) janet_panic("invalid node handle");
+	return id;
+}
+static int param_index(Node *n, Janet key) {
+	if (janet_checktype(key, JANET_NUMBER)) {
+		int i = janet_getinteger(&key, 0);
+		return i >= 0 && (size_t)i < n->info->count ? i : -1;
+	}
+	for (size_t i = 0; i < n->info->count; ++i)
+		if (janet_keyeq(key, n->info->parameters[i].name)) return (int)i;
+	return -1;
+}
+static int valid_value(Node *n, int index, double value) {
+	if (index < 0) return 0;
+	const tibia_parameter *p = n->info->parameters + index;
+	return isfinite(value) && value >= p->minimum && value <= p->maximum && (!p->integer || floor(value) == value);
 }
 static Janet option(Janet opts, const char *key, Janet fallback) {
 	Janet x = janet_checktype(opts, JANET_NIL) ? opts : janet_get(opts, janet_ckeywordv(key));
 	return janet_checktype(x, JANET_NIL) ? fallback : x;
 }
-static int choice(Janet x, const char *const *names, int count) {
-	for (int i = 0; i < count; ++i) if (janet_keyeq(x, names[i])) return i;
-	janet_panic("unknown color or drum name");
+static void options(Janet opts, const char *const *names) {
+	if (janet_checktype(opts, JANET_NIL)) return;
+	janet_getdictionary(&opts, 0);
+	for (Janet k = janet_next(opts, janet_wrap_nil()); !janet_checktype(k, JANET_NIL); k = janet_next(opts, k)) {
+		int found = 0;
+		for (int i = 0; names[i]; ++i) found |= janet_keyeq(k, names[i]);
+		if (!found) janet_panicf("unknown option %v", k);
+	}
 }
-static Janet instrument(int32_t argc, Janet *argv) {
-	janet_arity(argc, 1, 2); editable();
+static Janet plugin(int32_t argc, Janet *argv) {
+	janet_arity(argc, 1, 2);
 	const char *path = janet_getcstring(argv, 0);
-	Janet opts = argc == 2 ? argv[1] : janet_wrap_nil();
-	if (!janet_checktype(opts, JANET_NIL)) janet_getdictionary(&opts, 0);
-	Janet values[] = {option(opts, "pan", janet_wrap_number(0)),
-		option(opts, "gain", janet_wrap_number(1)), option(opts, "send", janet_wrap_number(0))};
-	float pan = number(values, 0, -1, 1), gain = number(values, 1, 0, 4), wet = number(values, 2, 0, 1);
-	const char *const colors[] = {"clean", "bass", "guitar"};
-	int color = choice(option(opts, "color", janet_ckeywordv("clean")), colors, 3);
-	Janet params = option(opts, "params", janet_wrap_nil());
-	JanetView patch = {0};
-	if (!janet_checktype(params, JANET_NIL)) patch = janet_getindexed(&params, 0);
-	if (patch.len % 2) janet_panic("params must contain index/value pairs");
-	for (int i = 0; i < patch.len; i += 2) {
-		integer(patch.items, i, 0, INT_MAX); number(patch.items, i + 1, -FLT_MAX, FLT_MAX);
+	Janet params = argc == 2 ? argv[1] : janet_wrap_nil(), keys[MAX_PARAMS];
+	double values[MAX_PARAMS]; int count = 0;
+	if (!janet_checktype(params, JANET_NIL)) {
+		janet_getdictionary(&params, 0);
+		for (Janet k = janet_next(params, janet_wrap_nil()); !janet_checktype(k, JANET_NIL); k = janet_next(params, k)) {
+			if (count == MAX_PARAMS) janet_panic("too many initial parameters");
+			if (janet_checktype(k, JANET_NUMBER)) janet_getinteger(&k, 0);
+			else janet_getkeyword(&k, 0);
+			keys[count] = k; values[count++] = number(janet_get(params, k), -FLT_MAX, FLT_MAX);
+		}
 	}
-	if (ntracks == TRACKS) janet_panic("track limit reached");
-	Track *t = tracks + ntracks;
-	if (open_engine(&t->engine, path)) {
-		close_engine(&t->engine); *t = (Track){0}; janet_panic("cannot open instrument");
+	int id = checked(session_plugin(current, path));
+	for (int i = 0; i < count; ++i) {
+		int p = param_index(current->nodes + id, keys[i]);
+		if (!valid_value(current->nodes + id, p, values[i])) {
+			session_pop(current); janet_panicf("unknown parameter or invalid value: %v", keys[i]);
+		}
+		checked(session_set(current, id, p, values[i]));
 	}
-	t->engine.events = t->score; t->pan = pan; t->gain = gain; t->send = wet; t->color = color;
-	for (int i = 0; i < patch.len; i += 2)
-		t->engine.module->set_parameter(t->engine.instance, janet_getinteger(patch.items, i), janet_getnumber(patch.items, i + 1));
-	t->engine.module->reset(t->engine.instance);
-	return janet_wrap_integer(ntracks++);
+	return janet_wrap_integer(id);
 }
+static Janet make_track(int32_t argc, Janet *argv, int master) {
+	int offset = master ? 0 : 1;
+	janet_arity(argc, offset, offset + 1);
+	int source = master ? -1 : handle(argv[0]);
+	Janet opts = argc > offset ? argv[offset] : janet_wrap_nil();
+	const char *const track_keys[] = {"gain", "effects", "pan", NULL}, *const master_keys[] = {"gain", "effects", NULL};
+	options(opts, master ? master_keys : track_keys);
+	float gain = number(option(opts, "gain", janet_wrap_number(1)), 0, 4);
+	float pan = number(option(opts, "pan", janet_wrap_number(0)), -1, 1);
+	Janet fx = option(opts, "effects", janet_wrap_nil());
+	int ids[MAX_FX], count = 0;
+	if (!janet_checktype(fx, JANET_NIL)) {
+		JanetView list = janet_getindexed(&fx, 0);
+		if (list.len > MAX_FX) janet_panic("too many effects");
+		for (int i = 0; i < list.len; ++i) ids[count++] = handle(list.items[i]);
+	}
+	int id = checked(session_track(current, source, ids, count, master));
+	checked(session_set(current, id, 0, gain));
+	if (!master) checked(session_set(current, id, 1, pan));
+	return janet_wrap_integer(id);
+}
+static Janet track(int32_t argc, Janet *argv) { return make_track(argc, argv, 0); }
+static Janet master(int32_t argc, Janet *argv) { return make_track(argc, argv, 1); }
 static Janet note(int32_t argc, Janet *argv) {
 	janet_arity(argc, 4, 5);
-	Track *t = track(argv);
-	double time = number(argv, 1, 0, MAX_SECONDS), length = number(argv, 2, 0, MAX_SECONDS);
-	size_t on = sample(time), off = sample(time + length);
-	int pitch = integer(argv, 3, 0, 127), velocity = argc == 5 ? integer(argv, 4, 1, 127) : 100;
-	if (off <= on) janet_panic("note must last at least one sample");
-	if (!t->engine.module->midi_msg_in) janet_panic("instrument has no MIDI input");
-	if (t->engine.count > EVENTS - 2) janet_panic("event limit reached");
-	t->score[t->engine.count++] = (Event){on, -1, 0, {0x90, pitch, velocity}};
-	t->score[t->engine.count++] = (Event){off, -1, 0, {0x80, pitch, 0}};
+	int id = handle(argv[0]), pitch = janet_getinteger(argv, 3), velocity = argc == 5 ? janet_getinteger(argv, 4) : 100;
+	double time = number(argv[1], 0, 3600), length = number(argv[2], 0, 3600);
+	checked(session_note(current, id, sample(time), sample(time + length), pitch, velocity));
 	return janet_wrap_nil();
 }
 static Janet parameter(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 4);
-	Track *t = track(argv);
-	size_t time = sample(janet_getnumber(argv, 1));
-	int index = integer(argv, 2, 0, INT_MAX);
-	float value = number(argv, 3, -FLT_MAX, FLT_MAX);
-	if (t->engine.count == EVENTS) janet_panic("event limit reached");
-	t->score[t->engine.count++] = (Event){time, index, value, {0}};
+	int id = handle(argv[0]), p = param_index(current->nodes + id, argv[2]);
+	if (p < 0) janet_panicf("unknown parameter %v", argv[2]);
+	double value = janet_getnumber(argv, 3);
+	if (!valid_value(current->nodes + id, p, value)) janet_panicf("invalid value for %v", argv[2]);
+	checked(session_param(current, id, sample(janet_getnumber(argv, 1)), p, value));
 	return janet_wrap_nil();
 }
-static Janet drum(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 3); editable();
-	const char *const names[] = {"kick", "snare", "hat", "open-hat", "crash", "tom-high", "tom-low"};
-	int type = choice(argv[0], names, 7);
-	size_t time = sample(janet_getnumber(argv, 1));
-	float strength = number(argv, 2, 0, 1);
-	if (nhits == DRUMS) janet_panic("drum limit reached");
-	hits[nhits++] = (Hit){time, type, strength};
+static Janet info(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 1);
+	const tibia_info *desc = current->nodes[handle(argv[0])].info;
+	JanetArray *result = janet_array((int32_t)desc->count);
+	for (size_t i = 0; i < desc->count; ++i) {
+		const tibia_parameter *p = desc->parameters + i;
+		JanetTable *row = janet_table(6);
+		janet_table_put(row, janet_ckeywordv("name"), janet_ckeywordv(p->name));
+		janet_table_put(row, janet_ckeywordv("unit"), janet_cstringv(p->unit));
+		janet_table_put(row, janet_ckeywordv("min"), janet_wrap_number(p->minimum));
+		janet_table_put(row, janet_ckeywordv("max"), janet_wrap_number(p->maximum));
+		janet_table_put(row, janet_ckeywordv("default"), janet_wrap_number(p->default_value));
+		janet_table_put(row, janet_ckeywordv("integer"), janet_wrap_boolean(p->integer));
+		janet_array_push(result, janet_wrap_table(row));
+	}
+	return janet_wrap_array(result);
+}
+static Janet end(int32_t argc, Janet *argv) {
+	janet_arity(argc, 1, 2);
+	Janet opts = argc == 2 ? argv[1] : janet_wrap_nil();
+	const char *const names[] = {"format", "normalize", NULL}; options(opts, names);
+	Janet fmt = option(opts, "format", janet_ckeywordv("float"));
+	if (!janet_keyeq(fmt, "float") && !janet_keyeq(fmt, "pcm16")) janet_panic("format must be :float or :pcm16");
+	float normalize = number(option(opts, "normalize", janet_wrap_number(0)), 0, 1);
+	checked(session_end(current, sample(janet_getnumber(argv, 0))));
+	*output = (Output){janet_keyeq(fmt, "pcm16"), normalize};
 	return janet_wrap_nil();
 }
-static Janet export(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 1); editable();
-	size_t end = sample(janet_getnumber(argv, 0));
-	if (!end) janet_panic("empty duration");
-	for (int tr = 0; tr < ntracks; ++tr)
-		for (size_t i = 0; i < tracks[tr].engine.count; ++i) {
-			Event *e = tracks[tr].score + i;
-			if (e->time > end || (e->time == end && (e->parameter >= 0 || e->midi[0] != 0x80)))
-				janet_panic("event outside export duration");
-		}
-	for (int i = 0; i < nhits; ++i) if (hits[i].time >= end) janet_panic("drum outside export duration");
-	frames = end;
-	return janet_wrap_nil();
-}
-static int load_score(const char *path) {
+int load_score(Session *s, Output *cfg, const char *path) {
 	const JanetReg api[] = {
-		{"instrument", instrument, "(daw/instrument plugin &opt options) -> track id"},
-		{"note", note, "(daw/note track seconds duration pitch &opt velocity)"},
-		{"param", parameter, "(daw/param track seconds index value)"},
-		{"drum", drum, "(daw/drum kind seconds strength)"},
-		{"export", export, "(daw/export seconds) Seal the score; render after the script succeeds."},
+		{"plugin", plugin, "(daw/plugin path &opt parameters) -> plugin handle"},
+		{"track", track, "(daw/track source &opt {:effects [...] :gain 1 :pan 0}) -> mixer handle"},
+		{"master", master, "(daw/master &opt {:effects [...] :gain 1}) -> mixer handle"},
+		{"note", note, "(daw/note plugin seconds duration pitch &opt velocity)"},
+		{"param", parameter, "(daw/param node seconds parameter value)"},
+		{"info", info, "(daw/info node) -> parameter descriptions"},
+		{"end", end, "(daw/end seconds &opt {:format :float :normalize 0}) Seal the score for CLI export."},
 		{NULL, NULL, NULL}
 	};
+	current = s; output = cfg; *cfg = (Output){0};
 	janet_init();
 	JanetTable *env = janet_core_env(NULL);
-	janet_cfuns_prefix(env, "daw", api);
-	janet_def(env, "daw/script", janet_cstringv(path), NULL);
+	janet_cfuns_prefix(env, "daw", api); janet_def(env, "daw/script", janet_cstringv(path), NULL);
 	int result = janet_dostring(env, "(dofile daw/script :env (curenv))", path, NULL);
-	janet_deinit();
-	if (!result && !frames) { fputs("Missing (daw/export seconds)\n", stderr); result = 1; }
+	janet_deinit(); current = NULL; output = NULL;
+	if (!result && !s->sealed) { fputs("Missing (daw/end seconds)\n", stderr); result = 1; }
+	if (!result) s->error = NULL;
 	return result;
 }
-
-// Stable ordering: controls, note off, note on. Last control at a sample wins.
-static int after(const Event *a, const Event *b) {
-	if (a->time != b->time) return a->time > b->time;
-	return (a->parameter >= 0 ? 0 : a->midi[0]) > (b->parameter >= 0 ? 0 : b->midi[0]);
-}
-static void sort_score(Track *t) {
-	for (size_t i = 1; i < t->engine.count; ++i) {
-		Event e = t->score[i]; size_t j = i;
-		while (j && after(t->score + j - 1, &e)) { t->score[j] = t->score[j - 1]; --j; }
-		t->score[j] = e;
-	}
-}
-static float noise(void) {
-	seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
-	return (seed >> 8) * (2.f / 16777216.f) - 1.f;
-}
-static void pan_add(float *dst, size_t frame, float x, float pan) {
-	float angle = (pan + 1.f) * tau / 8.f;
-	dst[2 * frame] += x * cosf(angle); dst[2 * frame + 1] += x * sinf(angle);
-}
-static void render_drum(Hit hit) {
-	const float duration[] = {.42f, .32f, .085f, .38f, 1.6f, .3f, .4f};
-	const float pans[] = {0, -.08f, .35f, .4f, -.55f, -.4f, .45f};
-	int type = hit.type;
-	size_t n = duration[type] * SAMPLE_RATE;
-	float low = 0;
-	for (size_t i = 0; i < n && hit.time + i < frames; ++i) {
-		float t = (float)i / SAMPLE_RATE, white = noise(), x;
-		low += .17f * (white - low);
-		float high = white - low;
-		if (type == KICK) {
-			float phase = tau * (47.f * t + 3.1f * (1.f - expf(-t / .026f)));
-			x = .86f * sinf(phase) * expf(-t * 12.f) + .14f * high * expf(-t * 230.f);
-		} else if (type == SNARE) {
-			x = .62f * high * expf(-t * 22.f) + .28f * sinf(tau * 186.f * t) * expf(-t * 27.f)
-				+ .12f * sinf(tau * 337.f * t) * expf(-t * 39.f);
-		} else if (type == HAT || type == OPEN_HAT || type == CRASH) {
-			float metal = sinf(tau * 4177.f * t + 2.f * sinf(tau * 683.f * t))
-				+ .5f * sinf(tau * 7319.f * t) + .3f * sinf(tau * 10331.f * t);
-			float decay = type == HAT ? 65.f : type == OPEN_HAT ? 12.f : 3.8f;
-			x = (.7f * high + .14f * metal) * expf(-t * decay);
-		} else {
-			float f = type == TOM_HIGH ? 172.f : 109.f;
-			x = .8f * sinf(tau * (f * t + .9f * (1 - expf(-t * 35.f)))) * expf(-t * 17.f)
-				+ .1f * high * expf(-t * 80.f);
+int write_score(Session *s, const Output *cfg, const char *path) {
+	if (!s->sealed || s->time) { s->error = "export requires a fresh, sealed session"; return -1; }
+	// Neutral export streams directly. Optional normalization spools to disk, not RAM.
+	FILE *spool = cfg->normalize ? tmpfile() : NULL;
+	if (cfg->normalize && !spool) return -1;
+	float peak = 0, audio[BLOCK * 2];
+	if (spool) {
+		while (s->time < s->frames) {
+			size_t n = s->frames - s->time < BLOCK ? s->frames - s->time : BLOCK;
+			if (session_render(s, audio, n) || fwrite(audio, sizeof(float) * 2, n, spool) != n) { fclose(spool); return -1; }
+			for (size_t i = 0; i < n * 2; ++i) peak = fmaxf(peak, fabsf(audio[i]));
 		}
-		x *= hit.strength * fminf(1.f, t * 1800.f);
-		pan_add(mix, hit.time + i, x, pans[type]);
-		if (type != KICK) pan_add(send, hit.time + i, .07f * x, pans[type]);
-	}
-}
-static int write_score(const char *path) {
-	mix = calloc(frames * 2, sizeof(float)); send = calloc(frames * 2, sizeof(float));
-	if (!mix || !send) return 1;
-	for (int i = 0; i < nhits; ++i) render_drum(hits[i]);
-	for (int tr = 0; tr < ntracks; ++tr) {
-		Track *t = tracks + tr;
-		sort_score(t);
-		float low = 0, dc = 0;
-		for (size_t pos = 0; pos < frames;) {
-			float buffer[BLOCK];
-			size_t n = frames - pos < BLOCK ? frames - pos : BLOCK;
-			render(&t->engine, buffer, NULL, n);
-			for (size_t i = 0; i < n; ++i) {
-				float x = buffer[i];
-				if (t->color == GUITAR) {
-					x = tanhf(8 * x); dc += .013f * (x - dc); x -= dc;
-					low += .34f * (x - low); x = low;
-				} else if (t->color == BASS) x = .7f * tanhf(2 * x);
-				x *= t->gain;
-				pan_add(mix, pos + i, x, t->pan); pan_add(send, pos + i, x * t->send, t->pan);
-			}
-			pos += n;
-		}
-	}
-	float peak = 0, dc[2] = {0};
-	const int delays[] = {4807, 10275, 16185};
-	for (size_t i = 0; i < frames; ++i) {
-		float fade = fminf(1.f, (frames - i) / (.65f * SAMPLE_RATE));
-		for (int c = 0; c < 2; ++c) {
-			float x = mix[2 * i + c];
-			for (int d = 0; d < 3; ++d)
-				if (i >= (size_t)delays[d]) x += send[2 * (i - delays[d]) + (c ^ (d & 1))] / (d + 1);
-			x = tanhf(1.35f * x); dc[c] += .002f * (x - dc[c]);
-			x = (x - dc[c]) * fade * fade;
-			if (!isfinite(x)) return 1;
-			mix[2 * i + c] = x; peak = fmaxf(peak, fabsf(x));
-		}
+		if (fseek(spool, 0, SEEK_SET)) { fclose(spool); return -1; }
 	}
 	ma_encoder encoder;
-	ma_encoder_config cfg = ma_encoder_config_init(ma_encoding_format_wav, ma_format_s16, 2, SAMPLE_RATE);
-	if (ma_encoder_init_file(path, &cfg, &encoder) != MA_SUCCESS) return 1;
+	ma_encoder_config config = ma_encoder_config_init(ma_encoding_format_wav, cfg->pcm16 ? ma_format_s16 : ma_format_f32, 2, SAMPLE_RATE);
+	if (ma_encoder_init_file(path, &config, &encoder) != MA_SUCCESS) { if (spool) fclose(spool); return -1; }
 	int result = 0;
-	float norm = peak ? .94f * 32767 / peak : 0;
-	for (size_t pos = 0; pos < frames;) {
+	for (size_t pos = 0; pos < s->frames;) {
+		size_t n = s->frames - pos < BLOCK ? s->frames - pos : BLOCK;
+		if (spool ? fread(audio, sizeof(float) * 2, n, spool) != n : session_render(s, audio, n)) { result = -1; break; }
+		if (spool && peak) for (size_t i = 0; i < 2 * n; ++i) audio[i] = (audio[i] / peak) * cfg->normalize;
 		int16_t pcm[BLOCK * 2];
-		size_t n = frames - pos < BLOCK ? frames - pos : BLOCK;
-		for (size_t i = 0; i < 2 * n; ++i) {
-			float x = mix[2 * pos + i];
-			pcm[i] = (int16_t)lrintf(isfinite(norm) ? x * norm : (x / peak) * (.94f * 32767));
-		}
+		if (cfg->pcm16) for (size_t i = 0; i < 2 * n; ++i) pcm[i] = (int16_t)lrintf(fmaxf(-1, fminf(1, audio[i])) * 32767);
 		ma_uint64 written;
-		if (ma_encoder_write_pcm_frames(&encoder, pcm, n, &written) != MA_SUCCESS || written != n) { result = 1; break; }
+		if (ma_encoder_write_pcm_frames(&encoder, cfg->pcm16 ? (const void *)pcm : audio, n, &written) != MA_SUCCESS || written != n) { result = -1; break; }
 		pos += n;
 	}
-	ma_encoder_uninit(&encoder);
+	ma_encoder_uninit(&encoder); if (spool) fclose(spool);
 	return result;
-}
-static void cleanup(void) {
-	for (int tr = 0; tr < ntracks; ++tr) close_engine(&tracks[tr].engine);
-	free(mix); free(send);
 }
 #ifndef DAW_TEST
 int main(int argc, char **argv) {
 	if (argc != 3) { fprintf(stderr, "Usage: %s score.janet output.wav\n", argv[0]); return 1; }
-	int result = load_score(argv[1]) || write_score(argv[2]);
-	if (result) fputs("Score/render failed\n", stderr);
-	else printf("%.3f seconds, stereo, %s\n", (double)frames / SAMPLE_RATE, argv[2]);
-	cleanup();
+	Session session = {0}; Output cfg;
+	int result = load_score(&session, &cfg, argv[1]) || write_score(&session, &cfg, argv[2]);
+	if (result) fprintf(stderr, "Score/render failed%s%s\n", session.error ? ": " : "", session.error ? session.error : "");
+	else printf("%.3f seconds, stereo, %s\n", (double)session.frames / SAMPLE_RATE, argv[2]);
+	session_free(&session);
 	return result;
 }
 #endif

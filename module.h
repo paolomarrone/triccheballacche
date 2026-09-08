@@ -7,6 +7,7 @@
 
 typedef struct {
 	void *handle;
+	const tibia_info *info;
 
 	void*  (*new)(             void);
 	void   (*init)(            void *instance, const tibia_callbacks *cbs);

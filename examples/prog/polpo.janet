@@ -6,27 +6,44 @@
   [1 4200 18 3 110 90 70 9]
   [3 4800 5 8 330 42 310 0] [3 5200 5 8 330 42 310 0]
   [3 5600 5 8 330 42 310 0] [2 3400 24 3 120 65 80 4]])
-(def ids [7 26 27 33 34 35 36 2])
+(def ids [:vco1_wave :vcf_cutoff :vcf_resonance :vca_attack :vca_decay :vca_sustain :vca_release :portamento])
 (def pans [0 -0.78 0.78 0.08 -0.55 0 0.55 -0.3])
 (def gains [0.73 0.28 0.28 0.58 0.23 0.21 0.23 0.34])
 (def band @[])
 (for tr 0 8
   (def keys (<= 4 tr 6))
-  (def params @[])
-  (for i 0 8 (array/push params (ids i) ((patches tr) i)))
-  (array/push params
-    8 (if (= tr 7) 28 47) 13 (if (= tr 0) 3 2)
-    11 (if (= tr 0) -1 (if keys 1 0)) 12 (case tr 1 -7 2 7 3)
-    15 (if (= tr 0) 65 (if keys 45 52)) 28 (if (= tr 0) 55 22) 30 105 31 15)
-  (array/push band (daw/instrument "examples/synth_mono/plugin.so"
-    {:pan (pans tr) :gain (gains tr) :send (if (>= tr 3) 0.3 0.045)
-     :color (case tr 0 :bass 1 :guitar 2 :guitar :clean) :params params})))
+  (def params @{:vco1_pw (if (= tr 7) 28 47) :vco2_wave (if (= tr 0) 3 2)
+    :vco2_coarse (if (= tr 0) -1 (if keys 1 0)) :vco2_fine (case tr 1 -7 2 7 3)
+    :vco2_level (if (= tr 0) 65 (if keys 45 52)) :vcf_contour (if (= tr 0) 55 22)
+    :vcf_decay 105 :vcf_sustain 15})
+  (for i 0 8 (put params (ids i) ((patches tr) i)))
+  (def synth (daw/plugin "examples/synth_mono/plugin.so" params))
+  (def effects @[])
+  (when (= tr 0) (array/push effects (daw/plugin "examples/shape/plugin.so" {:drive 2 :level 0.7})))
+  (when (<= 1 tr 2) (array/push effects (daw/plugin "examples/shape/plugin.so"
+    {:drive 8 :dc 0.013 :lowpass 0.34})))
+  (def wet (if (>= tr 3) 0.3 0.045))
+  (array/push effects (daw/plugin "examples/echo/plugin.so"
+    {:level1 wet :level2 (/ wet 2) :level3 (/ wet 3)}))
+  (daw/track synth {:pan (pans tr) :gain (gains tr) :effects effects})
+  (array/push band synth))
 (def [bass left right lead key1 key2 key3 counter] band)
 (def param daw/param)
-(def drum daw/drum)
+(def drum-notes {:kick 0 :snare 1 :hat 2 :open-hat 3 :crash 4 :tom-high 5 :tom-low 6})
+(def drum-band @[])
+(for i 0 7
+  (def source (daw/plugin "examples/drums/plugin.so" {:seed (+ 7368556 i)}))
+  (def effects (if (= i 0) [] [(daw/plugin "examples/echo/plugin.so"
+    {:level1 0.07 :level2 0.035 :level3 (/ 0.07 3)})]))
+  (daw/track source {:pan ([0 -0.08 0.35 0.4 -0.55 -0.4 0.45] i) :effects effects})
+  (array/push drum-band source))
+(defn drum [kind t strength]
+  (def pitch (drum-notes kind))
+  (daw/note (drum-band pitch) t 0.001 pitch (math/floor (+ 0.5 (* strength 127)))))
+(def master (daw/master {:effects [(daw/plugin "examples/shape/plugin.so" {:drive 1.35 :dc 0.002})]}))
 (defn note [tr t duration pitch volume]
   # This synth uses parameter 0 for volume, not MIDI velocity.
-  (param tr t 0 volume)
+  (param tr t :volume volume)
   (daw/note tr t duration pitch))
 (defn scale [degree]
   (+ ([0 2 3 5 7 8 11] (% degree 7)) (* 12 (math/floor (/ degree 7)))))
@@ -80,7 +97,7 @@
               (note counter (+ t (* 0.5 step)) (* 0.38 step) (+ root 24 (scale (% (+ j b 2) 10))) 59))
             (when (= part 4) (note lead t (* 0.75 step) (+ root 24 (hook (% j 7))) 71))))))
     (when (= part 3)
-      (param lead bar 26 (+ 3300 (* 430 b)))
+      (param lead bar :vcf_cutoff (+ 3300 (* 430 b)))
       (for j 0 14
         (note lead (+ bar (/ (* j step) 2)) (* step 0.46)
           (+ root 24 (scale (spiral (% (+ j (* 2 b)) 14)))) (+ 68 (% j 3))))
@@ -106,8 +123,13 @@
   (note lead hit 0.085 (+ (ending i) 36) 69)
   (drum :kick hit 0.84) (drum :snare hit 0.56))
 (set t (+ t (/ (* 5 30) 176)))
-(each tr band (param tr t 36 650))
+(each tr band (param tr t :vca_release 650))
 (note bass t 0.62 28 79) (riff t 0.56 52 76)
 (note lead t 0.66 88 62) (chord t 0.72 40 4 11 66)
 (drum :kick t 0.95) (drum :snare t 0.85) (drum :crash t 0.55)
-(daw/export 30)
+# The master fade and normalization belong to this composition, not to the host.
+(for i 0 130
+  (def gain (- 1 (/ i 130)))
+  (param master (+ 29.35 (* i 0.005)) :gain (* gain gain)))
+(param master (- 30 (/ 1 44100)) :gain 0)
+(daw/end 30 {:format :pcm16 :normalize 0.94})

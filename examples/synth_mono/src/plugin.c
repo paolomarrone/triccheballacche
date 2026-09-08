@@ -35,6 +35,7 @@
 
 #include <stdlib.h>
 #include "tibia.h"
+#include "parameters.h"
 
 enum {
 	parameter_volume,
@@ -194,14 +195,8 @@ void tibia_init(void *vinstance, const tibia_callbacks *cbs) {
 	bw_phase_gen_set_frequency(&instance->a440_phase_gen_coeffs, 440.f);
 	
 	instance->rand_state = 0xbaddecaf600dfeed;
-	// Input defaults in product.json order; init owns parameter initialization.
-	static const float defaults[] = {
-		50, 440, 0, 0, 0, 0, 0, 1, 50, 100,
-		0, 0, 0, 1, 50, 0, 1, 0, 0, 1, 50, 0,
-		1, 0, 0, 1, 20000, 0, 0, 0, 0, 100, 0, 2, 2, 100, 2, 0
-	};
-	for (size_t i = 0; i < sizeof(defaults) / sizeof(*defaults); ++i)
-		tibia_set_parameter(instance, i, defaults[i]);
+	for (size_t i = 0; i < sizeof(parameters) / sizeof(*parameters); ++i)
+		tibia_set_parameter(instance, i, parameters[i].default_value);
 }
 
 void tibia_fini(void *vinstance) {

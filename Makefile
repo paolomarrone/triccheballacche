@@ -10,7 +10,9 @@ ifeq ($(shell uname -o 2>/dev/null),Android)
 JANET_LIBS += -landroid-spawn
 endif
 BW_HEADER = $(BRICKWORKS)/include/bw_common.h
-PLUGINS = examples/synth_mono/plugin.so examples/tibia_test/plugin.so
+PLUGINS = $(addsuffix /plugin.so,examples/synth_mono examples/tibia_test examples/shape examples/echo examples/drums)
+CORE = engine.c loader.c
+HEADERS = engine.h loader.h module.h tibia/tibia.h
 
 .PHONY: all test test-prog run keys prog clean
 all: build/host $(PLUGINS) build/termux_synth build/daw
@@ -37,17 +39,23 @@ $(BRICKWORKS)/.patched: $(BW_HEADER) Makefile
 	sed -i 's/0x200000e0 <</0x200000e0u <</; s/0x100000f0 <</0x100000f0u <</' $(BRICKWORKS)/include/bw_math.h
 	touch $@
 
-build/host: main.c loader.c loader.h module.h tibia/tibia.h $(MINIAUDIO) | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) main.c loader.c $(LDFLAGS) $(LDLIBS) -o $@
+build/audio.o: audio.c audio.h $(MINIAUDIO) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) -c audio.c -o $@
 
-examples/synth_mono/plugin.so: examples/synth_mono/src/plugin.c tibia/tibia.h $(BRICKWORKS)/.patched
+build/host: main.c $(CORE) $(HEADERS) audio.h build/audio.o | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) main.c $(CORE) build/audio.o $(LDFLAGS) $(LDLIBS) -o $@
+
+examples/synth_mono/plugin.so: examples/synth_mono/src/plugin.c examples/synth_mono/src/parameters.h tibia/tibia.h $(BRICKWORKS)/.patched
 	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -Itibia -I$(BRICKWORKS)/include -shared $< $(LDFLAGS) -lm -o $@
 
 examples/tibia_test/plugin.so: examples/tibia_test/src/plugin.c tibia/tibia.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -Itibia -shared $< $(LDFLAGS) -lm -o $@
 
-build/test: loader_test.c main.c loader.c loader.h module.h tibia/tibia.h $(MINIAUDIO) | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I$(dir $(MINIAUDIO)) loader_test.c loader.c $(LDFLAGS) $(LDLIBS) -o $@
+examples/%/plugin.so: examples/%/src/plugin.c tibia/tibia.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -Itibia -shared $< $(LDFLAGS) -lm -o $@
+
+build/test: loader_test.c $(CORE) $(HEADERS) | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG loader_test.c $(CORE) $(LDFLAGS) $(LDLIBS) -o $@
 
 build/termux_synth: examples/termux_synth/src/termux_synth.c $(MINIAUDIO) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $< $(LDFLAGS) $(LDLIBS) -o $@
@@ -66,17 +74,18 @@ run: all
 keys: build/termux_synth
 	./build/termux_synth --keys
 
-build/daw: daw.c main.c loader.c loader.h module.h tibia/tibia.h $(MINIAUDIO) $(JANET)/build/libjanet.a | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $(JANET_INCLUDES) $< loader.c $(LDFLAGS) $(JANET_LIBS) $(LDLIBS) -o $@
+build/daw: daw.c daw.h session.c session.h $(CORE) $(HEADERS) audio.h build/audio.o $(JANET)/build/libjanet.a | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $(JANET_INCLUDES) daw.c session.c $(CORE) build/audio.o $(LDFLAGS) $(JANET_LIBS) $(LDLIBS) -o $@
 
-build/daw_test: daw_test.c daw.c main.c loader.c loader.h module.h tibia/tibia.h $(MINIAUDIO) $(JANET)/build/libjanet.a | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I$(dir $(MINIAUDIO)) $(JANET_INCLUDES) $< loader.c $(LDFLAGS) $(JANET_LIBS) $(LDLIBS) -o $@
+build/daw_test: daw_test.c daw.c daw.h session.c session.h $(CORE) $(HEADERS) audio.h build/audio.o $(JANET)/build/libjanet.a | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -DDAW_TEST -I$(dir $(MINIAUDIO)) $(JANET_INCLUDES) daw_test.c daw.c session.c $(CORE) build/audio.o $(LDFLAGS) $(JANET_LIBS) $(LDLIBS) -o $@
 
-prog: build/daw examples/synth_mono/plugin.so
+prog: build/daw $(PLUGINS)
 	./build/daw examples/prog/polpo.janet build/il_polpo_a_sette_gomiti.wav
 
 test-prog: prog
-	cmp examples/prog/il_polpo_a_sette_gomiti.wav build/il_polpo_a_sette_gomiti.wav
+	./build/daw examples/prog/polpo.janet build/polpo-repeat.wav
+	cmp build/polpo-repeat.wav build/il_polpo_a_sette_gomiti.wav
 
 clean:
-	rm -f build/host build/test build/termux_synth build/termux_test build/daw build/daw_test $(PLUGINS)
+	rm -f build/audio.o build/host build/test build/termux_synth build/termux_test build/daw build/daw_test $(PLUGINS)

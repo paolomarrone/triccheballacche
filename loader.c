@@ -35,6 +35,8 @@ TibiaModule* tibia_loader_load(const char *path) {
 	LOAD_SYM(get_parameter);
 	LOAD_SYM(process);
 	mod->midi_msg_in = dlsym(mod->handle, "tibia_midi_msg_in");
+	const tibia_info *(*info)(void) = dlsym(mod->handle, "tibia_get_info");
+	mod->info = info ? info() : NULL;
 	#undef LOAD_SYM
 
 	return mod;

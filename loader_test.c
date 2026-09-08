@@ -1,8 +1,8 @@
-#define main host_main
-#include "main.c"
-#undef main
+#include "engine.h"
 #include <assert.h>
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 static void mock_process(void *p, const float **in, float **out, size_t n) {
 	for (size_t i = 0; i < n; ++i) out[0][i] = in[0][i] + *(float *)p;
@@ -15,8 +15,8 @@ static void test_scheduler(void) {
 	out[8194] = 123;
 	TibiaModule module = {.process = mock_process, .set_parameter = mock_param, .midi_msg_in = mock_midi};
 	const Event events[] = {
-		{0, 0, 1, {0}}, {4, 0, 2, {0}}, {4, -1, 0, {0x90, 3, 100}},
-		{8, 0, 4, {0}}, {8192, 0, 5, {0}}
+		{0, 0, 1, {0}, 0}, {4, 0, 2, {0}, 0}, {4, -1, 0, {0x90, 3, 100}, 0},
+		{8, 0, 4, {0}, 0}, {8192, 0, 5, {0}, 0}
 	};
 	Engine e = {.module = &module, .instance = &value, .events = events, .count = 5};
 	render(&e, out + 1, NULL, 8);
