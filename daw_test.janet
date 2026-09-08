@@ -14,6 +14,12 @@
 (assert (= [(cutoff :name) (cutoff :unit) (cutoff :min) (cutoff :max) (cutoff :default) (cutoff :integer)]
            [:vcf_cutoff "hz" 20 20000 20000 false]))
 (assert (= (((daw/info track) 0) :name) :gain))
+(assert (= (length (daw/info synth)) 39))
+(assert (= (((daw/info synth) 38) :direction) :output))
+(assert (= (((daw/info synth) 38) :name) :level))
+(assert (= (cutoff :map) :logarithmic))
+(rejects (fn [] (daw/param synth 0 :level -12)))
+(rejects (fn [] (daw/plugin path {:level -12})))
 (each f [
   (fn [] (daw/plugin))
   (fn [] (daw/plugin "build/nonexistent.so"))

@@ -1,5 +1,4 @@
 // Polyphonic procedural percussion. MIDI notes 0..6 select the seven sounds.
-#include "tibia.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,23 +6,20 @@ enum { KICK, SNARE, HAT, OPEN_HAT, CRASH, TOM_HIGH, TOM_LOW, VOICES = 32 };
 typedef struct { size_t age, length; int type; float strength, low; uint32_t seed; } Voice;
 typedef struct { Voice voices[VOICES]; float rate, gain, seed; uint32_t rng; } Drums;
 static const float tau = 6.28318530718f;
-const tibia_info *tibia_get_info(void) {
-	static const tibia_parameter params[] = {{"gain", "linear", 0, 1, 1, 0}, {"seed", "", 1, 16777215, 7368556, 1}};
-	static const tibia_info info = {0, 1, 2, params}; return &info;
-}
-void *tibia_new(void) { return malloc(sizeof(Drums)); }
-void tibia_init(void *p, const tibia_callbacks *c) { (void)c; *(Drums *)p = (Drums){.gain = 1, .seed = 7368556}; }
-void tibia_fini(void *p) { (void)p; }
-void tibia_set_sample_rate(void *p, float rate) { ((Drums *)p)->rate = rate; }
-size_t tibia_mem_req(void *p) { (void)p; return 0; }
-void tibia_mem_set(void *p, void *mem) { (void)p; (void)mem; }
-void tibia_reset(void *p) { Drums *d = p; memset(d->voices, 0, sizeof(d->voices)); d->rng = (uint32_t)d->seed; }
-void tibia_set_parameter(void *p, size_t i, float value) {
+
+typedef Drums plugin;
+static int plugin_init(void *p, const plugin_callbacks *c) { (void)c; *(Drums *)p = (Drums){0}; return 0; }
+static void plugin_fini(void *p) { (void)p; }
+static void plugin_set_sample_rate(void *p, float rate) { ((Drums *)p)->rate = rate; }
+static size_t plugin_mem_req(void *p) { (void)p; return 0; }
+static void plugin_mem_set(void *p, void *mem) { (void)p; (void)mem; }
+static void plugin_reset(void *p) { Drums *d = p; memset(d->voices, 0, sizeof(d->voices)); d->rng = (uint32_t)d->seed; }
+static void plugin_set_parameter(void *p, size_t i, float value) {
 	Drums *d = p; if (i == 0) d->gain = value; else if (i == 1) { d->seed = value; d->rng = (uint32_t)value; }
 }
-float tibia_get_parameter(void *p, size_t i) { Drums *d = p; return i == 0 ? d->gain : d->seed; }
+static float plugin_get_parameter(void *p, size_t i) { Drums *d = p; return i == 0 ? d->gain : d->seed; }
 static uint32_t random_u32(uint32_t *s) { *s ^= *s << 13; *s ^= *s >> 17; *s ^= *s << 5; return *s; }
-void tibia_midi_msg_in(void *p, size_t bus, const uint8_t *msg) {
+static void plugin_midi_msg_in(void *p, size_t bus, const uint8_t *msg) {
 	(void)bus; Drums *d = p;
 	if ((msg[0] & 0xf0) != 0x90 || !msg[2] || msg[1] > TOM_LOW || msg[2] > 127) return;
 	const float duration[] = {.42f, .32f, .085f, .38f, 1.6f, .3f, .4f};
@@ -35,7 +31,7 @@ void tibia_midi_msg_in(void *p, size_t bus, const uint8_t *msg) {
 	*v = (Voice){.length = (size_t)(duration[msg[1]] * d->rate), .type = msg[1],
 		.strength = msg[2] / 127.f, .seed = random_u32(&d->rng)};
 }
-void tibia_process(void *p, const float **in, float **out, size_t n) {
+static void plugin_process(void *p, const float **in, float **out, size_t n) {
 	(void)in; Drums *d = p;
 	for (size_t i = 0; i < n; ++i) {
 		float sum = 0;

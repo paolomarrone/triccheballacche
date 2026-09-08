@@ -4,7 +4,7 @@
 
 enum { MAX_NODES = 128, MAX_TRACKS = 32, MAX_FX = 8, MAX_PARAMS = 64 };
 typedef struct {
-	Engine dsp[2]; // Master effects have independent left/right state.
+	Engine dsp[2]; // A mono effect on stereo audio uses independent L/R instances.
 	const tibia_info *info;
 	char *path;
 	Event *events;

@@ -8,7 +8,7 @@ JANET_LIBS = $(JANET)/build/libjanet.a
 ifeq ($(shell uname -o 2>/dev/null),Android)
 JANET_LIBS += -landroid-spawn
 endif
-TEST_PLUGINS = $(addsuffix /build/plugin.so,$(addprefix plugins/,synth_mono tibia_test shape echo drums))
+TEST_PLUGINS = $(addsuffix /build/plugin.so,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
 CORE = engine.c loader.c
 HEADERS = engine.h loader.h module.h tibia/tibia.h
 

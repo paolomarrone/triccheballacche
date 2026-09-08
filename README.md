@@ -1,7 +1,7 @@
 # triccheballacche
 
 Una base minimale per una DAW scriptabile: partiture in Janet, audio in C.
-Plugin Tibia mono a 44,1 kHz, tracce con effetti in serie e mix stereo.
+Plugin Tibia mono e stereo a 44,1 kHz, tracce con effetti in serie e mix stereo.
 
 ```sh
 make                    # Compila solo host e renderer Janet.
@@ -27,10 +27,13 @@ Il Makefile principale produce `build/host` e `build/daw`. Triccheballacche cari
 plugin già compilati tramite il percorso del `.so`; codice DSP, dipendenze e
 descrittori JSON appartengono ai progetti dei plugin.
 
-I sorgenti di esempio sono in `plugins/<nome>/`, ciascuno con il proprio Makefile:
+I progetti di esempio sono in `plugins/<nome>/`, ciascuno con il proprio Makefile:
 `make -C plugins/synth_mono` produce `plugins/synth_mono/build/plugin.so`.
 `make -C plugins` compila tutta la raccolta, indipendentemente dal build dell'host.
-Solo il synth richiede Brickworks, scaricato nella propria directory `.deps/`.
+La generazione dei plugin richiede Node.js, `dot` e `../tibia` con i nuovi target
+`shared`/`shared-make`. Synth e filtro `fx_svf` compilano gli esempi originali di
+`../brickworks`, usando i loro JSON. Le directory sono configurabili con `TIBIA`
+e `BRICKWORKS`; nessuna sorgente Brickworks viene copiata o modificata qui.
 Il [README dei plugin](plugins/README.md) descrive build, metadati e dipendenze.
 Le partiture di un checkout precedente devono aggiornare i percorsi
 `examples/<nome>/plugin.so` in `plugins/<nome>/build/plugin.so`.
@@ -42,7 +45,7 @@ come compilarli se mancano. Nessun target dell'host compila automaticamente plug
 
 ```text
 *.c, *.h           host, sessione, loader e test
-tibia/tibia.h      interfaccia C condivisa con i plugin
+tibia/tibia.h      copia dell’ABI shared definita in Tibia
 plugins/<nome>/    sorgenti, metadati e build autonomo del plugin
 lib/               funzioni musicali Janet
 examples/          partiture e demo da terminale
@@ -79,8 +82,21 @@ Tempo, battute, accordi, rampe e pattern sono funzioni della libreria Janet `lib
 
 Opzioni traccia: `:gain` 0–4 (default 1), `:pan` −1–1 (default 0),
 `:effects [fx1 fx2 ...]` nell'ordine di elaborazione. Il master accetta `:gain` e
-`:effects`; gli effetti master hanno due istanze indipendenti, una per canale.
+`:effects`. Un effetto stereo usa una sola istanza che elabora entrambi i canali;
+un effetto mono 1→1 su un segnale stereo usa due istanze indipendenti, anche sulle tracce.
 Senza `daw/master` il master è semplicemente unitario.
+
+Le catene seguono i canali dichiarati dai plugin. Un segnale mono viene duplicato
+su L/R, alla stessa ampiezza, quando entra in un effetto stereo 2→2. Un plugin
+1→2 può generare stereo da una sorgente mono. Una conversione stereo→mono richiede
+un plugin con ingresso stereo e uscita mono; un effetto 1→2 non può ricevere
+direttamente un segnale stereo. Il master produce sempre due canali e duplica
+l'eventuale uscita mono della sua catena.
+
+`:pan` conserva il panning a potenza costante per le catene che terminano in mono
+(centro: circa −3 dB per canale). Per le catene stereo regola il bilanciamento
+lineare: centro unitario su entrambi i canali, estremi con il canale opposto muto.
+Non incrocia né somma i canali stereo. Gain e pan seguono gli effetti della traccia.
 
 Ogni plugin appartiene a una sola catena. Crea un'altra istanza se ti serve altrove.
 Un plugin non collegato è un errore a `daw/end`, non una traccia scartata in silenzio.
@@ -154,7 +170,7 @@ valore alle conversioni e si sommano esplicitamente le durate.
 ## Rendering neutro, elaborazione esplicita
 
 ```text
-sorgente → effetti mono → gain/pan → somma stereo → effetti master → gain master → WAV
+sorgente mono/stereo → effetti → gain/pan → somma stereo → effetti master → gain master → WAV
 ```
 
 Il default è WAV float32 stereo: niente saturazione, filtro DC, fade, normalizzazione
@@ -198,18 +214,24 @@ Janet viene chiuso prima del rendering; il motore non alloca memoria mentre proc
 i blocchi. Il mix occupa memoria indipendente dalla durata, più lo stato dei plugin
 e gli eventi. Limiti attuali: un export per esecuzione, 32 tracce, 128 nodi totali
 (plugin e mixer), 8 effetti per catena, 64 parametri per plugin, 3600 secondi.
-Mono e 44,1 kHz sono un contratto esplicito, non formati negoziati.
+L'host accetta un bus audio di uscita mono/stereo, al massimo un bus audio di
+ingresso mono/stereo e un ingresso MIDI, a 44,1 kHz. Sidechain, CV e bus aggiuntivi
+restano esclusi. L'ABI shared descrive i bus del plugin.
 
-Lo scripting richiede `tibia_get_info`, una piccola estensione locale descritta in
-`tibia/tibia.h`. I plugin forniscono tipo sorgente/effetto, capacità MIDI e metadati
-dei parametri; i default del synth sono condivisi con la sua tabella dei parametri.
-L'host autonomo continua ad accettare i plugin mono precedenti senza metadati.
+Host e scripting richiedono `tibia_get_api(TIBIA_ABI_VERSION)`. Il wrapper Tibia
+crea e distrugge il DSP; l'host non ne gestisce la memoria interna. Metadati e default
+sono generati da `product.json` e incorporati nel `.so`, insieme al JSON completo.
+`daw/info` include input e output nell'ordine originale, con `:index`, `:name`
+(ID simbolico), `:label`, `:direction` e `:map`, oltre a unità, range e default.
+I parametri di uscita sono descritti ma non possono essere impostati o automatizzati.
+I vecchi plugin vanno ricompilati; non è previsto un adattatore per la precedente ABI.
 Script e plugin devono essere fidati: nessuna sandbox o isolamento dei crash nativi.
 Le chiamate `daw/*` costruiscono la sessione in modo sincrono; thread e task asincroni
 che modificano la sessione non sono supportati.
 
 `make test` copre scheduler, DSP, API, errori, catene, neutralità, automazione del
-mixer/master, indipendenza stereo, crescita degli eventi e formati WAV.
+mixer/master, separazione dei canali, effetti mono su stereo, effetti stereo
+con interazione L/R, conversioni dei canali, crescita degli eventi e formati WAV.
 Include `music_test.janet`, che prova le funzioni musicali senza dipendere da `daw/*`,
 e una curva della libreria collegata al synth tramite l'API reale.
 La vecchia API sperimentale cambia: `instrument` diventa `plugin` + `track`,
@@ -217,6 +239,8 @@ La vecchia API sperimentale cambia: `instrument` diventa `plugin` + `track`,
 
 `make run` suona la demo di otto secondi usando il synth già compilato con
 `make -C plugins/synth_mono`; `--input` elabora il microfono (usare cuffie).
+L'host autonomo usa i canali di ingresso/uscita del plugin e salva WAV mono o stereo
+secondo la sua uscita; il renderer Janet produce sempre WAV stereo.
 `make keys` avvia il synth autonomo a 16 voci, 48 kHz stereo:
 `a w s e d f t g y h u j k`, `q` per uscire. Questi programmi non richiedono il renderer Janet.
 `sj.h` e `trash/` non partecipano al build. I sorgenti e le dipendenze conservano le rispettive licenze.

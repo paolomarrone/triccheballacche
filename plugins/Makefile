@@ -1,4 +1,4 @@
-PLUGINS = synth_mono tibia_test shape echo drums
+PLUGINS = synth_mono fx_svf tibia_test shape echo drums
 
 .PHONY: all clean $(PLUGINS)
 all: $(PLUGINS)

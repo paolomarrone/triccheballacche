@@ -1,42 +1,60 @@
 # Plugin di esempio
 
-Questi progetti si compilano separatamente da triccheballacche. Ogni directory
-contiene il DSP e un Makefile; il risultato locale è `build/plugin.so`.
+I plugin si generano con Tibia e si compilano separatamente dall'host.
+Servono compilatore C, make, Node.js, il modulo `dot` e un checkout Tibia
+con i target `shared` e `shared-make`. `synth_mono` e `fx_svf` richiedono anche
+Brickworks con l'API corrente (`plugin_init` restituisce `int`).
+
+Per default i repository sono affiancati: `../tibia` e `../brickworks`, rispetto
+alla radice di triccheballacche. Nessuna dipendenza DSP viene scaricata o modificata.
 
 ```sh
-make -C plugins/echo       # Un solo plugin, dalla radice del repository.
-make -C plugins           # Tutti i plugin, con un comando esplicito.
-make -C plugins clean     # Pulisce solo i binari dei plugin.
+make -C plugins/echo
+make -C plugins
+make -C plugins TIBIA=/percorso/tibia BRICKWORKS=/percorso/brickworks
+make -C plugins clean
 ```
 
-`plugin.mk` condivide le poche regole di compilazione. I progetti richiedono un
-compilatore C, make e l'header `tibia.h`; non richiedono Janet, miniaudio o i
-sorgenti dell'host. `TIBIA` indica la directory dell'header, di default `../../tibia`.
-La raccolta `plugins/` può essere copiata altrove e compilata con
-`make -C /percorso/plugins TIBIA=/percorso/tibia`.
+`TIBIA` indica il generatore, non la copia dell'header nel repository dell'host.
+Il modulo `dot` deve essere risolvibile da Node (ad esempio `npm install dot`
+nel checkout Tibia). I plugin non richiedono Janet, miniaudio o sorgenti dell'host.
 
-| Progetto | Ruolo | Dipendenze DSP |
+| Progetto | Sorgenti DSP | Parametri |
 | --- | --- | --- |
-| `synth_mono` | Synth monofonico, 38 parametri | Brickworks v1.2.0 |
-| `drums` | Percussioni sintetiche, 32 voci | Nessuna |
-| `shape` | Waveshaper e filtri | Nessuna |
-| `echo` | Delay a tre tap | Nessuna |
-| `tibia_test` | Gain, filtro, delay e bypass | Nessuna |
+| `synth_mono` | `brickworks/examples/synth_mono/src/plugin.h`, originale | 38 input e meter `level` in output |
+| `fx_svf` | `brickworks/examples/fx_svf/src/plugin.h`, originale | Filtro a variabili di stato |
+| `drums` | `plugin.h` locale | Gain e seed delle percussioni |
+| `shape` | `plugin.h` locale | Waveshaper e filtri |
+| `echo` | `plugin.h` locale | Delay a tre tap |
+| `tibia_test` | `plugin.h` locale | Gain, filtro, delay, bypass e output |
 
-Il synth usa git per scaricare Brickworks in `synth_mono/.deps/brickworks` al primo build;
-`BRICKWORKS` permette di usare un checkout esistente. Due costanti di `bw_sqrtf`
-vengono rese unsigned per evitare shift indefiniti nella dipendenza.
+Ogni progetto fornisce `plugin.h` e `product.json`, direttamente o tramite il
+percorso Brickworks. `plugin.mk` genera in `build/gen` l'API, il wrapper e il
+Makefile; quest'ultimo produce `build/plugin.so` e segue le dipendenze degli header.
+Il JSON è la fonte dei default e dei metadati: non ci sono tabelle manuali parallele.
+I preset musicali restano nelle partiture Janet.
 
-L'host carica soltanto il `.so` e ne legge i metadati tramite `tibia_get_info`:
-tipo sorgente/effetto, ingresso MIDI e descrizioni dei parametri. Il contratto
-comune è in `tibia/tibia.h`, nella radice del repository. I plugin di questa
-raccolta usano porte audio mono; l'host li esegue a 44,1 kHz.
+I test del synth verificano anche l'indipendenza dai blocchi e il pitch bend
+440/220/880/440 Hz. Queste correzioni devono essere presenti in Brickworks:
+il wrapper non applica patch DSP né altera i messaggi per compensare bug del synth.
 
-`synth_mono/product.json` conserva il descrittore del progetto originale.
-Il build attuale usa `parameters.h` per metadati e default: il JSON non viene
-letto né genera automaticamente l'header. Gli altri plugin dichiarano i
-metadati direttamente in `plugin.c`. I preset sono tabelle nelle partiture Janet.
+Il target `shared` esporta solo `tibia_get_api(version)`. Il contratto è definito
+in `tibia/templates/shared/tibia.h`; `triccheballacche/tibia/tibia.h` ne contiene
+una copia identica per compilare l'host senza il generatore.
+Il wrapper gestisce istanza, inizializzazione, default, memoria DSP e distruzione.
 
-Il `.so` compilato può essere copiato o rinominato e caricato passando il suo
-percorso a `build/host` o `daw/plugin`. I sorgenti, i Makefile e il JSON non
-servono durante il rendering. I sorgenti conservano le rispettive licenze.
+Il `.so` contiene sia i metadati C essenziali sia il descrittore JSON completo,
+compresi mapping e scale points. I parametri input/output e i bus mantengono gli
+indici dell'array JSON originale. L'host usa i metadati C durante il caricamento;
+il JSON rimane disponibile nell'ABI per strumenti e interfacce future.
+L'host accetta un bus di uscita mono/stereo, al massimo un bus di ingresso
+mono/stereo e un ingresso MIDI, a 44,1 kHz. Il formato condiviso può descrivere
+anche altri layout; sidechain, CV e bus aggiuntivi vengono rifiutati dall'host
+prima di creare l'istanza. Transport, messaggistica e stato non sono esposti dalla
+prima versione del target; i prodotti che richiedono transport/messaggistica o
+MIDI output vengono rifiutati dal generatore.
+
+Il `.so` può essere copiato o rinominato e passato a `build/host` o `daw/plugin`.
+Sorgenti, generatori, Makefile e JSON esterni non servono durante il rendering.
+I vecchi binari con simboli `tibia_new`/`tibia_init` vanno ricompilati: non c'è
+compatibilità con l'ABI sperimentale precedente.

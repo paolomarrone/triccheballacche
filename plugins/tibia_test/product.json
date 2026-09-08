@@ -1,0 +1,20 @@
+{
+  "product": {
+    "name": "tibia_test",
+    "version": "1.0.0",
+    "buildVersion": "1",
+    "bundleName": "tibia_test",
+    "buses": [
+      {"id": "input", "name": "Input", "shortName": "In", "type": "audio", "direction": "input", "channels": "mono"},
+      {"id": "output", "name": "Output", "shortName": "Out", "type": "audio", "direction": "output", "channels": "mono"},
+      {"id": "midi", "name": "MIDI", "shortName": "MIDI", "type": "midi", "direction": "input"}
+    ],
+    "parameters": [
+      {"id": "gain", "name": "gain", "shortName": "gain", "unit": "dB", "minimum": -60.0, "maximum": 12.0, "defaultValue": 0.0, "integer": false, "direction": "input"},
+      {"id": "delay", "name": "delay", "shortName": "delay", "unit": "ms", "minimum": 0.0, "maximum": 1000.0, "defaultValue": 0.0, "integer": false, "direction": "input"},
+      {"id": "cutoff", "name": "cutoff", "shortName": "cutoff", "unit": "Hz", "minimum": 20.0, "maximum": 20000.0, "defaultValue": 1000.0, "integer": false, "direction": "input"},
+      {"id": "bypass", "name": "bypass", "shortName": "bypass", "unit": "", "minimum": 0.0, "maximum": 1.0, "defaultValue": 0.0, "integer": true, "direction": "input"},
+      {"id": "level", "name": "Output", "shortName": "Out", "unit": "", "minimum": -1e+30, "maximum": 1e+30, "defaultValue": 0, "direction": "output"}
+    ]
+  }
+}

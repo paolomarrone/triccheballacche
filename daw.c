@@ -29,13 +29,13 @@ static int param_index(Node *n, Janet key) {
 		return i >= 0 && (size_t)i < n->info->count ? i : -1;
 	}
 	for (size_t i = 0; i < n->info->count; ++i)
-		if (janet_keyeq(key, n->info->parameters[i].name)) return (int)i;
+		if (janet_keyeq(key, n->info->parameters[i].id)) return (int)i;
 	return -1;
 }
 static int valid_value(Node *n, int index, double value) {
 	if (index < 0) return 0;
 	const tibia_parameter *p = n->info->parameters + index;
-	return isfinite(value) && value >= p->minimum && value <= p->maximum && (!p->integer || floor(value) == value);
+	return !(p->flags & TIBIA_PARAM_OUTPUT) && isfinite(value) && value >= p->minimum && value <= p->maximum && (!(p->flags & TIBIA_PARAM_INTEGER) || floor(value) == value);
 }
 static Janet option(Janet opts, const char *key, Janet fallback) {
 	Janet x = janet_checktype(opts, JANET_NIL) ? opts : janet_get(opts, janet_ckeywordv(key));
@@ -119,13 +119,17 @@ static Janet info(int32_t argc, Janet *argv) {
 	JanetArray *result = janet_array((int32_t)desc->count);
 	for (size_t i = 0; i < desc->count; ++i) {
 		const tibia_parameter *p = desc->parameters + i;
-		JanetTable *row = janet_table(6);
-		janet_table_put(row, janet_ckeywordv("name"), janet_ckeywordv(p->name));
+		JanetTable *row = janet_table(10);
+		janet_table_put(row, janet_ckeywordv("name"), janet_ckeywordv(p->id));
 		janet_table_put(row, janet_ckeywordv("unit"), janet_cstringv(p->unit));
 		janet_table_put(row, janet_ckeywordv("min"), janet_wrap_number(p->minimum));
 		janet_table_put(row, janet_ckeywordv("max"), janet_wrap_number(p->maximum));
 		janet_table_put(row, janet_ckeywordv("default"), janet_wrap_number(p->default_value));
-		janet_table_put(row, janet_ckeywordv("integer"), janet_wrap_boolean(p->integer));
+		janet_table_put(row, janet_ckeywordv("integer"), janet_wrap_boolean(p->flags & TIBIA_PARAM_INTEGER));
+		janet_table_put(row, janet_ckeywordv("label"), janet_cstringv(p->name));
+		janet_table_put(row, janet_ckeywordv("direction"), janet_ckeywordv(p->flags & TIBIA_PARAM_OUTPUT ? "output" : "input"));
+		janet_table_put(row, janet_ckeywordv("map"), janet_ckeywordv(p->flags & TIBIA_PARAM_LOG ? "logarithmic" : "linear"));
+		janet_table_put(row, janet_ckeywordv("index"), janet_wrap_integer((int32_t)i));
 		janet_array_push(result, janet_wrap_table(row));
 	}
 	return janet_wrap_array(result);

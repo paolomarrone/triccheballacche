@@ -1,0 +1,18 @@
+{
+  "product": {
+    "name": "shape",
+    "version": "1.0.0",
+    "buildVersion": "1",
+    "bundleName": "shape",
+    "buses": [
+      {"id": "input", "name": "Input", "shortName": "In", "type": "audio", "direction": "input", "channels": "mono"},
+      {"id": "output", "name": "Output", "shortName": "Out", "type": "audio", "direction": "output", "channels": "mono"}
+    ],
+    "parameters": [
+      {"id": "drive", "name": "drive", "shortName": "drive", "unit": "linear", "minimum": 0.0, "maximum": 32.0, "defaultValue": 1.0, "integer": false, "direction": "input"},
+      {"id": "level", "name": "level", "shortName": "level", "unit": "linear", "minimum": 0.0, "maximum": 4.0, "defaultValue": 1.0, "integer": false, "direction": "input"},
+      {"id": "dc", "name": "dc", "shortName": "dc", "unit": "coefficient", "minimum": 0.0, "maximum": 1.0, "defaultValue": 0.0, "integer": false, "direction": "input"},
+      {"id": "lowpass", "name": "lowpass", "shortName": "lowpass", "unit": "coefficient", "minimum": 0.0, "maximum": 1.0, "defaultValue": 1.0, "integer": false, "direction": "input"}
+    ]
+  }
+}

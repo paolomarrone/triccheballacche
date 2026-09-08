@@ -1,0 +1,21 @@
+{
+  "product": {
+    "name": "echo",
+    "version": "1.0.0",
+    "buildVersion": "1",
+    "bundleName": "echo",
+    "buses": [
+      {"id": "input", "name": "Input", "shortName": "In", "type": "audio", "direction": "input", "channels": "mono"},
+      {"id": "output", "name": "Output", "shortName": "Out", "type": "audio", "direction": "output", "channels": "mono"}
+    ],
+    "parameters": [
+      {"id": "time1", "name": "time1", "shortName": "time1", "unit": "ms", "minimum": 0.0, "maximum": 2000.0, "defaultValue": 109.0, "integer": false, "direction": "input"},
+      {"id": "time2", "name": "time2", "shortName": "time2", "unit": "ms", "minimum": 0.0, "maximum": 2000.0, "defaultValue": 233.0, "integer": false, "direction": "input"},
+      {"id": "time3", "name": "time3", "shortName": "time3", "unit": "ms", "minimum": 0.0, "maximum": 2000.0, "defaultValue": 367.0, "integer": false, "direction": "input"},
+      {"id": "level1", "name": "level1", "shortName": "level1", "unit": "linear", "minimum": 0.0, "maximum": 1.0, "defaultValue": 0.3, "integer": false, "direction": "input"},
+      {"id": "level2", "name": "level2", "shortName": "level2", "unit": "linear", "minimum": 0.0, "maximum": 1.0, "defaultValue": 0.15, "integer": false, "direction": "input"},
+      {"id": "level3", "name": "level3", "shortName": "level3", "unit": "linear", "minimum": 0.0, "maximum": 1.0, "defaultValue": 0.1, "integer": false, "direction": "input"},
+      {"id": "dry", "name": "dry", "shortName": "dry", "unit": "linear", "minimum": 0.0, "maximum": 1.0, "defaultValue": 1.0, "integer": false, "direction": "input"}
+    ]
+  }
+}

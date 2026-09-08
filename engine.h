@@ -12,12 +12,13 @@ typedef struct {
 } Event;
 typedef struct {
 	TibiaModule *module;
-	void *instance, *memory;
+	void *instance;
 	const Event *events;
 	size_t count, next, time;
 } Engine;
 
 void close_engine(Engine *e);
 int open_engine(Engine *e, const char *path);
+// Interleaved buffers sized by module input/output channels; NULL input is silence.
 void render(Engine *e, float *out, const float *in, size_t frames);
 #endif

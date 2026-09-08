@@ -5,15 +5,15 @@
 
 static int fail(Session *s, const char *message) { s->error = message; return -1; }
 static const tibia_parameter mixer_params[] = {
-	{"gain", "linear", 0, 4, 1, 0}, {"pan", "", -1, 1, 0, 0}
+	{"gain", "Gain", "linear", 0, 4, 1, 0}, {"pan", "Pan", "", -1, 1, 0, 0}
 };
-static const tibia_info mixer_info = {0, 0, 2, mixer_params}, master_info = {0, 0, 1, mixer_params};
+static const tibia_info mixer_info = {0, NULL, 2, mixer_params, NULL}, master_info = {0, NULL, 1, mixer_params, NULL};
 static int valid(Session *s, int id, int param, float value) {
 	if (s->sealed || id < 0 || id >= s->nnodes) return fail(s, "sealed session or invalid handle");
 	const tibia_info *info = s->nodes[id].info;
 	if (param < 0 || (size_t)param >= info->count) return fail(s, "unknown parameter");
 	const tibia_parameter *p = info->parameters + param;
-	if (!isfinite(value) || value < p->minimum || value > p->maximum || (p->integer && value != floorf(value)))
+	if ((p->flags & TIBIA_PARAM_OUTPUT) || !isfinite(value) || value < p->minimum || value > p->maximum || ((p->flags & TIBIA_PARAM_INTEGER) && value != floorf(value)))
 		return fail(s, "parameter outside range");
 	return 0;
 }
@@ -22,18 +22,9 @@ int session_plugin(Session *s, const char *path) {
 	Node *n = s->nodes + s->nnodes;
 	*n = (Node){0};
 	if (open_engine(n->dsp, path)) { close_engine(n->dsp); return fail(s, "cannot open plugin"); }
-	n->info = n->dsp[0].module->info;
-	if (!n->info || n->info->count > MAX_PARAMS || (n->info->count && !n->info->parameters)
-		|| (n->info->input != 0 && n->info->input != 1)) {
-		close_engine(n->dsp); return fail(s, "plugin needs valid mono metadata (tibia_get_info)");
-	}
-	for (size_t i = 0; i < n->info->count; ++i) {
-		const tibia_parameter *p = n->info->parameters + i;
-		int bad = !p->name || !*p->name || !p->unit || !isfinite(p->minimum) || !isfinite(p->maximum) ||
-			!isfinite(p->default_value) || p->minimum > p->maximum || p->default_value < p->minimum ||
-			p->default_value > p->maximum || (p->integer && floorf(p->default_value) != p->default_value);
-		for (size_t j = 0; !bad && j < i; ++j) bad |= !strcmp(p->name, n->info->parameters[j].name);
-		if (bad) { close_engine(n->dsp); return fail(s, "invalid parameter metadata"); }
+	n->info = &n->dsp[0].module->api->info;
+	if (n->info->count > MAX_PARAMS) {
+		close_engine(n->dsp); return fail(s, "too many plugin parameters");
 	}
 	n->path = malloc(strlen(path) + 1);
 	if (!n->path) { close_engine(n->dsp); return fail(s, "out of memory"); }
@@ -55,14 +46,22 @@ int session_track(Session *s, int source, const int *effects, int count, int mas
 	for (int i = 0; i < total; ++i) {
 		int id = ids[i];
 		if (id < 0 || id >= s->nnodes || !s->nodes[id].path || s->nodes[id].attached ||
-			s->nodes[id].info->input != (master || i > 0)) return fail(s, "expected unused source/effect plugin");
+			!!s->nodes[id].dsp[0].module->input != (master || i > 0)) return fail(s, "expected unused source/effect plugin");
 		for (int j = 0; j < i; ++j) if (ids[j] == id) return fail(s, "plugin already in this chain");
 	}
-	if (master) for (int i = 0; i < count; ++i) {
+	int channels = master ? 2 : s->nodes[source].dsp[0].module->output, duplicate[MAX_FX];
+	for (int i = 0; i < count; ++i) {
+		const TibiaModule *m = s->nodes[effects[i]].dsp[0].module;
+		if (channels == 2 && m->input == 1 && m->output == 2)
+			return fail(s, "a mono-to-stereo effect requires a mono signal");
+		duplicate[i] = channels == 2 && m->input == 1;
+		channels = duplicate[i] ? 2 : m->output;
+	}
+	for (int i = 0; i < count; ++i) if (duplicate[i]) {
 		Node *n = s->nodes + effects[i];
 		if (open_engine(n->dsp + 1, n->path)) {
 			for (int j = 0; j <= i; ++j) close_engine(s->nodes[effects[j]].dsp + 1);
-			return fail(s, "cannot create stereo master effect");
+			return fail(s, "cannot create second mono effect instance");
 		}
 	}
 	Track *t = master ? &s->master : &s->tracks[s->ntracks++];
@@ -98,7 +97,7 @@ int session_note(Session *s, int id, size_t time, size_t end, int pitch, int vel
 	if (s->sealed || id < 0 || id >= s->nnodes || end <= time || pitch < 0 || pitch > 127 || velocity < 1 || velocity > 127)
 		return fail(s, "invalid note or sealed session");
 	Node *n = s->nodes + id;
-	if (!n->path || !n->info->midi || !n->dsp[0].module->midi_msg_in) return fail(s, "node has no MIDI input");
+	if (!n->path || n->dsp[0].module->midi < 0 || !n->dsp[0].module->api->midi_msg_in) return fail(s, "node has no MIDI input");
 	if (reserve(s, n, 2)) return -1;
 	n->events[n->count] = (Event){time, -1, 0, {0x90, pitch, velocity}, n->count}; ++n->count;
 	n->events[n->count] = (Event){end, -1, 0, {0x80, pitch, 0}, n->count}; ++n->count;
@@ -127,8 +126,10 @@ int session_end(Session *s, size_t frames) {
 		if (n->count) qsort(n->events, n->count, sizeof(Event), compare);
 		for (int c = 0; c < 2 && n->dsp[c].instance; ++c) {
 			Engine *e = n->dsp + c;
-			for (size_t j = 0; j < n->info->count; ++j) e->module->set_parameter(e->instance, j, n->initial[j]);
-			e->module->reset(e->instance); e->events = n->events; e->count = n->count;
+			for (size_t j = 0; j < n->info->count; ++j)
+				if (!(n->info->parameters[j].flags & TIBIA_PARAM_OUTPUT))
+					e->module->api->set_parameter(e->instance, j, n->initial[j]);
+			e->module->api->reset(e->instance); e->events = n->events; e->count = n->count;
 		}
 	}
 	s->frames = frames; s->sealed = 1;
@@ -140,12 +141,26 @@ static void controls(Node *n, size_t time) {
 		n->values[e->parameter] = e->value;
 	}
 }
-static void chain(Session *s, const Track *t, float *audio, int channel, size_t n) {
-	float tmp[BLOCK];
+static int chain(Session *s, const Track *t, float *audio, int channels, size_t n) {
+	float tmp[BLOCK * 2], mono[BLOCK];
 	for (int j = 0; j < t->count; ++j) {
-		render(s->nodes[t->effects[j]].dsp + channel, tmp, audio, n);
-		memcpy(audio, tmp, n * sizeof(float));
+		Node *fx = s->nodes + t->effects[j];
+		const TibiaModule *m = fx->dsp[0].module;
+		if (fx->dsp[1].instance) {
+			for (int c = 0; c < 2; ++c) {
+				for (size_t i = 0; i < n; ++i) mono[i] = audio[2 * i + c];
+				render(fx->dsp + c, tmp + c * n, mono, n);
+			}
+			for (size_t i = 0; i < n; ++i) { audio[2 * i] = tmp[i]; audio[2 * i + 1] = tmp[n + i]; }
+		} else {
+			if (channels == 1 && m->input == 2)
+				for (size_t i = n; i-- > 0;) audio[2 * i] = audio[2 * i + 1] = audio[i];
+			render(fx->dsp, tmp, audio, n);
+			channels = m->output;
+			memcpy(audio, tmp, channels * n * sizeof(float));
+		}
 	}
+	return channels;
 }
 int session_render(Session *s, float *out, size_t frames) {
 	if (!s->sealed || frames > s->frames - s->time) return fail(s, "render outside session");
@@ -154,21 +169,25 @@ int session_render(Session *s, float *out, size_t frames) {
 		memset(out, 0, 2 * n * sizeof(float));
 		for (int tr = 0; tr < s->ntracks; ++tr) {
 			Track *t = s->tracks + tr; Node *m = s->nodes + t->mixer;
-			float audio[BLOCK];
-			render(s->nodes[t->source].dsp, audio, NULL, n); chain(s, t, audio, 0, n);
+			float audio[BLOCK * 2];
+			Engine *source = s->nodes[t->source].dsp;
+			render(source, audio, NULL, n);
+			int channels = chain(s, t, audio, source->module->output, n);
 			for (size_t i = 0; i < n; ++i) {
 				controls(m, s->time + i);
-				float angle = (m->values[1] + 1) * .7853981633974483f, x = audio[i] * m->values[0];
-				out[2 * i] += x * cosf(angle); out[2 * i + 1] += x * sinf(angle);
+				float pan = m->values[1], gain = m->values[0];
+				if (channels == 1) {
+					float angle = (pan + 1) * .7853981633974483f, x = audio[i] * gain;
+					out[2 * i] += x * cosf(angle); out[2 * i + 1] += x * sinf(angle);
+				} else {
+					out[2 * i] += audio[2 * i] * gain * (pan > 0 ? 1 - pan : 1);
+					out[2 * i + 1] += audio[2 * i + 1] * gain * (pan < 0 ? 1 + pan : 1);
+				}
 			}
 		}
 		if (s->has_master) {
-			for (int c = 0; c < 2; ++c) {
-				float audio[BLOCK];
-				for (size_t i = 0; i < n; ++i) audio[i] = out[2 * i + c];
-				chain(s, &s->master, audio, c, n);
-				for (size_t i = 0; i < n; ++i) out[2 * i + c] = audio[i];
-			}
+			if (chain(s, &s->master, out, 2, n) == 1)
+				for (size_t i = n; i-- > 0;) out[2 * i] = out[2 * i + 1] = out[i];
 			Node *m = s->nodes + s->master.mixer;
 			for (size_t i = 0; i < n; ++i) {
 				controls(m, s->time + i);

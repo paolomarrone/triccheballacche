@@ -1,0 +1,16 @@
+{
+  "product": {
+    "name": "drums",
+    "version": "1.0.0",
+    "buildVersion": "1",
+    "bundleName": "drums",
+    "buses": [
+      {"id": "output", "name": "Output", "shortName": "Out", "type": "audio", "direction": "output", "channels": "mono"},
+      {"id": "midi", "name": "MIDI", "shortName": "MIDI", "type": "midi", "direction": "input"}
+    ],
+    "parameters": [
+      {"id": "gain", "name": "gain", "shortName": "gain", "unit": "linear", "minimum": 0.0, "maximum": 1.0, "defaultValue": 1.0, "integer": false, "direction": "input"},
+      {"id": "seed", "name": "seed", "shortName": "seed", "unit": "", "minimum": 1.0, "maximum": 16777215.0, "defaultValue": 7368556.0, "integer": true, "direction": "input"}
+    ]
+  }
+}

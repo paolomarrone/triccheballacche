@@ -29,16 +29,38 @@ static void multiply(void *p, const float **in, float **out, size_t n) {
 static void add(void *p, const float **in, float **out, size_t n) {
 	for (size_t i = 0; i < n; ++i) out[0][i] = in[0][i] + *(float *)p;
 }
+static void stereo_source(void *p, const float **in, float **out, size_t n) {
+	assert(!in);
+	for (size_t i = 0; i < n; ++i) { out[0][i] = *(float *)p; out[1][i] = -.5f * *(float *)p; }
+}
+static void swap(void *p, const float **in, float **out, size_t n) {
+	for (size_t i = 0; i < n; ++i) { out[0][i] = in[1][i] * *(float *)p; out[1][i] = in[0][i] * *(float *)p; }
+}
+static void spread(void *p, const float **in, float **out, size_t n) {
+	for (size_t i = 0; i < n; ++i) { out[0][i] = in[0][i] * *(float *)p; out[1][i] = -out[0][i]; }
+}
+static void sum(void *p, const float **in, float **out, size_t n) {
+	for (size_t i = 0; i < n; ++i) out[0][i] = .5f * (in[0][i] + in[1][i]) * *(float *)p;
+}
 static int mock(Session *s, int kind, float value) {
-	static const tibia_parameter param = {"value", "", 0, 4, 1, 0};
-	static const tibia_info desc[] = {{0, 0, 1, &param}, {1, 0, 1, &param}};
+	static const tibia_parameter param = {"value", "Value", "", 0, 4, 1, 0};
+	static const tibia_info desc = {0, NULL, 1, &param, NULL};
+	static const tibia_api api[] = {
+		{.destroy = free, .reset = noop, .set_parameter = set, .process = constant},
+		{.destroy = free, .reset = noop, .set_parameter = set, .process = multiply},
+		{.destroy = free, .reset = noop, .set_parameter = set, .process = add},
+		{.destroy = free, .reset = noop, .set_parameter = set, .process = stereo_source},
+		{.destroy = free, .reset = noop, .set_parameter = set, .process = swap},
+		{.destroy = free, .reset = noop, .set_parameter = set, .process = spread},
+		{.destroy = free, .reset = noop, .set_parameter = set, .process = sum}
+	};
+	static const int inputs[] = {0, 1, 1, 0, 2, 1, 2}, outputs[] = {1, 1, 1, 2, 2, 2, 1};
 	Node *n = s->nodes + s->nnodes;
-	n->info = desc + (kind != 0); n->initial[0] = value; n->path = strdup("test");
+	n->info = &desc; n->initial[0] = value; n->path = strdup("test");
 	Engine *e = n->dsp;
 	e->module = calloc(1, sizeof(*e->module)); e->instance = malloc(sizeof(float));
 	assert(n->path && e->module && e->instance);
-	*e->module = (TibiaModule){.fini = noop, .reset = noop, .set_parameter = set,
-		.process = kind == 0 ? constant : kind == 1 ? multiply : add};
+	*e->module = (TibiaModule){.api = api + kind, .input = inputs[kind], .output = outputs[kind], .midi = -1};
 	return s->nnodes++;
 }
 static void pipeline(Session *s) {
@@ -83,6 +105,80 @@ static void test_master(void) {
 		assert(fabsf(audio[2 * i] - (i < 3 ? tanhf(1) * powf(.5f, i + 1) : tanhf(.5f))) < 1e-6f && audio[2 * i + 1] == 0);
 	session_free(&s); puts("OK: master effects use independent stereo state and shared automation");
 }
+static void stereo_pipeline(Session *s) {
+	int source = mock(s, 3, 1), mono = session_plugin(s, "plugins/shape/build/plugin.so");
+	int fx[] = {mono, mock(s, 4, 1)};
+	int tr = session_track(s, source, fx, 2, 0), stereo = mock(s, 4, 1);
+	int master = session_track(s, -1, &stereo, 1, 1);
+	assert(tr >= 0 && master >= 0);
+	assert(s->nodes[mono].dsp[1].instance && !s->nodes[fx[1]].dsp[1].instance && !s->nodes[stereo].dsp[1].instance);
+	assert(!session_set(s, mono, 2, .5f));
+	assert(!session_param(s, mono, 5, 0, .5f));
+	assert(!session_param(s, mono, 5, 2, 0));
+	assert(!session_param(s, tr, 7, 0, .5f));
+	assert(!session_param(s, tr, 13, 1, -1));
+	assert(!session_param(s, tr, 17, 1, 1));
+	assert(!session_param(s, master, 19, 0, .25f));
+	assert(!session_end(s, 33));
+}
+static void test_stereo_pipeline(void) {
+	Session a = {0}, b = {0}; float x[66], y[66];
+	stereo_pipeline(&a); stereo_pipeline(&b);
+	assert(!session_render(&a, x, 33));
+	for (size_t i = 0; i < 33; ++i) assert(!session_render(&b, y + 2 * i, 1));
+	assert(!memcmp(x, y, sizeof(x)));
+	for (int i = 0; i < 33; ++i) {
+		float gain = (i < 7 ? 1 : .5f) * (i < 19 ? 1 : .25f);
+		float left = (i < 5 ? tanhf(1) * powf(.5f, i + 1) : tanhf(.5f)) * gain;
+		float right = (i < 5 ? tanhf(-.5f) * powf(.5f, i + 1) : tanhf(-.25f)) * gain;
+		if (i >= 13 && i < 17) left = 0;
+		if (i >= 17) right = 0;
+		assert(fabsf(x[2 * i] - left) < 1e-6f && fabsf(x[2 * i + 1] - right) < 1e-6f);
+	}
+	session_free(&a); session_free(&b);
+	puts("OK: stereo sources, independent mono FX, coupled stereo FX/master, balance and sample-accurate automation");
+}
+static void test_channel_transitions(void) {
+	for (int kind = 0; kind < 3; ++kind) {
+		Session s = {0}; float out[18];
+		int source = mock(&s, kind == 2 ? 3 : 0, 1), fx[2], count = 0;
+		if (kind == 2) fx[count++] = mock(&s, 6, 1); // Explicit stereo-to-mono DSP.
+		fx[count++] = mock(&s, kind == 0 ? 4 : 5, 1);
+		assert(session_track(&s, source, fx, count, 0) >= 0);
+		assert(!session_end(&s, 9) && !session_render(&s, out, 9));
+		for (int i = 0; i < 9; ++i) {
+			assert(out[2 * i] == (kind == 2 ? .25f : 1));
+			assert(out[2 * i + 1] == (kind == 0 ? 1 : kind == 1 ? -1 : -.25f));
+		}
+		session_free(&s);
+	}
+	Session s = {0}; float out[2];
+	int source = mock(&s, 3, 1), fx[] = {session_plugin(&s, "plugins/shape/build/plugin.so"), mock(&s, 5, 1)};
+	assert(session_track(&s, source, fx, 2, 0) < 0); // No implicit stereo fold-down before a mono-to-stereo effect.
+	assert(s.ntracks == 0 && !s.nodes[fx[0]].dsp[1].instance && !s.nodes[source].attached);
+	assert(session_track(&s, source, fx, 1, 0) >= 0);
+	session_free(&s);
+	source = mock(&s, 3, 1); int downmix = mock(&s, 6, 1);
+	assert(session_track(&s, source, NULL, 0, 0) >= 0 && session_track(&s, -1, &downmix, 1, 1) >= 0);
+	assert(!session_end(&s, 1) && !session_render(&s, out, 1));
+	assert(out[0] == .25f && out[1] == .25f);
+	session_free(&s);
+	puts("OK: mono/stereo transitions, native mono-to-stereo DSP, explicit downmix and invalid-chain rollback");
+}
+static void test_stereo_wav(void) {
+	Session s = {0}; Output cfg = {0};
+	int source = mock(&s, 3, .25f);
+	assert(session_track(&s, source, NULL, 0, 0) >= 0);
+	assert(!session_end(&s, 1025) && !write_score(&s, &cfg, "build/stereo-test.wav"));
+	FILE *f = fopen("build/stereo-test.wav", "rb"); unsigned char header[44];
+	assert(f && fread(header, 1, 44, f) == 44 && header[22] == 2);
+	for (int i = 0; i < 1025; ++i) {
+		float pair[2]; assert(fread(pair, sizeof(pair), 1, f) == 1);
+		assert(pair[0] == .25f && pair[1] == -.125f);
+	}
+	assert(fgetc(f) == EOF); fclose(f); session_free(&s);
+	puts("OK: stereo WAV preserves distinct left and right channels at unity center balance");
+}
 static void test_wav(float value, float gain, Output cfg, float expected) {
 	Session s = {0};
 	int source = mock(&s, 0, value), tr = session_track(&s, source, NULL, 0, 0);
@@ -104,11 +200,11 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 static void test_plugins(void) {
 	Engine echo = {0}; float input[1025] = {1}, out[1025]; input[200] = .25f;
 	assert(!open_engine(&echo, "plugins/echo/build/plugin.so"));
-	echo.module->set_parameter(echo.instance, 0, 1); // 1 ms -> 44 samples.
-	echo.module->set_parameter(echo.instance, 3, 1);
-	echo.module->set_parameter(echo.instance, 4, 0);
-	echo.module->set_parameter(echo.instance, 5, 0);
-	echo.module->set_parameter(echo.instance, 6, 0);
+	echo.module->api->set_parameter(echo.instance, 0, 1); // 1 ms -> 44 samples.
+	echo.module->api->set_parameter(echo.instance, 3, 1);
+	echo.module->api->set_parameter(echo.instance, 4, 0);
+	echo.module->api->set_parameter(echo.instance, 5, 0);
+	echo.module->api->set_parameter(echo.instance, 6, 0);
 	const Event change = {100, 0, 2, {0}, 0};
 	echo.events = &change; echo.count = 1;
 	render(&echo, out, input, 1025);
@@ -125,15 +221,16 @@ static void test_plugins(void) {
 	}
 	assert(!memcmp(x, y, sizeof(x)));
 	for (int i = 0; i < 100; ++i) {
-		const uint8_t hit[] = {0x90, i % 7, 127}; a.module->midi_msg_in(a.instance, 0, hit);
+		const uint8_t hit[] = {0x90, i % 7, 127}; a.module->api->midi_msg_in(a.instance, a.module->midi, hit);
 	}
-	a.module->set_parameter(a.instance, 0, 0); render(&a, x, NULL, 2000);
+	a.module->api->set_parameter(a.instance, 0, 0); render(&a, x, NULL, 2000);
 	for (int i = 0; i < 2000; ++i) assert(x[i] == 0 && isfinite(y[i]));
 	close_engine(&a); close_engine(&b);
 	puts("OK: echo timing/automation, deterministic percussion, voice bounds, live drum gain");
 }
 int main(void) {
 	test_pipeline(); test_master(); test_plugins();
+	test_stereo_pipeline(); test_channel_transitions(); test_stereo_wav();
 	test_wav(.25f, 1, (Output){0}, .25f);
 	test_wav(.25f, .5f, (Output){0}, .125f);
 	test_wav(2, 1, (Output){0}, 2); // Float WAV has no hidden clipping.

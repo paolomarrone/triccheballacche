@@ -1,50 +1,61 @@
-#ifndef TIBIA_H
-#define TIBIA_H
-
-#include <stdint.h>
+/* Tibia shared ABI v1. GPL-3.0-or-later. */
+#ifndef TIBIA_SHARED_H
+#define TIBIA_SHARED_H
 #include <stddef.h>
+#include <stdint.h>
 
-// Optional metadata extension used by this host. Audio ports are mono.
+#define TIBIA_ABI_VERSION 1
+enum { TIBIA_PARAM_OUTPUT = 1, TIBIA_PARAM_INTEGER = 2, TIBIA_PARAM_TOGGLED = 4,
+	TIBIA_PARAM_LOG = 8, TIBIA_PARAM_BYPASS = 16, TIBIA_PARAM_LATENCY = 32, TIBIA_PARAM_LIST = 64 };
+enum { TIBIA_BUS_OUTPUT = 1, TIBIA_BUS_MIDI = 2, TIBIA_BUS_OPTIONAL = 4,
+	TIBIA_BUS_CV = 8, TIBIA_BUS_SIDECHAIN = 16 };
 typedef struct {
-	const char *name, *unit;
+	const char *id, *name, *unit;
 	float minimum, maximum, default_value;
-	int integer;
+	uint32_t flags;
 } tibia_parameter;
 typedef struct {
-	int input, midi; // input: 0 generator, 1 effect
+	const char *id, *name;
+	uint32_t flags, channels; /* MIDI: channels = 0; audio: 1 or 2. */
+} tibia_bus;
+typedef struct {
+	size_t bus_count;
+	const tibia_bus *buses;
 	size_t count;
 	const tibia_parameter *parameters;
+	const char *json; /* Complete {"product": ...} descriptor, UTF-8. */
 } tibia_info;
-const tibia_info *tibia_get_info(void);
-
 typedef struct {
-	void *       handle;
-	const char * format;
-	const char * (*get_bindir)(void *handle);
-	const char * (*get_datadir)(void *handle);
+	void *handle;
+	const char *(*get_bindir)(void *handle);
+	const char *(*get_datadir)(void *handle);
 } tibia_callbacks;
-
 typedef struct {
-	void * handle;
-	void (*lock)(void *handle);
-	void (*unlock)(void *handle);
-	int  (*write)(void *handle, const char *data, size_t length);
-	void (*set_parameter)(void *handle, size_t index, float value);
-} tibia_state_callbacks;
+	tibia_info info;
+	void *(*create)(float sample_rate, const tibia_callbacks *callbacks);
+	void (*destroy)(void *instance);
+	void (*reset)(void *instance);
+	void (*process)(void *instance, const float **inputs, float **outputs, size_t frames);
+	void (*set_parameter)(void *instance, size_t index, float value); /* NULL without inputs. */
+	float (*get_parameter)(void *instance, size_t index); /* NULL without outputs. */
+	void (*midi_msg_in)(void *instance, size_t bus, const uint8_t *data); /* Optional. */
+} tibia_api;
 
-
-void*  tibia_new(             void);
-void   tibia_init(            void *instance, const tibia_callbacks *cbs);
-void   tibia_fini(            void *instance);
-void   tibia_set_sample_rate( void *instance, float sample_rate);
-size_t tibia_mem_req(         void *instance);
-void   tibia_mem_set(         void *instance, void *mem);
-void   tibia_reset(           void *instance);
-void   tibia_set_parameter(   void *instance, size_t index, float value);
-float  tibia_get_parameter(   void *instance, size_t index);
-void   tibia_process(         void *instance, const float **inputs, float **outputs, size_t n_samples);
-void   tibia_midi_msg_in(     void *instance, size_t index, const uint8_t * data);
-int    tibia_state_save(      void *instance, const tibia_state_callbacks *cbs, float last_sample_rate);
-int    tibia_state_load(const tibia_state_callbacks *cbs, float cur_sample_rate, const char *data, size_t length);
-
+/* All pointers are owned by the library; keep it loaded until all instances die.
+ * create sets defaults, sample rate, memory and resets; NULL means failure.
+ * reset preserves parameters. Sample rate is fixed for the instance lifetime.
+ * Parameter and MIDI bus indices are the original product.json array indices.
+ * Audio channels are flattened in JSON bus order, separately for each direction.
+ * Values use product units, not normalized 0..1. Only output parameters are read.
+ * MIDI input points to three bytes (pad unused data bytes with zero).
+ * Calls on an instance must be serialized. No allocation in process or setters.
+ * Unsupported ABI versions return NULL; no legacy symbol fallback.
+ */
+#ifdef __cplusplus
+extern "C" {
+#endif
+const tibia_api *tibia_get_api(uint32_t version);
+#ifdef __cplusplus
+}
+#endif
 #endif
