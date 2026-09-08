@@ -1,5 +1,7 @@
 # Il polpo a sette gomiti — 30 seconds for an imaginary prog band.
 # Times are seconds; rhythm and harmony are ordinary Janet functions.
+(import ../../lib/music)
+
 (def patches [ # wave, cutoff, resonance, attack, decay, sustain, release, glide
   [2 700 12 2 95 65 35 0]
   [1 3800 8 2 90 30 24 0] [1 3500 10 2 100 32 28 0]
@@ -45,23 +47,23 @@
   # This synth uses parameter 0 for volume, not MIDI velocity.
   (param tr t :volume volume)
   (daw/note tr t duration pitch))
-(defn scale [degree]
-  (+ ([0 2 3 5 7 8 11] (% degree 7)) (* 12 (math/floor (/ degree 7)))))
+(def scale (partial music/degree 0 [0 2 3 5 7 8 11]))
 (defn riff [t duration pitch volume]
   (note left t duration pitch volume)
   (note right (+ t 0.004) (* duration 0.97) (+ pitch 7) (- volume 3)))
 (defn chord [t duration root third seventh volume]
-  (note key1 t duration (+ root 24) volume)
-  (note key2 (+ t 0.006) duration (+ root 24 third) (- volume 2))
-  (note key3 (+ t 0.011) duration (+ root 24 seventh) (- volume 4)))
+  (def [a b c] (music/chord (+ root 24) [0 third seventh]))
+  (note key1 t duration a volume)
+  (note key2 (+ t 0.006) duration b (- volume 2))
+  (note key3 (+ t 0.011) duration c (- volume 4)))
 
 (def hook [0 0 7 1 0 10 4])
 (def spiral [0 2 4 6 5 3 1 7 4 8 6 3 9 5])
 (defn section [start part roots eighths bpm]
-  (def step (/ 30 bpm))
+  (def step (music/seconds bpm 0.5))
   (def bars (length roots))
   (for b 0 bars
-    (def bar (+ start (* b eighths step)))
+    (def bar (+ start (music/bars bpm b eighths 8)))
     (def root (roots b))
     (when (or (= b 0) (and (= part 3) (= b 4))) (drum :crash bar 0.33))
     (chord bar (* step (if (= part 2) 8.8 1.35)) root
@@ -108,7 +110,7 @@
       (for j 0 4
         (drum (if (< j 2) :tom-high :tom-low) (+ bar (* (+ (- eighths 1) (* j 0.25)) step))
           (+ 0.45 (* j 0.06))))))
-  (+ start (* bars eighths step)))
+  (+ start (music/bars bpm bars eighths 8)))
 
 (var t (section 0 0 [40 40 41 40] 7 154))
 (set t (section t 1 [40 43 42 35] 9 166))

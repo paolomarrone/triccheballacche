@@ -1,3 +1,6 @@
+(import ./music_test)
+(import ./lib/music)
+
 (defn rejects [f]
   (assert (try (do (f) false) ([_] true)) "expected an API error"))
 (def path "examples/synth_mono/plugin.so")
@@ -49,7 +52,8 @@
   (fn [] (daw/end 61 {:normalize 2}))] (rejects f))
 (daw/note synth 0 60 60)
 # One minute at 50 Hz, beyond the former 2048-event limit.
-(for i 0 3001 (daw/param synth (/ i 50) :vcf_cutoff (+ 500 i)))
+(music/curve 0 60 3000 |(music/lerp 500 3500 $)
+  (fn [t value] (daw/param synth t :vcf_cutoff value)))
 (daw/param filter 1 :cutoff 4000)
 (daw/param track 2 :gain 0.5)
 (daw/param track 3 :pan 0.75)
