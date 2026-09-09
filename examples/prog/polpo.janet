@@ -19,13 +19,13 @@
     :vco2_level (if (= tr 0) 65 (if keys 45 52)) :vcf_contour (if (= tr 0) 55 22)
     :vcf_decay 105 :vcf_sustain 15})
   (for i 0 8 (put params (ids i) ((patches tr) i)))
-  (def synth (daw/plugin "plugins/synth_mono/build/plugin.so" params))
+  (def synth (daw/plugin "plugins/synth_mono/build/plugin.perone" params))
   (def effects @[])
-  (when (= tr 0) (array/push effects (daw/plugin "plugins/shape/build/plugin.so" {:drive 2 :level 0.7})))
-  (when (<= 1 tr 2) (array/push effects (daw/plugin "plugins/shape/build/plugin.so"
+  (when (= tr 0) (array/push effects (daw/plugin "plugins/shape/build/plugin.perone" {:drive 2 :level 0.7})))
+  (when (<= 1 tr 2) (array/push effects (daw/plugin "plugins/shape/build/plugin.perone"
     {:drive 8 :dc 0.013 :lowpass 0.34})))
   (def wet (if (>= tr 3) 0.3 0.045))
-  (array/push effects (daw/plugin "plugins/echo/build/plugin.so"
+  (array/push effects (daw/plugin "plugins/echo/build/plugin.perone"
     {:level1 wet :level2 (/ wet 2) :level3 (/ wet 3)}))
   (daw/track synth {:pan (pans tr) :gain (gains tr) :effects effects})
   (array/push band synth))
@@ -34,15 +34,15 @@
 (def drum-notes {:kick 0 :snare 1 :hat 2 :open-hat 3 :crash 4 :tom-high 5 :tom-low 6})
 (def drum-band @[])
 (for i 0 7
-  (def source (daw/plugin "plugins/drums/build/plugin.so" {:seed (+ 7368556 i)}))
-  (def effects (if (= i 0) [] [(daw/plugin "plugins/echo/build/plugin.so"
+  (def source (daw/plugin "plugins/drums/build/plugin.perone" {:seed (+ 7368556 i)}))
+  (def effects (if (= i 0) [] [(daw/plugin "plugins/echo/build/plugin.perone"
     {:level1 0.07 :level2 0.035 :level3 (/ 0.07 3)})]))
   (daw/track source {:pan ([0 -0.08 0.35 0.4 -0.55 -0.4 0.45] i) :effects effects})
   (array/push drum-band source))
 (defn drum [kind t strength]
   (def pitch (drum-notes kind))
   (daw/note (drum-band pitch) t 0.001 pitch (math/floor (+ 0.5 (* strength 127)))))
-(def master (daw/master {:effects [(daw/plugin "plugins/shape/build/plugin.so" {:drive 1.35 :dc 0.002})]}))
+(def master (daw/master {:effects [(daw/plugin "plugins/shape/build/plugin.perone" {:drive 1.35 :dc 0.002})]}))
 (defn note [tr t duration pitch volume]
   # This synth uses parameter 0 for volume, not MIDI velocity.
   (param tr t :volume volume)

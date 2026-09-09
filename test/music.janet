@@ -1,5 +1,5 @@
 # This module runs with only Janet's core environment: no daw/* bindings or plugins.
-(import ./lib/music)
+(import ../lib/music)
 
 (assert (= (music/seconds 120 3) 1.5))
 (assert (= (music/seconds 60 -0.5) -0.5))

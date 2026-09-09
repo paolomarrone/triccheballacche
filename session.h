@@ -2,10 +2,11 @@
 #define SESSION_H
 #include "engine.h"
 
-enum { MAX_NODES = 128, MAX_TRACKS = 32, MAX_FX = 8, MAX_PARAMS = 64 };
+enum { MAX_NODES = 128, MAX_TRACKS = 32, MAX_FX = 8 };
 typedef struct {
 	Engine dsp[2]; // A mono effect on stereo audio uses independent L/R instances.
-	const tibia_info *info;
+	int nparams;
+	uint64_t outputs;
 	char *path;
 	Event *events;
 	size_t count, capacity, next;
@@ -21,7 +22,7 @@ typedef struct {
 	const char *error;
 } Session;
 
-int session_plugin(Session *s, const char *path);
+int session_plugin(Session *s, const char *path, const PluginConfig *config);
 int session_set(Session *s, int id, int param, float value);
 int session_track(Session *s, int source, const int *effects, int count, int master);
 int session_param(Session *s, int id, size_t time, int param, float value);

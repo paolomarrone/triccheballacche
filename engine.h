@@ -11,14 +11,15 @@ typedef struct {
 	size_t order; // Stable tie breaker for generated scores.
 } Event;
 typedef struct {
-	TibiaModule *module;
-	void *instance;
+	Module *module;
+	void *instance, *memory;
+	int initialized;
 	const Event *events;
 	size_t count, next, time;
 } Engine;
 
 void close_engine(Engine *e);
-int open_engine(Engine *e, const char *path);
+int open_engine(Engine *e, const char *path, const PluginConfig *config);
 // Interleaved buffers sized by module input/output channels; NULL input is silence.
 void render(Engine *e, float *out, const float *in, size_t frames);
 #endif

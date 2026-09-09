@@ -1,11 +1,23 @@
-(import ./music_test)
-(import ./lib/music)
+(import ./music :as music-test)
+(import ../lib/music)
 
 (defn rejects [f]
   (assert (try (do (f) false) ([_] true)) "expected an API error"))
-(def path "plugins/synth_mono/build/plugin.so")
+# Metadata checks run before any native instance is allocated.
+(def metadata-param {:id "test" :direction "input" :minimum 0 :maximum 1 :defaultValue 0.5})
+(each parameters [[metadata-param metadata-param]
+                  [(merge metadata-param {:defaultValue 2})]
+                  [(merge metadata-param {:integer true})]
+                  [(merge metadata-param {:direction "wrong"})]
+                  [(merge metadata-param {:id ""})]
+                  (map |(merge metadata-param {:id (string $)}) (range 65))]
+  (rejects (fn [] (perone/parameters parameters))))
+(def bypass ((perone/parameters [{:id "bypass" :direction "input" :isBypass true}]) 0))
+(assert (= [(bypass :min) (bypass :max) (bypass :default) (bypass :integer)] [0 1 0 true]))
+(rejects (fn [] (perone/value bypass 0.5)))
+(def path "plugins/synth_mono/build/plugin.perone")
 (def synth (daw/plugin path {:vcf_cutoff 500}))
-(def filter (daw/plugin "plugins/tibia_test/build/plugin.so"))
+(def filter (daw/plugin "plugins/tibia_test/build/plugin.perone"))
 (rejects (fn [] (daw/end 61))) # Unconnected plugins are never silently discarded.
 (def track (daw/track synth {:effects [filter]}))
 (def master (daw/master))
@@ -18,10 +30,15 @@
 (assert (= (((daw/info synth) 38) :direction) :output))
 (assert (= (((daw/info synth) 38) :name) :level))
 (assert (= (cutoff :map) :logarithmic))
+(assert (= (get-in (daw/product synth) [:parameters 26 :id]) "vcf_cutoff"))
+(assert (= ((daw/product synth) :bundleName) "bw_example_synth_mono"))
+(assert (find |($ :scale-points) (daw/info synth)))
+(rejects (fn [] (put cutoff :max 999999))) # Metadata cannot mutate validation rules.
+(rejects (fn [] (put (daw/product synth) :parameters [])))
 (rejects (fn [] (daw/param synth 0 :level -12)))
 (rejects (fn [] (daw/plugin path {:level -12})))
 (each f [
-  (fn [] (daw/plugin))
+  (fn [] (apply daw/plugin []))
   (fn [] (daw/plugin "build/nonexistent.so"))
   (fn [] (daw/plugin path {:typo 1}))
   (fn [] (daw/plugin path {:vca_attack -1}))

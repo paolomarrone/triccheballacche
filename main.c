@@ -1,5 +1,5 @@
 #include "audio.h"
-#include "engine.h"
+#include "script.h"
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -15,7 +15,7 @@ static void callback(ma_device *device, void *out, const void *in, ma_uint32 n) 
 int main(int argc, char **argv) {
 	if (argc < 2 || argc > 4 || (argc == 3 && strcmp(argv[2], "--input")) ||
 	    (argc == 4 && strcmp(argv[2], "--wav"))) {
-		fprintf(stderr, "Usage: %s plugin.so [--input | --wav output.wav]\n", argv[0]);
+		fprintf(stderr, "Usage: %s plugin.perone [--input | --wav output.wav]\n", argv[0]);
 		return 1;
 	}
 	const Event demo[] = {
@@ -30,11 +30,11 @@ int main(int argc, char **argv) {
 	};
 	int result = 1, capture = argc == 3;
 	Engine e = {.events = demo, .count = capture ? 0 : sizeof(demo) / sizeof(*demo)};
-	if (open_engine(&e, argv[1])) { fputs("Plugin initialization failed\n", stderr); goto done; }
-	if (capture && !e.module->input) { fputs("Plugin has no audio input\n", stderr); goto done; }
+	if (open_bundle(&e, argv[1])) { fputs("Plugin initialization failed\n", stderr); goto done; }
+	if (capture && !e.module->config.input) { fputs("Plugin has no audio input\n", stderr); goto done; }
 	if (argc == 4) {
 		ma_encoder encoder;
-		ma_encoder_config cfg = ma_encoder_config_init(ma_encoding_format_wav, ma_format_f32, e.module->output, SAMPLE_RATE);
+		ma_encoder_config cfg = ma_encoder_config_init(ma_encoding_format_wav, ma_format_f32, e.module->config.output, SAMPLE_RATE);
 		if (ma_encoder_init_file(argv[3], &cfg, &encoder) != MA_SUCCESS) goto done;
 		result = 0;
 		for (size_t left = 8 * SAMPLE_RATE; left;) {
@@ -53,8 +53,8 @@ int main(int argc, char **argv) {
 	ma_device device;
 	ma_device_config cfg = ma_device_config_init(capture ? ma_device_type_duplex : ma_device_type_playback);
 	cfg.playback.format = cfg.capture.format = ma_format_f32;
-	cfg.playback.channels = e.module->output;
-	cfg.capture.channels = e.module->input;
+	cfg.playback.channels = e.module->config.output;
+	cfg.capture.channels = e.module->config.input;
 	cfg.sampleRate = SAMPLE_RATE;
 	cfg.dataCallback = callback;
 	cfg.pUserData = &e;

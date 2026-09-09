@@ -1,7 +1,7 @@
 # Seven eighth notes: change this file and render again, without recompiling.
 (import ../lib/music)
 
-(def bass (daw/plugin "plugins/synth_mono/build/plugin.so"
+(def bass (daw/plugin "plugins/synth_mono/build/plugin.perone"
   {:vco1_wave 2 :vcf_cutoff 900 :vca_attack 2 :vca_release 80}))
 (daw/track bass)
 (def beat (music/seconds 154 1))

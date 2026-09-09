@@ -1,5 +1,5 @@
 #define main synth_main
-#include "termux_synth.c"
+#include "../examples/termux_synth/src/termux_synth.c"
 #undef main
 #include <assert.h>
 

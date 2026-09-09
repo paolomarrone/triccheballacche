@@ -4,32 +4,24 @@
 #include <string.h>
 
 static int fail(Session *s, const char *message) { s->error = message; return -1; }
-static const tibia_parameter mixer_params[] = {
-	{"gain", "Gain", "linear", 0, 4, 1, 0}, {"pan", "Pan", "", -1, 1, 0, 0}
-};
-static const tibia_info mixer_info = {0, NULL, 2, mixer_params, NULL}, master_info = {0, NULL, 1, mixer_params, NULL};
 static int valid(Session *s, int id, int param, float value) {
 	if (s->sealed || id < 0 || id >= s->nnodes) return fail(s, "sealed session or invalid handle");
-	const tibia_info *info = s->nodes[id].info;
-	if (param < 0 || (size_t)param >= info->count) return fail(s, "unknown parameter");
-	const tibia_parameter *p = info->parameters + param;
-	if ((p->flags & TIBIA_PARAM_OUTPUT) || !isfinite(value) || value < p->minimum || value > p->maximum || ((p->flags & TIBIA_PARAM_INTEGER) && value != floorf(value)))
+	const Node *n = s->nodes + id;
+	if (param < 0 || param >= n->nparams || (n->outputs & (UINT64_C(1) << param))) return fail(s, "unknown or output parameter");
+	if (!isfinite(value) || (!n->path && (value < (param ? -1 : 0) || value > (param ? 1 : 4))))
 		return fail(s, "parameter outside range");
 	return 0;
 }
-int session_plugin(Session *s, const char *path) {
+int session_plugin(Session *s, const char *path, const PluginConfig *config) {
 	if (s->sealed || s->nnodes == MAX_NODES) return fail(s, "sealed session or node limit reached");
 	Node *n = s->nodes + s->nnodes;
 	*n = (Node){0};
-	if (open_engine(n->dsp, path)) { close_engine(n->dsp); return fail(s, "cannot open plugin"); }
-	n->info = &n->dsp[0].module->api->info;
-	if (n->info->count > MAX_PARAMS) {
-		close_engine(n->dsp); return fail(s, "too many plugin parameters");
-	}
+	if (open_engine(n->dsp, path, config)) { close_engine(n->dsp); return fail(s, "cannot open plugin"); }
+	n->nparams = config->nparams; n->outputs = config->outputs;
 	n->path = malloc(strlen(path) + 1);
 	if (!n->path) { close_engine(n->dsp); return fail(s, "out of memory"); }
 	strcpy(n->path, path);
-	for (size_t i = 0; i < n->info->count; ++i) n->initial[i] = n->values[i] = n->info->parameters[i].default_value;
+	for (int i = 0; i < n->nparams; ++i) n->initial[i] = n->values[i] = config->defaults[i];
 	return s->nnodes++;
 }
 int session_set(Session *s, int id, int param, float value) {
@@ -46,12 +38,12 @@ int session_track(Session *s, int source, const int *effects, int count, int mas
 	for (int i = 0; i < total; ++i) {
 		int id = ids[i];
 		if (id < 0 || id >= s->nnodes || !s->nodes[id].path || s->nodes[id].attached ||
-			!!s->nodes[id].dsp[0].module->input != (master || i > 0)) return fail(s, "expected unused source/effect plugin");
+			!!s->nodes[id].dsp[0].module->config.input != (master || i > 0)) return fail(s, "expected unused source/effect plugin");
 		for (int j = 0; j < i; ++j) if (ids[j] == id) return fail(s, "plugin already in this chain");
 	}
-	int channels = master ? 2 : s->nodes[source].dsp[0].module->output, duplicate[MAX_FX];
+	int channels = master ? 2 : s->nodes[source].dsp[0].module->config.output, duplicate[MAX_FX];
 	for (int i = 0; i < count; ++i) {
-		const TibiaModule *m = s->nodes[effects[i]].dsp[0].module;
+		const PluginConfig *m = &s->nodes[effects[i]].dsp[0].module->config;
 		if (channels == 2 && m->input == 1 && m->output == 2)
 			return fail(s, "a mono-to-stereo effect requires a mono signal");
 		duplicate[i] = channels == 2 && m->input == 1;
@@ -59,7 +51,7 @@ int session_track(Session *s, int source, const int *effects, int count, int mas
 	}
 	for (int i = 0; i < count; ++i) if (duplicate[i]) {
 		Node *n = s->nodes + effects[i];
-		if (open_engine(n->dsp + 1, n->path)) {
+		if (open_engine(n->dsp + 1, n->path, &n->dsp[0].module->config)) {
 			for (int j = 0; j <= i; ++j) close_engine(s->nodes[effects[j]].dsp + 1);
 			return fail(s, "cannot create second mono effect instance");
 		}
@@ -69,7 +61,7 @@ int session_track(Session *s, int source, const int *effects, int count, int mas
 	for (int i = 0; i < count; ++i) t->effects[i] = effects[i];
 	for (int i = 0; i < total; ++i) s->nodes[ids[i]].attached = 1;
 	Node *m = s->nodes + s->nnodes;
-	m->info = master ? &master_info : &mixer_info;
+	m->nparams = master ? 1 : 2;
 	m->attached = 1; m->initial[0] = m->values[0] = 1;
 	if (master) s->has_master = 1;
 	return s->nnodes++;
@@ -97,7 +89,7 @@ int session_note(Session *s, int id, size_t time, size_t end, int pitch, int vel
 	if (s->sealed || id < 0 || id >= s->nnodes || end <= time || pitch < 0 || pitch > 127 || velocity < 1 || velocity > 127)
 		return fail(s, "invalid note or sealed session");
 	Node *n = s->nodes + id;
-	if (!n->path || n->dsp[0].module->midi < 0 || !n->dsp[0].module->api->midi_msg_in) return fail(s, "node has no MIDI input");
+	if (!n->path || n->dsp[0].module->config.midi < 0 || !n->dsp[0].module->api->midi_msg_in) return fail(s, "node has no MIDI input");
 	if (reserve(s, n, 2)) return -1;
 	n->events[n->count] = (Event){time, -1, 0, {0x90, pitch, velocity}, n->count}; ++n->count;
 	n->events[n->count] = (Event){end, -1, 0, {0x80, pitch, 0}, n->count}; ++n->count;
@@ -126,8 +118,8 @@ int session_end(Session *s, size_t frames) {
 		if (n->count) qsort(n->events, n->count, sizeof(Event), compare);
 		for (int c = 0; c < 2 && n->dsp[c].instance; ++c) {
 			Engine *e = n->dsp + c;
-			for (size_t j = 0; j < n->info->count; ++j)
-				if (!(n->info->parameters[j].flags & TIBIA_PARAM_OUTPUT))
+			for (int j = 0; j < n->nparams; ++j)
+				if (!(n->outputs & (UINT64_C(1) << j)))
 					e->module->api->set_parameter(e->instance, j, n->initial[j]);
 			e->module->api->reset(e->instance); e->events = n->events; e->count = n->count;
 		}
@@ -145,7 +137,7 @@ static int chain(Session *s, const Track *t, float *audio, int channels, size_t 
 	float tmp[BLOCK * 2], mono[BLOCK];
 	for (int j = 0; j < t->count; ++j) {
 		Node *fx = s->nodes + t->effects[j];
-		const TibiaModule *m = fx->dsp[0].module;
+		const PluginConfig *m = &fx->dsp[0].module->config;
 		if (fx->dsp[1].instance) {
 			for (int c = 0; c < 2; ++c) {
 				for (size_t i = 0; i < n; ++i) mono[i] = audio[2 * i + c];
@@ -172,7 +164,7 @@ int session_render(Session *s, float *out, size_t frames) {
 			float audio[BLOCK * 2];
 			Engine *source = s->nodes[t->source].dsp;
 			render(source, audio, NULL, n);
-			int channels = chain(s, t, audio, source->module->output, n);
+			int channels = chain(s, t, audio, source->module->config.output, n);
 			for (size_t i = 0; i < n; ++i) {
 				controls(m, s->time + i);
 				float pan = m->values[1], gain = m->values[0];

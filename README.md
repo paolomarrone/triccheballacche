@@ -1,7 +1,7 @@
 # triccheballacche
 
 Una base minimale per una DAW scriptabile: partiture in Janet, audio in C.
-Plugin Tibia mono e stereo a 44,1 kHz, tracce con effetti in serie e mix stereo.
+Plugin Perone mono e stereo a 44,1 kHz, tracce con effetti in serie e mix stereo.
 
 ```sh
 make                    # Compila solo host e renderer Janet.
@@ -10,44 +10,73 @@ make test
 make prog
 ./build/daw examples/hello.janet build/hello.wav
 ./build/daw examples/automation.janet build/automation.wav
-./build/host plugins/synth_mono/build/plugin.so --wav build/demo.wav
-./build/host plugins/tibia_test/build/plugin.so --input
+./build/host plugins/synth_mono/build/plugin.perone --wav build/demo.wav
+./build/host plugins/tibia_test/build/plugin.perone --input
 make keys
 ```
 
 Servono compilatore C, make, git e curl. Su Termux:
 `pkg install clang make git curl libandroid-spawn`.
-Il build dell'host scarica in `.deps/` Janet v1.41.2 e miniaudio 0.11.25
-(se non trova `../miniaudio.h`). Janet è collegato staticamente: non occorre installare
-Janet o jpm. I build successivi sono offline.
+Il build dell'host scarica in `.deps/` Janet v1.41.2, miniaudio 0.11.25
+(se non trova `../miniaudio.h`) e il solo [modulo JSON di Spork](https://github.com/janet-lang/spork/blob/0667f96b74de52747ffe5e19e185563ebf53816b/src/json.c),
+a una revisione fissata nel Makefile. Janet e JSON sono collegati staticamente;
+le librerie Janet dell'host sono incorporate nei binari. Non occorre installare
+Janet, Spork o jpm. I build successivi sono offline.
 
 ## Build separati: host e plugin
 
-Il Makefile principale produce `build/host` e `build/daw`. Triccheballacche carica
-plugin già compilati tramite il percorso del `.so`; codice DSP, dipendenze e
-descrittori JSON appartengono ai progetti dei plugin.
+Il Makefile principale produce `build/host` e `build/daw`. `build/host` e
+`daw/plugin` ricevono il percorso di una directory `.perone` già compilata:
 
-I progetti di esempio sono in `plugins/<nome>/`, ciascuno con il proprio Makefile:
-`make -C plugins/synth_mono` produce `plugins/synth_mono/build/plugin.so`.
-`make -C plugins` compila tutta la raccolta, indipendentemente dal build dell'host.
-La generazione dei plugin richiede Node.js, `dot` e `../tibia` con i nuovi target
-`shared`/`shared-make`. Synth e filtro `fx_svf` compilano gli esempi originali di
-`../brickworks`, usando i loro JSON. Le directory sono configurabili con `TIBIA`
-e `BRICKWORKS`; nessuna sorgente Brickworks viene copiata o modificata qui.
-Il [README dei plugin](plugins/README.md) descrive build, metadati e dipendenze.
-Le partiture di un checkout precedente devono aggiornare i percorsi
-`examples/<nome>/plugin.so` in `plugins/<nome>/build/plugin.so`.
+```text
+nome.perone/
+  product.json
+  x86_64-linux/
+    <bundleName>.so
+```
 
-`make test` e `make prog` richiedono i `.so` di esempio già presenti e segnalano
-come compilarli se mancano. Nessun target dell'host compila automaticamente plugin.
+Janet legge il JSON, il loader C carica soltanto la libreria della piattaforma
+corrente tramite `perone_get_api(PERONE_ABI_VERSION)`. Il nome del binario viene da
+`product.bundleName`; la directory del bundle può essere rinominata o spostata.
+`PERONE_PLATFORM` nel Makefile permette di selezionare la piattaforma di destinazione
+per la compilazione incrociata, come in Tibia. Il default è `uname -m` più
+`uname -s` in minuscolo, per esempio `x86_64-linux` o `aarch64-linux`.
+
+I progetti di esempio in `plugins/<nome>/` hanno build separati:
+`make -C plugins/synth_mono` produce `plugins/synth_mono/build/plugin.perone`.
+`make -C plugins` compila tutta la raccolta. Servono Node.js, `dot` e `../tibia`
+con i target `perone`/`perone-make`. Synth e filtro `fx_svf` usano gli esempi
+originali di `../brickworks`; i percorsi sono configurabili con `TIBIA` e
+`BRICKWORKS`. Il [README dei plugin](plugins/README.md) descrive il build.
+Sorgenti DSP e generatore non servono per caricare un bundle già compilato.
+Le vecchie partiture devono sostituire i percorsi `build/plugin.so` con
+`build/plugin.perone` dopo aver ricompilato i plugin.
+
+Gli esempi già compilati in Brickworks sono utilizzabili direttamente:
+
+```sh
+./build/host ../brickworks/build/perone/synthpp_mono/build/bw_example_synthpp_mono.perone --wav build/synth.wav
+./build/daw examples/brickworks.janet build/brickworks.wav
+make test-brickworks    # Carica e processa tutti i bundle presenti, senza ricompilarli.
+```
+
+`BRICKWORKS_PERONE` configura il percorso della raccolta per `make test-brickworks`;
+l'esempio Janet legge la variabile d'ambiente omonima. Il percorso predefinito è
+`../brickworks/build/perone`. La partitura dimostra synth polifonico, compressore,
+pan mono→stereo e riverbero, usando anche gli esempi C++.
+
+`make test` e `make prog` richiedono i bundle di esempio già presenti e segnalano
+come compilarli se mancano. Il build dell'host non compila plugin di produzione;
+`make test` compila una piccola libreria di prova locale per verificare il ciclo di vita Perone.
 `make clean` pulisce i programmi dell'host; `make -C plugins clean` pulisce i plugin.
 `make keys` compila e avvia il synth da terminale autonomo in `examples/termux_synth/`.
 
 ```text
-*.c, *.h           host, sessione, loader e test
-tibia/tibia.h      copia dell’ABI shared definita in Tibia
+*.c, *.h           host, sessione e loader
+perone.h           copia dell’ABI Perone definita in Tibia
 plugins/<nome>/    sorgenti, metadati e build autonomo del plugin
-lib/               funzioni musicali Janet
+lib/               metadati Perone, API della DAW e funzioni musicali Janet
+test/              test C e Janet, fixture del plugin Perone
 examples/          partiture e demo da terminale
 build/             binari dell'host e render
 ```
@@ -55,8 +84,8 @@ build/             binari dell'host e render
 ## API: plugin e tracce sono distinti
 
 ```janet
-(def synth (daw/plugin "plugins/synth_mono/build/plugin.so" {:vcf_cutoff 900}))
-(def filter (daw/plugin "plugins/tibia_test/build/plugin.so" {:cutoff 2000}))
+(def synth (daw/plugin "plugins/synth_mono/build/plugin.perone" {:vcf_cutoff 900}))
+(def filter (daw/plugin "plugins/tibia_test/build/plugin.perone" {:cutoff 2000}))
 (def track (daw/track synth {:effects [filter] :gain 0.5 :pan -0.2}))
 
 (daw/note synth 0 4 60)
@@ -77,7 +106,8 @@ Tempo, battute, accordi, rampe e pattern sono funzioni della libreria Janet `lib
 | `daw/master &opt options` | Configura il master opzionale, una volta sola; restituisce il suo handle. |
 | `daw/note plugin start duration pitch &opt velocity` | Nota MIDI 0–127, velocity 1–127 (default 100). |
 | `daw/param node time parameter value` | Automatizza un parametro del plugin, della traccia o del master. |
-| `daw/info node` | Elenca nome, unità, minimo, massimo, default e vincolo intero dei parametri. |
+| `daw/info node` | Descrizioni immutabili dei parametri, inclusi mapping ed etichette dei valori enumerati. |
+| `daw/product node` | Metadati completi del prodotto letti dal JSON; `nil` per i mixer. |
 | `daw/end seconds &opt options` | Chiude la partitura e imposta durata e formato. La CLI esporta dopo il successo dello script. |
 
 Opzioni traccia: `:gain` 0–4 (default 1), `:pan` −1–1 (default 0),
@@ -102,8 +132,8 @@ Ogni plugin appartiene a una sola catena. Crea un'altra istanza se ti serve altr
 Un plugin non collegato è un errore a `daw/end`, non una traccia scartata in silenzio.
 Non ci sono ancora bus, mandate, sidechain o collegamenti arbitrari.
 
-I parametri accettano keyword descrittive o indici numerici. Il C verifica nomi,
-range e valori interi prima di inviarli al DSP; le opzioni sconosciute sono errori.
+I parametri accettano keyword descrittive o indici numerici. Janet verifica nomi,
+range e valori interi prima di inviarli al C; le opzioni sconosciute sono errori.
 `(pp (daw/info synth))` permette di scoprire i controlli.
 Per il synth `:volume` è il volume; la velocity MIDI non ne controlla l'ampiezza.
 Gain e pan della traccia sono invece indipendenti dallo strumento e automatizzabili.
@@ -127,7 +157,7 @@ Da una partitura nella radice del repository:
 
 (def bpm 154)
 (def step (music/seconds bpm 0.5)) # Un ottavo; BPM sempre riferiti ai quarti.
-(def bass (daw/plugin "plugins/synth_mono/build/plugin.so" {:vcf_cutoff 900}))
+(def bass (daw/plugin "plugins/synth_mono/build/plugin.perone" {:vcf_cutoff 900}))
 (daw/track bass)
 (def phrase [40 40 47 nil 40 50 44]) # nil occupa un passo senza emettere una nota.
 (music/sequence 0 step phrase
@@ -189,9 +219,9 @@ La normalizzazione usa un file temporaneo, non un buffer dell'intero brano.
 
 Plugin inclusi oltre al synth e all'effetto di test:
 
-- `plugins/shape/build/plugin.so`: waveshaper, drive/level e filtri DC/lowpass a coefficienti espliciti.
-- `plugins/echo/build/plugin.so`: tre tap regolabili in millisecondi, livelli indipendenti e segnale dry.
-- `plugins/drums/build/plugin.so`: 32 voci; note MIDI 0–6 = kick, snare, hat, open-hat, crash, tom-high, tom-low.
+- `plugins/shape/build/plugin.perone`: waveshaper, drive/level e filtri DC/lowpass a coefficienti espliciti.
+- `plugins/echo/build/plugin.perone`: tre tap regolabili in millisecondi, livelli indipendenti e segnale dry.
+- `plugins/drums/build/plugin.perone`: 32 voci; note MIDI 0–6 = kick, snare, hat, open-hat, crash, tom-high, tom-low.
   La velocity regola il singolo colpo; `:gain` regola l'intera istanza e `:seed` i colpi successivi.
   I suoni decadono naturalmente e ignorano il note-off; a voci esaurite viene sostituita la più vecchia.
 
@@ -205,7 +235,10 @@ indipendenti. `make test-prog` verifica che due nuovi render siano identici.
 
 `engine.c/h` gestisce istanze e scheduler, senza CLI né Janet.
 `session.c/h` contiene lo stato esplicito della sessione, le catene e il mixer.
-`daw.c` collega Janet e l'export; `main.c` è il piccolo host audio autonomo.
+`daw.c` collega le chiamate native della sessione e l'export; `main.c` è la demo audio.
+`script.c` prepara Janet e trasferisce configurazioni numeriche al motore C.
+`lib/perone.janet` legge i bundle, interpreta bus, default e parametri;
+`lib/daw.janet` espone l'API delle partiture e conserva i metadati completi.
 `lib/music.janet` fornisce le funzioni musicali; le partiture in `examples/` scelgono
 arrangiamento, strumenti ed effetti.
 
@@ -214,17 +247,27 @@ Janet viene chiuso prima del rendering; il motore non alloca memoria mentre proc
 i blocchi. Il mix occupa memoria indipendente dalla durata, più lo stato dei plugin
 e gli eventi. Limiti attuali: un export per esecuzione, 32 tracce, 128 nodi totali
 (plugin e mixer), 8 effetti per catena, 64 parametri per plugin, 3600 secondi.
-L'host accetta un bus audio di uscita mono/stereo, al massimo un bus audio di
-ingresso mono/stereo e un ingresso MIDI, a 44,1 kHz. Sidechain, CV e bus aggiuntivi
-restano esclusi. L'ABI shared descrive i bus del plugin.
+L'host accetta un bus audio principale di uscita mono/stereo, al massimo un bus
+principale di ingresso mono/stereo e un ingresso MIDI, a 44,1 kHz. Le sidechain
+opzionali rimangono scollegate: il DSP riceve `NULL` nelle loro posizioni originali.
+Sono supportati fino a 8 canali di ingresso complessivi, inclusi quelli scollegati.
+CV, sidechain obbligatorie e bus principali aggiuntivi vengono rifiutati prima
+che il DSP venga caricato. Transport sincronizzato e messaggistica non sono ancora
+supportati dall'host e vengono rifiutati se richiesti nel JSON. Il salvataggio dello
+stato personalizzato non è esposto dall'API delle partiture.
 
-Host e scripting richiedono `tibia_get_api(TIBIA_ABI_VERSION)`. Il wrapper Tibia
-crea e distrugge il DSP; l'host non ne gestisce la memoria interna. Metadati e default
-sono generati da `product.json` e incorporati nel `.so`, insieme al JSON completo.
+Il contratto è Perone ABI v2, copiato senza modifiche in `perone.h`.
+L'host gestisce `alloc/init`, applica i valori iniziali, imposta il sample rate,
+fornisce la memoria richiesta da `mem_req/mem_set` e chiama `reset`.
+Alla chiusura chiama `fini`, libera la memoria DSP e poi l'istanza con `free`.
+Il motore riceve soltanto layout, default numerici e indici dei parametri di uscita;
+non contiene descrittori testuali e non legge JSON.
+
 `daw/info` include input e output nell'ordine originale, con `:index`, `:name`
-(ID simbolico), `:label`, `:direction` e `:map`, oltre a unità, range e default.
+(ID simbolico), `:label`, `:direction`, `:map` e `:scale-points`, oltre a unità,
+range e default. `daw/product` conserva anche tutti gli altri campi del prodotto.
 I parametri di uscita sono descritti ma non possono essere impostati o automatizzati.
-I vecchi plugin vanno ricompilati; non è previsto un adattatore per la precedente ABI.
+Le API precedenti, incluso `tibia_get_api`, non sono accettate.
 Script e plugin devono essere fidati: nessuna sandbox o isolamento dei crash nativi.
 Le chiamate `daw/*` costruiscono la sessione in modo sincrono; thread e task asincroni
 che modificano la sessione non sono supportati.
@@ -232,7 +275,7 @@ che modificano la sessione non sono supportati.
 `make test` copre scheduler, DSP, API, errori, catene, neutralità, automazione del
 mixer/master, separazione dei canali, effetti mono su stereo, effetti stereo
 con interazione L/R, conversioni dei canali, crescita degli eventi e formati WAV.
-Include `music_test.janet`, che prova le funzioni musicali senza dipendere da `daw/*`,
+Include `test/music.janet`, che prova le funzioni musicali senza dipendere da `daw/*`,
 e una curva della libreria collegata al synth tramite l'API reale.
 La vecchia API sperimentale cambia: `instrument` diventa `plugin` + `track`,
 `export` diventa `end`; `color`, `send` e `drum` non sono più casi speciali dell'host.
@@ -242,5 +285,6 @@ La vecchia API sperimentale cambia: `instrument` diventa `plugin` + `track`,
 L'host autonomo usa i canali di ingresso/uscita del plugin e salva WAV mono o stereo
 secondo la sua uscita; il renderer Janet produce sempre WAV stereo.
 `make keys` avvia il synth autonomo a 16 voci, 48 kHz stereo:
-`a w s e d f t g y h u j k`, `q` per uscire. Questi programmi non richiedono il renderer Janet.
-`sj.h` e `trash/` non partecipano al build. I sorgenti e le dipendenze conservano le rispettive licenze.
+`a w s e d f t g y h u j k`, `q` per uscire. La demo audio usa Janet soltanto per
+leggere il bundle; il synth da terminale non dipende da Janet.
+I sorgenti e le dipendenze conservano le rispettive licenze.

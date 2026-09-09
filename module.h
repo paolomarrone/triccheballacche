@@ -1,9 +1,17 @@
 #ifndef MODULE_H
 #define MODULE_H
-#include "tibia/tibia.h"
+#include "perone.h"
+enum { MAX_PARAMS = 64, MAX_INPUTS = 8 };
+// Numeric setup supplied by the host, after reading product.json in Janet.
+typedef struct {
+	int input, output, midi, input_offset, inputs, nparams;
+	uint64_t outputs;
+	float defaults[MAX_PARAMS];
+} PluginConfig;
 typedef struct {
 	void *handle;
-	const tibia_api *api;
-	int input, output, midi; /* Audio channel counts; MIDI is the JSON bus index, or -1. */
-} TibiaModule;
+	const perone_api *api;
+	PluginConfig config;
+	char *bindir, *datadir;
+} Module;
 #endif

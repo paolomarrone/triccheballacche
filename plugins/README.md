@@ -2,7 +2,7 @@
 
 I plugin si generano con Tibia e si compilano separatamente dall'host.
 Servono compilatore C, make, Node.js, il modulo `dot` e un checkout Tibia
-con i target `shared` e `shared-make`. `synth_mono` e `fx_svf` richiedono anche
+con i target `perone` e `perone-make`. `synth_mono` e `fx_svf` richiedono anche
 Brickworks con l'API corrente (`plugin_init` restituisce `int`).
 
 Per default i repository sono affiancati: `../tibia` e `../brickworks`, rispetto
@@ -30,7 +30,7 @@ nel checkout Tibia). I plugin non richiedono Janet, miniaudio o sorgenti dell'ho
 
 Ogni progetto fornisce `plugin.h` e `product.json`, direttamente o tramite il
 percorso Brickworks. `plugin.mk` genera in `build/gen` l'API, il wrapper e il
-Makefile; quest'ultimo produce `build/plugin.so` e segue le dipendenze degli header.
+Makefile; quest'ultimo produce il bundle `build/plugin.perone` e segue le dipendenze degli header.
 Il JSON è la fonte dei default e dei metadati: non ci sono tabelle manuali parallele.
 I preset musicali restano nelle partiture Janet.
 
@@ -38,23 +38,39 @@ I test del synth verificano anche l'indipendenza dai blocchi e il pitch bend
 440/220/880/440 Hz. Queste correzioni devono essere presenti in Brickworks:
 il wrapper non applica patch DSP né altera i messaggi per compensare bug del synth.
 
-Il target `shared` esporta solo `tibia_get_api(version)`. Il contratto è definito
-in `tibia/templates/shared/tibia.h`; `triccheballacche/tibia/tibia.h` ne contiene
+Il target `perone` esporta solo `perone_get_api(version)`. Il contratto è definito
+in `tibia/templates/perone/perone.h`; `triccheballacche/perone.h` ne contiene
 una copia identica per compilare l'host senza il generatore.
-Il wrapper gestisce istanza, inizializzazione, default, memoria DSP e distruzione.
+Perone espone il ciclo di vita `plugin_*`: è l'host a inizializzare il DSP,
+applicare i default, fornire la memoria DSP e liberare le risorse.
 
-Il `.so` contiene sia i metadati C essenziali sia il descrittore JSON completo,
-compresi mapping e scale points. I parametri input/output e i bus mantengono gli
-indici dell'array JSON originale. L'host usa i metadati C durante il caricamento;
-il JSON rimane disponibile nell'ABI per strumenti e interfacce future.
-L'host accetta un bus di uscita mono/stereo, al massimo un bus di ingresso
-mono/stereo e un ingresso MIDI, a 44,1 kHz. Il formato condiviso può descrivere
-anche altri layout; sidechain, CV e bus aggiuntivi vengono rifiutati dall'host
-prima di creare l'istanza. Transport, messaggistica e stato non sono esposti dalla
-prima versione del target; i prodotti che richiedono transport/messaggistica o
-MIDI output vengono rifiutati dal generatore.
+Il bundle generato contiene:
 
-Il `.so` può essere copiato o rinominato e passato a `build/host` o `daw/plugin`.
-Sorgenti, generatori, Makefile e JSON esterni non servono durante il rendering.
-I vecchi binari con simboli `tibia_new`/`tibia_init` vanno ricompilati: non c'è
-compatibilità con l'ABI sperimentale precedente.
+```text
+build/plugin.perone/
+  product.json
+  <architettura>-<sistema>/
+    <bundleName>.so
+```
+
+Il JSON è esterno e va distribuito insieme al binario. Janet lo legge al caricamento
+per interpretare bus, parametri, mapping e scale points. Il C riceve soltanto
+configurazione numerica ed eventi; gli indici sono quelli degli array JSON originali.
+`daw/info` espone i parametri e `daw/product` restituisce il prodotto completo.
+Non servono sorgenti DSP, generatori o header interni durante l'esecuzione.
+
+Passa la directory `.perone` a `build/host` o `daw/plugin`. Puoi copiarla o
+rinominarla; il nome del binario al suo interno resta quello di `product.bundleName`.
+`PERONE_PLATFORM` seleziona la piattaforma di destinazione sia nel build dei plugin
+sia in quello dell'host; per default viene rilevata con `uname`.
+
+L'host supporta sorgenti ed effetti mono/stereo, un ingresso MIDI e sidechain
+opzionali scollegate. Le sidechain obbligatorie, i bus CV, i bus principali
+aggiuntivi, il transport sincronizzato e la messaggistica non sono supportati.
+Le funzionalità Perone disponibili possono essere più ampie di quelle dell'host.
+
+Gli 80 esempi compilati in `../brickworks/build/perone` si possono caricare
+direttamente, senza copiarli in questi progetti. `make test-brickworks` nella radice
+di triccheballacche verifica tutti i bundle presenti. `examples/brickworks.janet`
+mostra una catena con esempi C e C++ originali.
+I vecchi `.so` con ABI Tibia/shared o Perone v1 vanno rigenerati e ricompilati.

@@ -1,0 +1,1 @@
+{"product":{"bundleName":"fixture","name":"Perone host fixture","buses":[{"id":"out","type":"audio","direction":"output","channels":"stereo"}],"parameters":[{"id":"meter","direction":"output","minimum":-1,"maximum":1,"defaultValue":0},{"id":"gain","name":"Intensità \"音\"","direction":"input","minimum":0,"maximum":1,"defaultValue":0.5,"scalePoints":{"Silent":0,"Full":1}}]}}

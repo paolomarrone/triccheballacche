@@ -1,4 +1,5 @@
 #include "daw.h"
+#include "script.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -13,6 +14,22 @@ static int script(Session *s, Output *cfg, const char *source) {
 	assert(f && fputs(source, f) >= 0 && !fclose(f));
 	int result = load_score(s, cfg, path);
 	assert(!unlink(path)); return result;
+}
+static void test_external_metadata(void) {
+	Session s = {0}; Output cfg;
+	assert(!script(&s, &cfg,
+		"(def p (daw/plugin \"build/fixture.perone\" {:gain 0.25})) "
+		"(def row ((daw/info p) 1)) (assert (= (row :label) \"Intensità \\\"音\\\"\")) "
+		"(assert (= (get-in row [:scale-points :Full]) 1)) "
+		"(assert (= (row :default) 0.5)) "
+		"(daw/track p) (daw/param p 0.0001 :gain 0.75) (gccollect) (daw/end 0.01)"));
+	float out[20]; assert(!session_render(&s, out, 10));
+	for (int i = 0; i < 10; ++i) {
+		assert(out[2 * i] == (i < 4 ? .25f : .75f));
+		assert(out[2 * i + 1] == -out[2 * i]);
+	}
+	session_free(&s);
+	puts("OK: external Unicode metadata, scale points, output-first indices and Janet lifetime");
 }
 static void bad_script(const char *source) {
 	Session s = {0}; Output cfg;
@@ -43,25 +60,30 @@ static void sum(void *p, const float **in, float **out, size_t n) {
 	for (size_t i = 0; i < n; ++i) out[0][i] = .5f * (in[0][i] + in[1][i]) * *(float *)p;
 }
 static int mock(Session *s, int kind, float value) {
-	static const tibia_parameter param = {"value", "Value", "", 0, 4, 1, 0};
-	static const tibia_info desc = {0, NULL, 1, &param, NULL};
-	static const tibia_api api[] = {
-		{.destroy = free, .reset = noop, .set_parameter = set, .process = constant},
-		{.destroy = free, .reset = noop, .set_parameter = set, .process = multiply},
-		{.destroy = free, .reset = noop, .set_parameter = set, .process = add},
-		{.destroy = free, .reset = noop, .set_parameter = set, .process = stereo_source},
-		{.destroy = free, .reset = noop, .set_parameter = set, .process = swap},
-		{.destroy = free, .reset = noop, .set_parameter = set, .process = spread},
-		{.destroy = free, .reset = noop, .set_parameter = set, .process = sum}
+	static const perone_api api[] = {
+		{.free = free, .fini = noop, .reset = noop, .set_parameter = set, .process = constant},
+		{.free = free, .fini = noop, .reset = noop, .set_parameter = set, .process = multiply},
+		{.free = free, .fini = noop, .reset = noop, .set_parameter = set, .process = add},
+		{.free = free, .fini = noop, .reset = noop, .set_parameter = set, .process = stereo_source},
+		{.free = free, .fini = noop, .reset = noop, .set_parameter = set, .process = swap},
+		{.free = free, .fini = noop, .reset = noop, .set_parameter = set, .process = spread},
+		{.free = free, .fini = noop, .reset = noop, .set_parameter = set, .process = sum}
 	};
 	static const int inputs[] = {0, 1, 1, 0, 2, 1, 2}, outputs[] = {1, 1, 1, 2, 2, 2, 1};
 	Node *n = s->nodes + s->nnodes;
-	n->info = &desc; n->initial[0] = value; n->path = strdup("test");
+	n->nparams = 1; n->initial[0] = value; n->path = strdup("test");
 	Engine *e = n->dsp;
 	e->module = calloc(1, sizeof(*e->module)); e->instance = malloc(sizeof(float));
 	assert(n->path && e->module && e->instance);
-	*e->module = (TibiaModule){.api = api + kind, .input = inputs[kind], .output = outputs[kind], .midi = -1};
+	*e->module = (Module){.api = api + kind, .config = {.input = inputs[kind], .inputs = inputs[kind], .output = outputs[kind], .midi = -1, .nparams = 1}};
+	e->initialized = 1;
 	return s->nnodes++;
+}
+static int session_bundle(Session *s, const char *path) {
+	char *binary; PluginConfig config;
+	assert(!read_bundle(path, &binary, &config));
+	int id = session_plugin(s, binary, &config);
+	free(binary); return id;
 }
 static void pipeline(Session *s) {
 	int source = mock(s, 0, 1), fx[] = {mock(s, 1, 2), mock(s, 2, .25f)};
@@ -93,7 +115,7 @@ static void test_pipeline(void) {
 static void test_master(void) {
 	Session s = {0}; float audio[64];
 	int source = mock(&s, 0, 1), tr = session_track(&s, source, NULL, 0, 0);
-	int fx = session_plugin(&s, "plugins/shape/build/plugin.so");
+	int fx = session_bundle(&s, "plugins/shape/build/plugin.perone");
 	assert(fx >= 0 && !session_set(&s, tr, 1, -1));
 	assert(session_track(&s, -1, &fx, 1, 1) >= 0);
 	assert(s.nodes[fx].dsp[0].instance != s.nodes[fx].dsp[1].instance);
@@ -106,7 +128,7 @@ static void test_master(void) {
 	session_free(&s); puts("OK: master effects use independent stereo state and shared automation");
 }
 static void stereo_pipeline(Session *s) {
-	int source = mock(s, 3, 1), mono = session_plugin(s, "plugins/shape/build/plugin.so");
+	int source = mock(s, 3, 1), mono = session_bundle(s, "plugins/shape/build/plugin.perone");
 	int fx[] = {mono, mock(s, 4, 1)};
 	int tr = session_track(s, source, fx, 2, 0), stereo = mock(s, 4, 1);
 	int master = session_track(s, -1, &stereo, 1, 1);
@@ -153,7 +175,7 @@ static void test_channel_transitions(void) {
 		session_free(&s);
 	}
 	Session s = {0}; float out[2];
-	int source = mock(&s, 3, 1), fx[] = {session_plugin(&s, "plugins/shape/build/plugin.so"), mock(&s, 5, 1)};
+	int source = mock(&s, 3, 1), fx[] = {session_bundle(&s, "plugins/shape/build/plugin.perone"), mock(&s, 5, 1)};
 	assert(session_track(&s, source, fx, 2, 0) < 0); // No implicit stereo fold-down before a mono-to-stereo effect.
 	assert(s.ntracks == 0 && !s.nodes[fx[0]].dsp[1].instance && !s.nodes[source].attached);
 	assert(session_track(&s, source, fx, 1, 0) >= 0);
@@ -199,7 +221,7 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 }
 static void test_plugins(void) {
 	Engine echo = {0}; float input[1025] = {1}, out[1025]; input[200] = .25f;
-	assert(!open_engine(&echo, "plugins/echo/build/plugin.so"));
+	assert(!open_bundle(&echo, "plugins/echo/build/plugin.perone"));
 	echo.module->api->set_parameter(echo.instance, 0, 1); // 1 ms -> 44 samples.
 	echo.module->api->set_parameter(echo.instance, 3, 1);
 	echo.module->api->set_parameter(echo.instance, 4, 0);
@@ -211,7 +233,7 @@ static void test_plugins(void) {
 	for (int i = 0; i < 1025; ++i) assert(out[i] == (i == 44 ? 1 : i == 288 ? .25f : 0));
 	close_engine(&echo);
 	Engine a = {0}, b = {0}; float x[2000], y[2000];
-	assert(!open_engine(&a, "plugins/drums/build/plugin.so") && !open_engine(&b, "plugins/drums/build/plugin.so"));
+	assert(!open_bundle(&a, "plugins/drums/build/plugin.perone") && !open_bundle(&b, "plugins/drums/build/plugin.perone"));
 	const Event hits[] = {{0, -1, 0, {0x90, 4, 127}, 0}, {100, 0, .5f, {0}, 1},
 		{200, -1, 0, {0x90, 1, 100}, 2}, {800, -1, 0, {0x90, 2, 80}, 3}};
 	a.events = b.events = hits; a.count = b.count = 4;
@@ -221,7 +243,7 @@ static void test_plugins(void) {
 	}
 	assert(!memcmp(x, y, sizeof(x)));
 	for (int i = 0; i < 100; ++i) {
-		const uint8_t hit[] = {0x90, i % 7, 127}; a.module->api->midi_msg_in(a.instance, a.module->midi, hit);
+		const uint8_t hit[] = {0x90, i % 7, 127}; a.module->api->midi_msg_in(a.instance, a.module->config.midi, hit);
 	}
 	a.module->api->set_parameter(a.instance, 0, 0); render(&a, x, NULL, 2000);
 	for (int i = 0; i < 2000; ++i) assert(x[i] == 0 && isfinite(y[i]));
@@ -229,6 +251,7 @@ static void test_plugins(void) {
 	puts("OK: echo timing/automation, deterministic percussion, voice bounds, live drum gain");
 }
 int main(void) {
+	test_external_metadata();
 	test_pipeline(); test_master(); test_plugins();
 	test_stereo_pipeline(); test_channel_transitions(); test_stereo_wav();
 	test_wav(.25f, 1, (Output){0}, .25f);
@@ -239,7 +262,7 @@ int main(void) {
 	test_wav(0, 1, (Output){.normalize = .94f}, 0);
 	puts("OK: neutral float WAV, proportional gain, optional PCM16/normalization, silence and tiny values");
 	Session s = {0}; Output cfg;
-	assert(!load_score(&s, &cfg, "daw_test.janet"));
+	assert(!load_score(&s, &cfg, "test/daw.janet"));
 	assert(s.nnodes == 4 && s.nodes[0].count == 3003 && s.frames == 61 * SAMPLE_RATE);
 	float audio[BLOCK * 2]; double energy = 0;
 	while (s.time < s.frames) {
@@ -253,7 +276,7 @@ int main(void) {
 	bad_script("("); bad_script("unknown-binding");
 	bad_script("(daw/end 1) (error \"expected failure after end\")");
 	bad_script("(+ 1 2)");
-	bad_script("(daw/plugin \"plugins/synth_mono/build/plugin.so\") (daw/end 1)");
+	bad_script("(daw/plugin \"plugins/synth_mono/build/plugin.perone\") (daw/end 1)");
 	puts("OK: parse/runtime errors, missing end and orphan plugins fail cleanly");
 	return 0;
 }

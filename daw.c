@@ -1,6 +1,6 @@
 #include "daw.h"
 #include "audio.h"
-#include "janet.h"
+#include "script.h"
 #include <float.h>
 #include <math.h>
 #include <stdlib.h>
@@ -23,20 +23,6 @@ static int handle(Janet x) {
 	if (id < 0 || id >= current->nnodes) janet_panic("invalid node handle");
 	return id;
 }
-static int param_index(Node *n, Janet key) {
-	if (janet_checktype(key, JANET_NUMBER)) {
-		int i = janet_getinteger(&key, 0);
-		return i >= 0 && (size_t)i < n->info->count ? i : -1;
-	}
-	for (size_t i = 0; i < n->info->count; ++i)
-		if (janet_keyeq(key, n->info->parameters[i].id)) return (int)i;
-	return -1;
-}
-static int valid_value(Node *n, int index, double value) {
-	if (index < 0) return 0;
-	const tibia_parameter *p = n->info->parameters + index;
-	return !(p->flags & TIBIA_PARAM_OUTPUT) && isfinite(value) && value >= p->minimum && value <= p->maximum && (!(p->flags & TIBIA_PARAM_INTEGER) || floor(value) == value);
-}
 static Janet option(Janet opts, const char *key, Janet fallback) {
 	Janet x = janet_checktype(opts, JANET_NIL) ? opts : janet_get(opts, janet_ckeywordv(key));
 	return janet_checktype(x, JANET_NIL) ? fallback : x;
@@ -51,28 +37,9 @@ static void options(Janet opts, const char *const *names) {
 	}
 }
 static Janet plugin(int32_t argc, Janet *argv) {
-	janet_arity(argc, 1, 2);
-	const char *path = janet_getcstring(argv, 0);
-	Janet params = argc == 2 ? argv[1] : janet_wrap_nil(), keys[MAX_PARAMS];
-	double values[MAX_PARAMS]; int count = 0;
-	if (!janet_checktype(params, JANET_NIL)) {
-		janet_getdictionary(&params, 0);
-		for (Janet k = janet_next(params, janet_wrap_nil()); !janet_checktype(k, JANET_NIL); k = janet_next(params, k)) {
-			if (count == MAX_PARAMS) janet_panic("too many initial parameters");
-			if (janet_checktype(k, JANET_NUMBER)) janet_getinteger(&k, 0);
-			else janet_getkeyword(&k, 0);
-			keys[count] = k; values[count++] = number(janet_get(params, k), -FLT_MAX, FLT_MAX);
-		}
-	}
-	int id = checked(session_plugin(current, path));
-	for (int i = 0; i < count; ++i) {
-		int p = param_index(current->nodes + id, keys[i]);
-		if (!valid_value(current->nodes + id, p, values[i])) {
-			session_pop(current); janet_panicf("unknown parameter or invalid value: %v", keys[i]);
-		}
-		checked(session_set(current, id, p, values[i]));
-	}
-	return janet_wrap_integer(id);
+	janet_fixarity(argc, 3);
+	PluginConfig config; script_config(argv[1], argv[2], &config);
+	return janet_wrap_integer(checked(session_plugin(current, janet_getcstring(argv, 0), &config)));
 }
 static Janet make_track(int32_t argc, Janet *argv, int master) {
 	int offset = master ? 0 : 1;
@@ -106,33 +73,9 @@ static Janet note(int32_t argc, Janet *argv) {
 }
 static Janet parameter(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 4);
-	int id = handle(argv[0]), p = param_index(current->nodes + id, argv[2]);
-	if (p < 0) janet_panicf("unknown parameter %v", argv[2]);
-	double value = janet_getnumber(argv, 3);
-	if (!valid_value(current->nodes + id, p, value)) janet_panicf("invalid value for %v", argv[2]);
-	checked(session_param(current, id, sample(janet_getnumber(argv, 1)), p, value));
+	int id = handle(argv[0]), p = janet_getinteger(argv, 2);
+	checked(session_param(current, id, sample(janet_getnumber(argv, 1)), p, number(argv[3], -FLT_MAX, FLT_MAX)));
 	return janet_wrap_nil();
-}
-static Janet info(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 1);
-	const tibia_info *desc = current->nodes[handle(argv[0])].info;
-	JanetArray *result = janet_array((int32_t)desc->count);
-	for (size_t i = 0; i < desc->count; ++i) {
-		const tibia_parameter *p = desc->parameters + i;
-		JanetTable *row = janet_table(10);
-		janet_table_put(row, janet_ckeywordv("name"), janet_ckeywordv(p->id));
-		janet_table_put(row, janet_ckeywordv("unit"), janet_cstringv(p->unit));
-		janet_table_put(row, janet_ckeywordv("min"), janet_wrap_number(p->minimum));
-		janet_table_put(row, janet_ckeywordv("max"), janet_wrap_number(p->maximum));
-		janet_table_put(row, janet_ckeywordv("default"), janet_wrap_number(p->default_value));
-		janet_table_put(row, janet_ckeywordv("integer"), janet_wrap_boolean(p->flags & TIBIA_PARAM_INTEGER));
-		janet_table_put(row, janet_ckeywordv("label"), janet_cstringv(p->name));
-		janet_table_put(row, janet_ckeywordv("direction"), janet_ckeywordv(p->flags & TIBIA_PARAM_OUTPUT ? "output" : "input"));
-		janet_table_put(row, janet_ckeywordv("map"), janet_ckeywordv(p->flags & TIBIA_PARAM_LOG ? "logarithmic" : "linear"));
-		janet_table_put(row, janet_ckeywordv("index"), janet_wrap_integer((int32_t)i));
-		janet_array_push(result, janet_wrap_table(row));
-	}
-	return janet_wrap_array(result);
 }
 static Janet end(int32_t argc, Janet *argv) {
 	janet_arity(argc, 1, 2);
@@ -147,20 +90,23 @@ static Janet end(int32_t argc, Janet *argv) {
 }
 int load_score(Session *s, Output *cfg, const char *path) {
 	const JanetReg api[] = {
-		{"plugin", plugin, "(daw/plugin path &opt parameters) -> plugin handle"},
-		{"track", track, "(daw/track source &opt {:effects [...] :gain 1 :pan 0}) -> mixer handle"},
-		{"master", master, "(daw/master &opt {:effects [...] :gain 1}) -> mixer handle"},
+		{"plugin", plugin, "(native/plugin binary layout defaults) -> plugin handle"},
+		{"track", track, "(native/track source &opt {:effects [...] :gain 1 :pan 0}) -> mixer handle"},
+		{"master", master, "(native/master &opt {:effects [...] :gain 1}) -> mixer handle"},
 		{"note", note, "(daw/note plugin seconds duration pitch &opt velocity)"},
-		{"param", parameter, "(daw/param node seconds parameter value)"},
-		{"info", info, "(daw/info node) -> parameter descriptions"},
+		{"param", parameter, "(native/param node seconds index value)"},
 		{"end", end, "(daw/end seconds &opt {:format :float :normalize 0}) Seal the score for CLI export."},
 		{NULL, NULL, NULL}
 	};
 	current = s; output = cfg; *cfg = (Output){0};
-	janet_init();
-	JanetTable *env = janet_core_env(NULL);
-	janet_cfuns_prefix(env, "daw", api); janet_def(env, "daw/script", janet_cstringv(path), NULL);
-	int result = janet_dostring(env, "(dofile daw/script :env (curenv))", path, NULL);
+	JanetTable *env = script_env();
+	if (!env) { current = NULL; output = NULL; return 1; }
+	janet_cfuns_prefix(env, "native", api); janet_def(env, "daw/script", janet_cstringv(path), NULL);
+	static const char daw_source[] =
+#include "build/daw.inc"
+	;
+	int result = janet_dostring(env, daw_source, "lib/daw.janet", NULL)
+		|| janet_dostring(env, "(dofile daw/script :env (curenv))", path, NULL);
 	janet_deinit(); current = NULL; output = NULL;
 	if (!result && !s->sealed) { fputs("Missing (daw/end seconds)\n", stderr); result = 1; }
 	if (!result) s->error = NULL;
