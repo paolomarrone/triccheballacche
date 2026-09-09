@@ -1,6 +1,7 @@
 # Musical time and pitch only. Callbacks connect sequences and curves to the host.
 
 (defn- finite? [x] (and (number? x) (= (- x x) 0)))
+
 (defn- positive? [x] (and (finite? x) (> x 0)))
 
 (defn seconds

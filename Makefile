@@ -17,9 +17,16 @@ endif
 TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
 CORE = engine.c loader.c
 HEADERS = engine.h loader.h module.h perone.h
+FORMAT_SOURCES = $(filter-out perone.h,$(wildcard *.c *.h test/*.c test/perone/*.c plugins/*/plugin.h examples/termux_synth/src/*.c))
 
-.PHONY: all test test-prog test-brickworks check-plugins run keys prog clean
+.PHONY: all test test-prog test-brickworks check-plugins run keys prog clean format format-check
 all: build/host build/daw
+
+format:
+	clang-format -i $(FORMAT_SOURCES)
+
+format-check:
+	clang-format --dry-run --Werror $(FORMAT_SOURCES)
 
 build:
 	mkdir -p $@

@@ -3,6 +3,7 @@
 #include "loader.h"
 
 enum { SAMPLE_RATE = 44100, BLOCK = 512 };
+
 typedef struct {
 	size_t time;
 	int parameter; // -1: MIDI, otherwise parameter index
@@ -10,6 +11,7 @@ typedef struct {
 	uint8_t midi[3];
 	size_t order; // Stable tie breaker for generated scores.
 } Event;
+
 typedef struct {
 	Module *module;
 	void *instance, *memory;

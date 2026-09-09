@@ -4,29 +4,39 @@
 
 (def patches [ # wave, cutoff, resonance, attack, decay, sustain, release, glide
   [2 700 12 2 95 65 35 0]
-  [1 3800 8 2 90 30 24 0] [1 3500 10 2 100 32 28 0]
+  [1 3800 8 2 90 30 24 0]
+  [1 3500 10 2 100 32 28 0]
   [1 4200 18 3 110 90 70 9]
-  [3 4800 5 8 330 42 310 0] [3 5200 5 8 330 42 310 0]
-  [3 5600 5 8 330 42 310 0] [2 3400 24 3 120 65 80 4]])
+  [3 4800 5 8 330 42 310 0]
+  [3 5200 5 8 330 42 310 0]
+  [3 5600 5 8 330 42 310 0]
+  [2 3400 24 3 120 65 80 4]])
 (def ids [:vco1_wave :vcf_cutoff :vcf_resonance :vca_attack :vca_decay :vca_sustain :vca_release :portamento])
 (def pans [0 -0.78 0.78 0.08 -0.55 0 0.55 -0.3])
 (def gains [0.73 0.28 0.28 0.58 0.23 0.21 0.23 0.34])
 (def band @[])
 (for tr 0 8
   (def keys (<= 4 tr 6))
-  (def params @{:vco1_pw (if (= tr 7) 28 47) :vco2_wave (if (= tr 0) 3 2)
-    :vco2_coarse (if (= tr 0) -1 (if keys 1 0)) :vco2_fine (case tr 1 -7 2 7 3)
-    :vco2_level (if (= tr 0) 65 (if keys 45 52)) :vcf_contour (if (= tr 0) 55 22)
-    :vcf_decay 105 :vcf_sustain 15})
+  (def params
+    @{:vco1_pw (if (= tr 7) 28 47)
+      :vco2_wave (if (= tr 0) 3 2)
+      :vco2_coarse (if (= tr 0) -1 (if keys 1 0))
+      :vco2_fine (case tr 1 -7 2 7 3)
+      :vco2_level (if (= tr 0) 65 (if keys 45 52))
+      :vcf_contour (if (= tr 0) 55 22)
+      :vcf_decay 105
+      :vcf_sustain 15})
   (for i 0 8 (put params (ids i) ((patches tr) i)))
   (def synth (daw/plugin "plugins/synth_mono/build/plugin.perone" params))
   (def effects @[])
   (when (= tr 0) (array/push effects (daw/plugin "plugins/shape/build/plugin.perone" {:drive 2 :level 0.7})))
-  (when (<= 1 tr 2) (array/push effects (daw/plugin "plugins/shape/build/plugin.perone"
-    {:drive 8 :dc 0.013 :lowpass 0.34})))
+  (when (<= 1 tr 2)
+    (array/push effects
+      (daw/plugin "plugins/shape/build/plugin.perone" {:drive 8 :dc 0.013 :lowpass 0.34})))
   (def wet (if (>= tr 3) 0.3 0.045))
-  (array/push effects (daw/plugin "plugins/echo/build/plugin.perone"
-    {:level1 wet :level2 (/ wet 2) :level3 (/ wet 3)}))
+  (array/push effects
+    (daw/plugin "plugins/echo/build/plugin.perone"
+      {:level1 wet :level2 (/ wet 2) :level3 (/ wet 3)}))
   (daw/track synth {:pan (pans tr) :gain (gains tr) :effects effects})
   (array/push band synth))
 (def [bass left right lead key1 key2 key3 counter] band)
@@ -35,22 +45,30 @@
 (def drum-band @[])
 (for i 0 7
   (def source (daw/plugin "plugins/drums/build/plugin.perone" {:seed (+ 7368556 i)}))
-  (def effects (if (= i 0) [] [(daw/plugin "plugins/echo/build/plugin.perone"
-    {:level1 0.07 :level2 0.035 :level3 (/ 0.07 3)})]))
+  (def effects
+    (if (= i 0) []
+      [(daw/plugin "plugins/echo/build/plugin.perone"
+         {:level1 0.07 :level2 0.035 :level3 (/ 0.07 3)})]))
   (daw/track source {:pan ([0 -0.08 0.35 0.4 -0.55 -0.4 0.45] i) :effects effects})
   (array/push drum-band source))
+
 (defn drum [kind t strength]
   (def pitch (drum-notes kind))
   (daw/note (drum-band pitch) t 0.001 pitch (math/floor (+ 0.5 (* strength 127)))))
+
 (def master (daw/master {:effects [(daw/plugin "plugins/shape/build/plugin.perone" {:drive 1.35 :dc 0.002})]}))
+
 (defn note [tr t duration pitch volume]
   # This synth uses parameter 0 for volume, not MIDI velocity.
   (param tr t :volume volume)
   (daw/note tr t duration pitch))
+
 (def scale (partial music/degree 0 [0 2 3 5 7 8 11]))
+
 (defn riff [t duration pitch volume]
   (note left t duration pitch volume)
   (note right (+ t 0.004) (* duration 0.97) (+ pitch 7) (- volume 3)))
+
 (defn chord [t duration root third seventh volume]
   (def [a b c] (music/chord (+ root 24) [0 third seventh]))
   (note key1 t duration a volume)
@@ -59,6 +77,7 @@
 
 (def hook [0 0 7 1 0 10 4])
 (def spiral [0 2 4 6 5 3 1 7 4 8 6 3 9 5])
+
 (defn section [start part roots eighths bpm]
   (def step (music/seconds bpm 0.5))
   (def bars (length roots))
@@ -71,8 +90,9 @@
     (for j 0 eighths
       (def t (+ bar (* j step)))
       (def accent (or (= j 0) (= j 3) (= j (- eighths 2))))
-      (def rest (or (and (= part 1) (= b (- bars 1)) (= j (- eighths 1)))
-                    (and (= part 4) (= j 8))))
+      (def rest
+        (or (and (= part 1) (= b (- bars 1)) (= j (- eighths 1)))
+            (and (= part 4) (= j 8))))
       (unless rest
         (drum (if (= j (- eighths 1)) :open-hat :hat) t (if accent 0.16 0.10))
         (when (and (not= part 2) (= (% j 2) 0)) (drum :hat (+ t (* 0.5 step)) 0.055))
@@ -86,10 +106,11 @@
             (when (= j 0) (note lead (+ t step) (* 4.8 step) (+ root 28) 64))
             (when (= j 7) (riff t (* 1.1 step) (+ root 19) 52)))
           (do
-            (def interval (case part
-              1 (if (< j 7) (hook j) (if (= j 7) 6 11))
-              3 (case j 4 7 6 11 0)
-              (hook (% j 7))))
+            (def interval
+              (case part
+                1 (if (< j 7) (hook j) (if (= j 7) 6 11))
+                3 (case j 4 7 6 11 0)
+                (hook (% j 7))))
             (note bass t (* 0.72 step) (+ root (if accent 0 interval)) (if accent 77 68))
             (riff t (* step (if accent 0.64 0.43)) (+ root 12 interval) (if accent 74 65))
             (when (and (= part 0) (= (% b 2) 1) (>= j 3))
@@ -123,12 +144,17 @@
   (note bass hit 0.09 (- (ending i) (if (= i 4) 12 0)) 78)
   (riff hit 0.085 (+ (ending i) 12) 77)
   (note lead hit 0.085 (+ (ending i) 36) 69)
-  (drum :kick hit 0.84) (drum :snare hit 0.56))
+  (drum :kick hit 0.84)
+  (drum :snare hit 0.56))
 (set t (+ t (/ (* 5 30) 176)))
 (each tr band (param tr t :vca_release 650))
-(note bass t 0.62 28 79) (riff t 0.56 52 76)
-(note lead t 0.66 88 62) (chord t 0.72 40 4 11 66)
-(drum :kick t 0.95) (drum :snare t 0.85) (drum :crash t 0.55)
+(note bass t 0.62 28 79)
+(riff t 0.56 52 76)
+(note lead t 0.66 88 62)
+(chord t 0.72 40 4 11 66)
+(drum :kick t 0.95)
+(drum :snare t 0.85)
+(drum :crash t 0.55)
 # The master fade and normalization belong to this composition, not to the host.
 (for i 0 130
   (def gain (- 1 (/ i 130)))

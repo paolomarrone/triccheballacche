@@ -3,6 +3,7 @@
 #include "engine.h"
 
 enum { MAX_NODES = 128, MAX_TRACKS = 32, MAX_FX = 8 };
+
 typedef struct {
 	Engine dsp[2]; // A mono effect on stereo audio uses independent L/R instances.
 	char *path;
@@ -12,7 +13,11 @@ typedef struct {
 	int ncontrols;
 	int attached;
 } Node;
-typedef struct { int source, mixer, effects[MAX_FX], count; } Track;
+
+typedef struct {
+	int source, mixer, effects[MAX_FX], count;
+} Track;
+
 typedef struct {
 	Node nodes[MAX_NODES];
 	Track tracks[MAX_TRACKS], master;

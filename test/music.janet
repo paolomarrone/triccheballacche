@@ -13,7 +13,9 @@
 (assert (deep= minor [0 2 3 5 7 8 11]))
 
 (def events @[])
+
 (defn collect [t value] (array/push events [t value]))
+
 (assert (= (music/sequence 2 0.25 [60 nil 0 [64 67]] collect) 3))
 (assert (deep= events @[[2 60] [2.5 0] [2.75 [64 67]]]))
 (array/clear events)
@@ -36,6 +38,7 @@
 
 (defn rejects [f]
   (assert (try (do (f) false) ([_] true)) "expected a music API error"))
+
 (each bad [0 -1 math/inf (/ 0 0) "120"]
   (rejects (fn [] (music/seconds bad 1)))
   (rejects (fn [] (music/bars 120 1 4 bad)))

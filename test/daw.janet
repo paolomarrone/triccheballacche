@@ -3,6 +3,7 @@
 
 (defn rejects [f]
   (assert (try (do (f) false) ([_] true)) "expected an API error"))
+
 # Metadata checks run before any native instance is allocated.
 (def metadata-param {:id "test" :direction "input" :minimum 0 :maximum 1 :defaultValue 0.5})
 (each parameters [[metadata-param metadata-param]
@@ -72,7 +73,8 @@
   (fn [] (daw/end 3601))
   (fn [] (daw/end 61 {:format :bad}))
   (fn [] (daw/end 61 {:normalise 0.9}))
-  (fn [] (daw/end 61 {:normalize 2}))] (rejects f))
+  (fn [] (daw/end 61 {:normalize 2}))]
+  (rejects f))
 (daw/note synth 0 60 60)
 # One minute at 50 Hz, beyond the former 2048-event limit.
 (music/curve 0 60 3000 |(music/lerp 500 3500 $)

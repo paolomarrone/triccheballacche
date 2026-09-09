@@ -81,6 +81,12 @@ examples/          partiture e demo da terminale
 build/             binari dell'host e render
 ```
 
+Il codice C usa tab da 4 colonne, Janet due spazi. `.editorconfig` e `.clang-format`
+fissano spaziature e indentazione; le funzioni sono separate da una riga vuota.
+`make format` uniforma i sorgenti C locali, `make format-check` ne verifica lo stile
+con clang-format 21. Dipendenze, file generati e la copia upstream di `perone.h`
+sono esclusi. Il formatter serve solo per questi due comandi.
+
 ## API: plugin e tracce sono distinti
 
 ```janet
