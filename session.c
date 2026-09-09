@@ -7,8 +7,10 @@ static int fail(Session *s, const char *message) { s->error = message; return -1
 static int valid(Session *s, int id, int param, float value) {
 	if (s->sealed || id < 0 || id >= s->nnodes) return fail(s, "sealed session or invalid handle");
 	const Node *n = s->nodes + id;
-	if (param < 0 || param >= n->nparams || (n->outputs & (UINT64_C(1) << param))) return fail(s, "unknown or output parameter");
-	if (!isfinite(value) || (!n->path && (value < (param ? -1 : 0) || value > (param ? 1 : 4))))
+	const PluginConfig *config = n->path ? &n->dsp[0].module->config : NULL;
+	if (param < 0 || param >= (config ? config->nparams : n->ncontrols)
+		|| (config && (config->outputs & (UINT64_C(1) << param)))) return fail(s, "unknown or output parameter");
+	if (!isfinite(value) || (!config && (value < (param ? -1 : 0) || value > (param ? 1 : 4))))
 		return fail(s, "parameter outside range");
 	return 0;
 }
@@ -17,16 +19,15 @@ int session_plugin(Session *s, const char *path, const PluginConfig *config) {
 	Node *n = s->nodes + s->nnodes;
 	*n = (Node){0};
 	if (open_engine(n->dsp, path, config)) { close_engine(n->dsp); return fail(s, "cannot open plugin"); }
-	n->nparams = config->nparams; n->outputs = config->outputs;
-	n->path = malloc(strlen(path) + 1);
+	n->path = strdup(path);
 	if (!n->path) { close_engine(n->dsp); return fail(s, "out of memory"); }
-	strcpy(n->path, path);
-	for (int i = 0; i < n->nparams; ++i) n->initial[i] = n->values[i] = config->defaults[i];
 	return s->nnodes++;
 }
 int session_set(Session *s, int id, int param, float value) {
 	if (valid(s, id, param, value)) return -1;
-	s->nodes[id].initial[param] = s->nodes[id].values[param] = value;
+	Node *n = s->nodes + id;
+	if (n->path) n->dsp[0].module->config.defaults[param] = value;
+	else n->values[param] = value;
 	return 0;
 }
 int session_track(Session *s, int source, const int *effects, int count, int master) {
@@ -61,8 +62,8 @@ int session_track(Session *s, int source, const int *effects, int count, int mas
 	for (int i = 0; i < count; ++i) t->effects[i] = effects[i];
 	for (int i = 0; i < total; ++i) s->nodes[ids[i]].attached = 1;
 	Node *m = s->nodes + s->nnodes;
-	m->nparams = master ? 1 : 2;
-	m->attached = 1; m->initial[0] = m->values[0] = 1;
+	m->ncontrols = master ? 1 : 2;
+	m->attached = 1; m->values[0] = 1;
 	if (master) s->has_master = 1;
 	return s->nnodes++;
 }
@@ -116,11 +117,13 @@ int session_end(Session *s, size_t frames) {
 	for (int i = 0; i < s->nnodes; ++i) {
 		Node *n = s->nodes + i;
 		if (n->count) qsort(n->events, n->count, sizeof(Event), compare);
+		if (!n->path) continue;
+		const PluginConfig *config = &n->dsp[0].module->config;
 		for (int c = 0; c < 2 && n->dsp[c].instance; ++c) {
 			Engine *e = n->dsp + c;
-			for (int j = 0; j < n->nparams; ++j)
-				if (!(n->outputs & (UINT64_C(1) << j)))
-					e->module->api->set_parameter(e->instance, j, n->initial[j]);
+			for (int j = 0; j < config->nparams; ++j)
+				if (!(config->outputs & (UINT64_C(1) << j)))
+					e->module->api->set_parameter(e->instance, j, config->defaults[j]);
 			e->module->api->reset(e->instance); e->events = n->events; e->count = n->count;
 		}
 	}
@@ -191,12 +194,10 @@ int session_render(Session *s, float *out, size_t frames) {
 	}
 	return 0;
 }
-void session_pop(Session *s) {
-	Node *n = s->nodes + --s->nnodes;
-	close_engine(n->dsp); close_engine(n->dsp + 1); free(n->events); free(n->path);
-	*n = (Node){0};
-}
 void session_free(Session *s) {
-	while (s->nnodes) session_pop(s);
+	while (s->nnodes) {
+		Node *n = s->nodes + --s->nnodes;
+		close_engine(n->dsp); close_engine(n->dsp + 1); free(n->events); free(n->path);
+	}
 	*s = (Session){0};
 }

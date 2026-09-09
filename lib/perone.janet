@@ -63,5 +63,5 @@
   (def parameters (perone/parameters (product :parameters)))
   {:product product :parameters parameters
    :binary (string path "/" host/platform "/" name ".so")
-   :layout [input output midi offset slots]
+   :layout {:input-channels input :output-channels output :midi-bus midi :input-offset offset :input-slots slots}
    :defaults (map |(if (= ($ :direction) :input) ($ :default) nil) parameters)})

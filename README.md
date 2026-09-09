@@ -242,6 +242,14 @@ indipendenti. `make test-prog` verifica che due nuovi render siano identici.
 `lib/music.janet` fornisce le funzioni musicali; le partiture in `examples/` scelgono
 arrangiamento, strumenti ed effetti.
 
+Il layout passato da Janet al C usa campi nominati per canali principali, bus MIDI
+e posizioni degli ingressi. `PluginConfig` conserva i valori iniziali del plugin,
+inclusi gli override, separati dai default originali esposti da `daw/info`.
+La sessione usa quella configurazione per preparare entrambe le istanze degli
+effetti mono su stereo; i mixer conservano soltanto i propri valori di gain e pan.
+`daw/end` chiude la preparazione: da quel momento i parametri cambiano attraverso
+gli eventi già programmati.
+
 Gli eventi crescono durante la preparazione e vengono ordinati una volta sola.
 Janet viene chiuso prima del rendering; il motore non alloca memoria mentre processa
 i blocchi. Il mix occupa memoria indipendente dalla durata, più lo stato dei plugin

@@ -5,12 +5,11 @@
 enum { MAX_NODES = 128, MAX_TRACKS = 32, MAX_FX = 8 };
 typedef struct {
 	Engine dsp[2]; // A mono effect on stereo audio uses independent L/R instances.
-	int nparams;
-	uint64_t outputs;
 	char *path;
 	Event *events;
 	size_t count, capacity, next;
-	float initial[MAX_PARAMS], values[MAX_PARAMS];
+	float values[2]; // Mixer gain/pan only; initial plugin values live in PluginConfig.
+	int ncontrols;
 	int attached;
 } Node;
 typedef struct { int source, mixer, effects[MAX_FX], count; } Track;
@@ -30,5 +29,4 @@ int session_note(Session *s, int id, size_t time, size_t end, int pitch, int vel
 int session_end(Session *s, size_t frames);
 int session_render(Session *s, float *stereo, size_t frames);
 void session_free(Session *s);
-void session_pop(Session *s); // Roll back the last, still-unattached plugin.
 #endif

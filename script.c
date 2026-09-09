@@ -21,12 +21,17 @@ JanetTable *script_env(void) {
 	return env;
 }
 
+static int layout_integer(Janet layout, const char *name) {
+	Janet value = janet_get(layout, janet_ckeywordv(name));
+	return janet_getinteger(&value, 0);
+}
 void script_config(Janet layout, Janet defaults, PluginConfig *config) {
-	JanetView buses = janet_getindexed(&layout, 0), params = janet_getindexed(&defaults, 0);
-	if (buses.len != 5 || params.len > MAX_PARAMS) janet_panic("invalid plugin configuration");
-	*config = (PluginConfig){.input = janet_getinteger(buses.items, 0), .output = janet_getinteger(buses.items, 1),
-		.midi = janet_getinteger(buses.items, 2), .input_offset = janet_getinteger(buses.items, 3),
-		.inputs = janet_getinteger(buses.items, 4), .nparams = params.len};
+	janet_getdictionary(&layout, 0);
+	JanetView params = janet_getindexed(&defaults, 0);
+	if (params.len > MAX_PARAMS) janet_panic("invalid plugin configuration");
+	*config = (PluginConfig){.input = layout_integer(layout, "input-channels"), .output = layout_integer(layout, "output-channels"),
+		.midi = layout_integer(layout, "midi-bus"), .input_offset = layout_integer(layout, "input-offset"),
+		.inputs = layout_integer(layout, "input-slots"), .nparams = params.len};
 	for (int i = 0; i < params.len; ++i) {
 		if (janet_checktype(params.items[i], JANET_NIL)) config->outputs |= UINT64_C(1) << i;
 		else {

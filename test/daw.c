@@ -71,11 +71,11 @@ static int mock(Session *s, int kind, float value) {
 	};
 	static const int inputs[] = {0, 1, 1, 0, 2, 1, 2}, outputs[] = {1, 1, 1, 2, 2, 2, 1};
 	Node *n = s->nodes + s->nnodes;
-	n->nparams = 1; n->initial[0] = value; n->path = strdup("test");
+	n->path = strdup("test");
 	Engine *e = n->dsp;
 	e->module = calloc(1, sizeof(*e->module)); e->instance = malloc(sizeof(float));
 	assert(n->path && e->module && e->instance);
-	*e->module = (Module){.api = api + kind, .config = {.input = inputs[kind], .inputs = inputs[kind], .output = outputs[kind], .midi = -1, .nparams = 1}};
+	*e->module = (Module){.api = api + kind, .config = {.input = inputs[kind], .inputs = inputs[kind], .output = outputs[kind], .midi = -1, .nparams = 1, .defaults = {value}}};
 	e->initialized = 1;
 	return s->nnodes++;
 }
@@ -84,6 +84,23 @@ static int session_bundle(Session *s, const char *path) {
 	assert(!read_bundle(path, &binary, &config));
 	int id = session_plugin(s, binary, &config);
 	free(binary); return id;
+}
+static void test_initial_parameters(void) {
+	Session s = {0}; float out[8];
+	int source = mock(&s, 3, 1), fx = session_bundle(&s, "plugins/shape/build/plugin.perone");
+	assert(fx >= 0 && !session_set(&s, fx, 0, .5f)); // Before the second mono instance exists.
+	assert(session_track(&s, source, &fx, 1, 0) >= 0);
+	assert(!session_param(&s, fx, 2, 1, .5f));
+	assert(!session_set(&s, fx, 1, .75f)); // Initial values still apply to both instances.
+	assert(!session_end(&s, 4) && !session_render(&s, out, 4));
+	for (int i = 0; i < 4; ++i) {
+		float level = i < 2 ? .75f : .5f;
+		assert(fabsf(out[2 * i] - tanhf(.5f) * level) < 1e-6f);
+		assert(fabsf(out[2 * i + 1] - tanhf(-.25f) * level) < 1e-6f);
+	}
+	assert(session_set(&s, fx, 1, 1) < 0);
+	session_free(&s);
+	puts("OK: initial parameters before/after mono duplication, scheduled overrides and sealed session");
 }
 static void pipeline(Session *s) {
 	int source = mock(s, 0, 1), fx[] = {mock(s, 1, 2), mock(s, 2, .25f)};
@@ -252,6 +269,7 @@ static void test_plugins(void) {
 }
 int main(void) {
 	test_external_metadata();
+	test_initial_parameters();
 	test_pipeline(); test_master(); test_plugins();
 	test_stereo_pipeline(); test_channel_transitions(); test_stereo_wav();
 	test_wav(.25f, 1, (Output){0}, .25f);
