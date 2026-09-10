@@ -3,6 +3,7 @@
 (import ../lib/music)
 
 (def bpm 112)
+(def intro-rest 8) # Beats before the arpeggio enters.
 (def root (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
 
 (defn bw [name &opt params]
@@ -16,7 +17,8 @@
 (defn sweep [node parameter beat duration from to]
   (music/curve (seconds beat) (seconds duration) (* 32 duration)
     |(music/lerp from to $)
-    (fn [time value] (daw/param node time parameter value))))
+    (fn [time value] (daw/param node time parameter value)))
+  (+ beat duration))
 
 (defn note [node beat duration pitch volume]
   # These synths use their volume parameter for accents, not MIDI velocity.
@@ -93,91 +95,108 @@
   [[0.25 0.5 79] [1 0.4 77] [1.75 0.75 76] [3 0.65 72]]
   [[0.5 0.5 74] [1.25 0.3 72] [2 0.7 67] [3 0.75 69]]])
 
-# Intro 0–3; groove 4–11; floating break 12–15; return 16–23.
-(for bar 0 24
-  (def beat (* 4 bar))
-  (def harmony (% bar 4))
-  (def pitches (chords harmony))
-  (def break? (<= 12 bar 15))
-  (def groove? (or (<= 4 bar 11) (>= bar 16)))
-  (each pitch pitches (note pad beat 3.5 pitch 68))
+# Parts take and return beats; conversion to seconds stays at the daw/* boundary.
+(defn band [kind bars start]
+  (def break? (= kind :break))
+  (def groove? (or (= kind :groove) (= kind :reprise)))
+  (for bar 0 bars
+    (def beat (+ start (* 4 bar)))
+    (def harmony (% bar 4))
+    (def pitches (chords harmony))
+    (def arps? (or (not= kind :intro) (>= (* 4 bar) intro-rest)))
+    (def final? (and (= kind :reprise) (>= bar (/ bars 2))))
+    (each pitch pitches (note pad beat 3.5 pitch 68))
+    (when arps?
+      (music/sequence beat 0.5 [0 2 1 3 2 1 3 2]
+        (fn [t degree]
+          (def offbeat (= (% (- t beat) 1) 0.5))
+          (note arp (+ t (if offbeat 0.045 0)) (if break? 0.4 0.22)
+            (+ 12 (pitches degree)) (if offbeat 56 65)))))
+    (when groove?
+      (each [offset duration interval volume] bassline
+        (def degree (if (= interval 10) ([10 11 11 7] harmony) interval))
+        (note bass (+ beat offset) duration (+ (roots harmony) degree) volume))
+      (each offset [0 1.5 2 3.25] (thump (+ beat offset) (if (= offset 1.5) 88 96)))
+      (each offset [1 3] (note snare (+ beat offset 0.018) 0.22 50 84))
+      (when (= (% bar 2) 1) (note snare (+ beat 2.75) 0.12 50 48))
+      (for i 0 4
+        (sweep pad-track :gain (+ beat i) 0.125 0.26 0.12)
+        (sweep pad-track :gain (+ beat i 0.125) 0.75 0.12 0.26)))
+    (when (or (and (= kind :intro) (= bar (- bars 1))) (and break? (= (% bar 2) 0)))
+      (thump beat 82)
+      (note bass beat 2.5 (roots harmony) 74))
+    (when (and arps? (not break?))
+      (for i 0 8
+        (def t (+ beat (* i 0.5) (if (= (% i 2) 1) 0.045 0)))
+        (def open? (= i 6))
+        (control hat t :vca_decay (if open? 230 38))
+        (control hat t :vca_release (if open? 100 25))
+        (note hat t (if open? 0.38 0.1) 60 (if (= (% i 2) 1) 96 84)))
+      (when final? (note hat (+ beat 3.8) 0.08 60 74)))
+    (when (or (= kind :reprise) (and (= kind :groove) (>= bar (/ bars 2))))
+      (each [offset duration pitch] (melody harmony)
+        (note lead (+ beat offset) duration pitch (if final? 77 73))))
+    (when break? (note lead (+ beat 0.5) 2.5 (+ 12 (pitches 3)) 65))
+    (when (or (and (= kind :groove) (= (% bar 4) 3))
+              (and (= kind :reprise) (= bar (- bars 1))))
+      (each offset [3.5 3.75] (note snare (+ beat offset) 0.12 50 65))))
+  (+ start (* 4 bars)))
 
-  (when (>= bar 2)
-    (music/sequence beat 0.5 [0 2 1 3 2 1 3 2]
-      (fn [t degree]
-        (def offbeat (= (% (- t beat) 1) 0.5))
-        (note arp (+ t (if offbeat 0.045 0)) (if break? 0.4 0.22)
-          (+ 12 (pitches degree)) (if offbeat 56 65)))))
+# Notes and their automation share one span and move together.
+(defn section [kind bars start]
+  (def duration (* 4 bars))
+  (music/parallel start [
+    (partial band kind bars)
+    (fn [t]
+      (case kind
+        :intro (sweep pad :vcf_cutoff t duration 650 1800)
+        :groove (do
+          (sweep bass :vcf_cutoff t duration 180 1200)
+          (sweep pad-space :wet (+ t duration -1) 1 27 55)
+          (sweep lead-space :wet (+ t duration -1) 1 22 48))
+        :break (do
+          (sweep pad :vcf_cutoff t duration 900 3800)
+          (sweep chorus :depth t duration 28 65)
+          (control bass t :vcf_cutoff 160)
+          (sweep arp :cutoff t duration 900 4200)
+          (sweep phaser :center t duration 500 2800)
+          (control lead t :vco1_wave 3)
+          (sweep pad-space :wet (+ t duration -1) 1 55 27)
+          (sweep lead-space :wet (+ t duration -1) 1 48 22))
+        :reprise (do
+          (sweep pad :vcf_cutoff t duration 1800 900)
+          (sweep chorus :depth t (/ duration 2) 65 28)
+          (sweep bass :vcf_cutoff t duration 220 1800)
+          (sweep bass :vcf_resonance t duration 22 42)
+          (sweep drive :distortion t duration 12 30)
+          (control lead t :vco1_wave 2)))
+      (+ t duration))]))
 
-  (when groove?
-    (each [offset duration interval volume] bassline
-      (def degree (if (= interval 10) ([10 11 11 7] harmony) interval))
-      (note bass (+ beat offset) duration (+ (roots harmony) degree) volume))
-    (each offset [0 1.5 2 3.25] (thump (+ beat offset) (if (= offset 1.5) 88 96)))
-    (each offset [1 3] (note snare (+ beat offset 0.018) 0.22 50 84))
-    (when (= (% bar 2) 1) (note snare (+ beat 2.75) 0.12 50 48)))
+(defn opening [start]
+  (def end (music/serial start [(partial section :intro 4) (partial section :groove 8)]))
+  (def enter (+ start intro-rest))
+  (sweep arp :cutoff enter (- end enter) 1500 6500)
+  end)
 
-  (when (or (= bar 3) (= bar 12) (= bar 14))
-    (thump beat 82)
-    (note bass beat 2.5 (roots harmony) 74))
+(defn piece [start]
+  (def end (music/serial start [opening (partial section :break 4) (partial section :reprise 8)]))
+  # These two gestures span the whole arrangement after the arpeggio enters.
+  (def enter (+ start intro-rest))
+  (def duration (- end enter))
+  (sweep arp :pulse_width enter duration 24 66)
+  (music/curve (seconds enter) (seconds duration) (* 16 duration)
+    |(* 65 (math/sin (* 22 math/pi $)))
+    (fn [time value] (daw/param arp-pan time :pan value)))
+  end)
 
-  (when (and (>= bar 2) (not break?))
-    (for i 0 8
-      (def t (+ beat (* i 0.5) (if (= (% i 2) 1) 0.045 0)))
-      (def open? (= i 6))
-      (control hat t :vca_decay (if open? 230 38))
-      (control hat t :vca_release (if open? 100 25))
-      (note hat t (if open? 0.38 0.1) 60 (if (= (% i 2) 1) 96 84)))
-    (when (>= bar 20)
-      (note hat (+ beat 3.8) 0.08 60 74)))
-
-  (when (or (<= 8 bar 11) (>= bar 16))
-    (each [offset duration pitch] (melody harmony)
-      (note lead (+ beat offset) duration pitch (if (>= bar 20) 77 73))))
-  (when break? (note lead (+ beat 0.5) 2.5 (+ 12 (pitches 3)) 65))
-  (when (or (= bar 7) (= bar 11) (= bar 23))
-    (each offset [3.5 3.75] (note snare (+ beat offset) 0.12 50 65))))
-
-# Long gestures, all addressed by the IDs read from product.json.
-(sweep pad :vcf_cutoff 0 16 650 1800)
-(sweep pad :vcf_cutoff 48 16 900 3800)
-(sweep pad :vcf_cutoff 64 32 1800 900)
-(sweep chorus :depth 48 16 28 65)
-(sweep chorus :depth 64 16 65 28)
-(sweep bass :vcf_cutoff 16 32 180 1200)
-(control bass 48 :vcf_cutoff 160)
-(sweep bass :vcf_cutoff 64 32 220 1800)
-(sweep bass :vcf_resonance 64 32 22 42)
-(sweep drive :distortion 64 32 12 30)
-(sweep arp :cutoff 8 40 1500 6500)
-(sweep arp :cutoff 48 16 900 4200)
-(sweep arp :pulse_width 8 88 24 66)
-(sweep phaser :center 48 16 500 2800)
-(sweep pad-space :wet 47 1 27 55)
-(sweep pad-space :wet 63 1 55 27)
-(sweep lead-space :wet 47 1 22 48)
-(sweep lead-space :wet 63 1 48 22)
-(control lead 48 :vco1_wave 3)
-(control lead 64 :vco1_wave 2)
-(music/curve (seconds 8) (seconds 88) 1408
-  |(* 65 (math/sin (* 22 math/pi $)))
-  (fn [time value] (daw/param arp-pan time :pan value)))
-
-# A scored gain dip on the pad follows the quarter-note pulse of the groove.
-(for bar 0 24
-  (when (or (<= 4 bar 11) (>= bar 16))
-    (for i 0 4
-      (def beat (+ (* 4 bar) i))
-      (sweep pad-track :gain beat 0.125 0.26 0.12)
-      (sweep pad-track :gain (+ beat 0.125) 0.75 0.12 0.26))))
-
-# Resolve to Dm9 and let the stereo reverb decay before the final fade.
-(each pitch (chords 0) (note pad 96 1.5 pitch 62))
-(note bass 96 1 38 76)
-(note lead 96 1.25 74 65)
-(thump 96 92)
+# Resolve at the arrangement's end and leave six seconds for the reverb tail.
+(def finish (piece 0))
+(each pitch (chords 0) (note pad finish 1.5 pitch 62))
+(note bass finish 1 38 76)
+(note lead finish 1.25 74 65)
+(thump finish 92)
 (sweep master :gain 0 0.125 0 1)
-(def end (+ (seconds 96) 6))
+(def end (+ (seconds finish) 6))
 (music/curve (- end 2) 1.99 160 |(* (- 1 $) (- 1 $))
   (fn [time value] (daw/param master time :gain value)))
 (daw/end end {:format :pcm16 :normalize 0.94})

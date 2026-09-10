@@ -73,6 +73,9 @@ bundle Brickworks: accordi, basso, arpeggio, melodia e tre synth per la batteria
 La partitura automatizza filtri, risonanza, pulse width, distorsione, chorus,
 pan e riverberi; la cassa ha una discesa d'intonazione a ogni colpo. Esporta un
 WAV stereo PCM16 normalizzato a 0,94, con sei secondi per la coda finale.
+`opening` e `piece` descrivono l'arrangiamento; ogni sezione unisce note e
+automazioni con tempi relativi. Le durate delle sezioni determinano l'inizio
+delle successive e la posizione dell'accordo finale.
 
 `make test` compila le fixture Perone locali (sorgente stereo MIDI ed effetto mono)
 e verifica il nucleo senza richiedere i progetti in `plugins/`, Tibia o Brickworks.
@@ -165,7 +168,9 @@ implicita del mixer, e lo smussamento dei parametri DSP dipende dal plugin.
 `lib/music.janet` contiene solo calcoli musicali e funzioni sincrone: nessun plugin,
 stato di sessione, tempo globale o riferimento a `daw/*`. La partitura sceglie gli
 strumenti e passa alle sequenze e alle curve una funzione che riceve tempo e valore.
-Il C continua a ricevere soltanto note e parametri con tempi in secondi.
+Sequenze, curve e composizione di frasi usano l'unità di tempo scelta dal chiamante:
+inizio, passo, durata e fine devono essere coerenti. Il C continua a ricevere
+soltanto note e parametri con tempi in secondi.
 
 Da una partitura nella radice del repository:
 
@@ -197,6 +202,8 @@ restano relativi alla directory da cui si esegue l'host.
 | `music/sequence start step values emit` | Chiama `emit(time, value)` per ogni valore diverso da `nil`; restituisce `start + step * length(values)`. |
 | `music/lerp a b x` | Interpolazione lineare: `a` a zero, `b` a uno; nessun limite implicito a `x`. |
 | `music/curve start duration steps shape emit` | Genera `steps + 1` eventi, estremi inclusi; chiama `emit(time, shape(x))` con `x` da zero a uno. Restituisce il tempo finale. |
+| `music/serial start parts` | Chiama ogni frase con la fine della precedente; restituisce la fine dell'ultima. |
+| `music/parallel start parts` | Chiama tutte le frasi con lo stesso inizio; restituisce la fine più lontana. |
 
 Una sequenza può contenere note, nomi di percussioni o accordi: il significato del
 valore appartiene alla funzione passata dalla partitura. Il tempo restituito permette
@@ -208,11 +215,45 @@ istanze distinte, come in `examples/prog/polpo.janet`. Per esempio,
 `(music/chord 60 [0 3 7])` dà `@[60 63 67]`, mentre
 `(music/degree 60 [0 2 3 5 7 8 11] -1)` dà `59`.
 
-Le curve emettono controlli discreti. `steps` è un intero positivo, `duration` è in
-secondi; la forma può essere una normale funzione, per esempio `|(* $ $)`.
+Le curve emettono controlli discreti. `steps` è un intero positivo; `duration` usa
+la stessa unità di `start`. La forma può essere una normale funzione, per esempio `|(* $ $)`.
 L'ultimo controllo è a `start + duration`: deve precedere `daw/end`, perché il
-campione di fine export è escluso. Per cambiare BPM tra sezioni si passa un nuovo
-valore alle conversioni e si sommano esplicitamente le durate.
+campione di fine export è escluso, dopo la conversione in secondi.
+
+Una **frase** è una normale funzione `start → end`: emette note, controlli o altre
+frasi con tempi relativi a `start`, e restituisce una fine finita maggiore o uguale
+all'inizio. La fine dichiara lo spazio occupato nell'arrangiamento, comprese le
+pause; note e code possono proseguire oltre. Una pausa è semplicemente `|(+ $ durata)`.
+Una lista vuota restituisce `start` in entrambe le composizioni.
+
+Le funzioni sono eseguite subito, una volta ciascuna e nell'ordine della lista,
+anche in `parallel`: il parallelismo riguarda i tempi musicali. Gli errori si
+propagano al chiamante. La composizione non riordina gli eventi, non ripristina
+parametri e non calcola le code dei plugin; restano valide le regole dell'host per
+eventi allo stesso campione. Il brano riserva esplicitamente il tempo per le code.
+
+Per esempio, con `synth` già collegato alla traccia `track`, questa frase combina
+una sequenza di note e un'automazione del gain:
+
+```janet
+(defn phrase [bpm transpose start]
+  (def step (music/seconds bpm 0.5))
+  (music/parallel start [
+    (fn [t]
+      (music/sequence t step [60 nil 64 nil]
+        (fn [time pitch] (daw/note synth time (* step 0.8) (+ pitch transpose)))))
+    (fn [t]
+      (music/curve t (* 4 step) 32 identity
+        (fn [time value] (daw/param track time :gain value))))]))
+
+(def motif (partial phrase 120 0))
+(def end (music/serial 0 [motif motif |(+ $ 0.5) (partial phrase 90 12)]))
+(daw/end (+ end 1))
+```
+
+Ripetizione, trasposizione e cambio di BPM sono normali chiamate e argomenti Janet.
+La frase dell'esempio lavora in secondi; Rame compone le sezioni in quarti e converte
+al confine con `daw/*`. Entrambe usano lo stesso contratto, senza stato temporale globale.
 
 ## Rendering neutro, elaborazione esplicita
 

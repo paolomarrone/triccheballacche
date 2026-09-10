@@ -34,7 +34,7 @@
   (map |(+ root $) intervals))
 
 (defn sequence
-  "Call emit(time, value) at fixed steps in seconds. nil is a rest. Return the end of the sequence."
+  "Call emit(time, value) at fixed steps. nil is a rest. Return the end, in the same time unit."
   [start step values emit]
   (assert (and (finite? start) (positive? step)) "expected a finite start and a positive step")
   (eachp [i value] values
@@ -47,7 +47,7 @@
   (+ a (* (- b a) x)))
 
 (defn curve
-  "Call emit(time, shape(x)) for x=0..1, including both ends. steps is the number of intervals."
+  "Call emit(time, shape(x)) for x=0..1, including both ends. Return the end, in the same time unit."
   [start duration steps shape emit]
   (assert (and (finite? start) (positive? duration)) "expected a finite start and a positive duration")
   (assert (and (positive? steps) (= steps (math/floor steps)) (<= steps 0x7fffffff))
@@ -56,3 +56,22 @@
     (def x (/ i steps))
     (emit (+ start (* duration x)) (shape x)))
   (+ start duration))
+
+(defn- part-end [start part]
+  (def end (part start))
+  (assert (and (finite? end) (>= end start)) "part must return a finite end at or after its start")
+  end)
+
+(defn serial
+  "Call each part(start) at the previous part's end. Return the final end, or start for no parts."
+  [start parts]
+  (assert (finite? start) "start must be finite")
+  (reduce part-end start parts))
+
+(defn parallel
+  "Call each part(start) at the same start, in list order. Return the latest end, or start for no parts."
+  [start parts]
+  (assert (finite? start) "start must be finite")
+  (var end start)
+  (each part parts (set end (max end (part-end start part))))
+  end)
