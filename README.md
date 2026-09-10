@@ -58,13 +58,21 @@ Gli esempi già compilati in Brickworks sono utilizzabili direttamente:
 ```sh
 ./build/host ../brickworks/build/perone/synthpp_mono/build/bw_example_synthpp_mono.perone --wav build/synth.wav
 ./build/daw examples/brickworks.janet build/brickworks.wav
+./build/daw examples/rame.janet build/rame.wav
 make test-brickworks    # Carica e processa tutti i bundle presenti, senza ricompilarli.
 ```
 
 `BRICKWORKS_PERONE` configura il percorso della raccolta per `make test-brickworks`;
-l'esempio Janet legge la variabile d'ambiente omonima. Il percorso predefinito è
-`../brickworks/build/perone`. La partitura dimostra synth polifonico, compressore,
-pan mono→stereo e riverbero, usando anche gli esempi C++.
+entrambi gli esempi Janet leggono la variabile d'ambiente omonima. Il percorso
+predefinito è `../brickworks/build/perone`. `brickworks.janet` dimostra synth
+polifonico, compressore, pan mono→stereo e riverbero, usando anche gli esempi C++.
+
+[Rame](examples/rame.janet) è un pezzo electro di circa 57 secondi: 24 battute a
+112 BPM, con intro, groove, pausa centrale e ripresa. Le sette parti usano solo
+bundle Brickworks: accordi, basso, arpeggio, melodia e tre synth per la batteria.
+La partitura automatizza filtri, risonanza, pulse width, distorsione, chorus,
+pan e riverberi; la cassa ha una discesa d'intonazione a ogni colpo. Esporta un
+WAV stereo PCM16 normalizzato a 0,94, con sei secondi per la coda finale.
 
 `make test` compila le fixture Perone locali (sorgente stereo MIDI ed effetto mono)
 e verifica il nucleo senza richiedere i progetti in `plugins/`, Tibia o Brickworks.
