@@ -1,10 +1,15 @@
 #include "daw.h"
 #include "script.h"
 #include <assert.h>
+#include <float.h>
 #include <math.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 static int script(Session *s, Output *cfg, const char *source) {
@@ -135,16 +140,16 @@ static int session_bundle(Session *s, const char *path) {
 static void test_initial_parameters(void) {
 	Session s = {0};
 	float out[8];
-	int source = mock(&s, 3, 1), fx = session_bundle(&s, "plugins/shape/build/plugin.perone");
-	assert(fx >= 0 && !session_set(&s, fx, 0, .5f)); // Before the second mono instance exists.
+	int source = mock(&s, 3, 1), fx = session_bundle(&s, "build/effect.perone");
+	assert(fx >= 0 && !session_set(&s, fx, 1, .5f)); // Before the second mono instance exists.
 	assert(session_track(&s, source, &fx, 1, 0) >= 0);
-	assert(!session_param(&s, fx, 2, 1, .5f));
-	assert(!session_set(&s, fx, 1, .75f)); // Initial values still apply to both instances.
+	assert(!session_param(&s, fx, 2, 2, 0));
+	assert(!session_set(&s, fx, 2, .5f)); // Initial values still apply to both instances.
 	assert(!session_end(&s, 4) && !session_render(&s, out, 4));
 	for (int i = 0; i < 4; ++i) {
-		float level = i < 2 ? .75f : .5f;
-		assert(fabsf(out[2 * i] - tanhf(.5f) * level) < 1e-6f);
-		assert(fabsf(out[2 * i + 1] - tanhf(-.25f) * level) < 1e-6f);
+		float level = i < 2 ? .5f * powf(.5f, i + 1) : .5f;
+		assert(fabsf(out[2 * i] - level) < 1e-6f);
+		assert(fabsf(out[2 * i + 1] + .5f * level) < 1e-6f);
 	}
 	assert(session_set(&s, fx, 1, 1) < 0);
 	session_free(&s);
@@ -188,30 +193,29 @@ static void test_master(void) {
 	Session s = {0};
 	float audio[64];
 	int source = mock(&s, 0, 1), tr = session_track(&s, source, NULL, 0, 0);
-	int fx = session_bundle(&s, "plugins/shape/build/plugin.perone");
+	int fx = session_bundle(&s, "build/effect.perone");
 	assert(fx >= 0 && !session_set(&s, tr, 1, -1));
 	assert(session_track(&s, -1, &fx, 1, 1) >= 0);
 	assert(s.nodes[fx].dsp[0].instance != s.nodes[fx].dsp[1].instance);
 	assert(!session_set(&s, fx, 2, .5f));
-	assert(!session_param(&s, fx, 3, 0, .5f));
+	assert(!session_param(&s, fx, 3, 1, .5f));
 	assert(!session_param(&s, fx, 3, 2, 0));
 	assert(!session_end(&s, 32) && !session_render(&s, audio, 32));
 	for (int i = 0; i < 32; ++i)
-		assert(
-		    fabsf(audio[2 * i] - (i < 3 ? tanhf(1) * powf(.5f, i + 1) : tanhf(.5f))) < 1e-6f && audio[2 * i + 1] == 0);
+		assert(fabsf(audio[2 * i] - (i < 3 ? powf(.5f, i + 1) : .5f)) < 1e-6f && audio[2 * i + 1] == 0);
 	session_free(&s);
 	puts("OK: master effects use independent stereo state and shared automation");
 }
 
 static void stereo_pipeline(Session *s) {
-	int source = mock(s, 3, 1), mono = session_bundle(s, "plugins/shape/build/plugin.perone");
+	int source = mock(s, 3, 1), mono = session_bundle(s, "build/effect.perone");
 	int fx[] = {mono, mock(s, 4, 1)};
 	int tr = session_track(s, source, fx, 2, 0), stereo = mock(s, 4, 1);
 	int master = session_track(s, -1, &stereo, 1, 1);
 	assert(tr >= 0 && master >= 0);
 	assert(s->nodes[mono].dsp[1].instance && !s->nodes[fx[1]].dsp[1].instance && !s->nodes[stereo].dsp[1].instance);
 	assert(!session_set(s, mono, 2, .5f));
-	assert(!session_param(s, mono, 5, 0, .5f));
+	assert(!session_param(s, mono, 5, 1, .5f));
 	assert(!session_param(s, mono, 5, 2, 0));
 	assert(!session_param(s, tr, 7, 0, .5f));
 	assert(!session_param(s, tr, 13, 1, -1));
@@ -231,8 +235,8 @@ static void test_stereo_pipeline(void) {
 	assert(!memcmp(x, y, sizeof(x)));
 	for (int i = 0; i < 33; ++i) {
 		float gain = (i < 7 ? 1 : .5f) * (i < 19 ? 1 : .25f);
-		float left = (i < 5 ? tanhf(1) * powf(.5f, i + 1) : tanhf(.5f)) * gain;
-		float right = (i < 5 ? tanhf(-.5f) * powf(.5f, i + 1) : tanhf(-.25f)) * gain;
+		float left = (i < 5 ? powf(.5f, i + 1) : .5f) * gain;
+		float right = (i < 5 ? -.5f * powf(.5f, i + 1) : -.25f) * gain;
 		if (i >= 13 && i < 17)
 			left = 0;
 		if (i >= 17)
@@ -262,7 +266,7 @@ static void test_channel_transitions(void) {
 	}
 	Session s = {0};
 	float out[2];
-	int source = mock(&s, 3, 1), fx[] = {session_bundle(&s, "plugins/shape/build/plugin.perone"), mock(&s, 5, 1)};
+	int source = mock(&s, 3, 1), fx[] = {session_bundle(&s, "build/effect.perone"), mock(&s, 5, 1)};
 	assert(session_track(&s, source, fx, 2, 0) < 0); // No implicit stereo fold-down before a mono-to-stereo effect.
 	assert(s.ntracks == 0 && !s.nodes[fx[0]].dsp[1].instance && !s.nodes[source].attached);
 	assert(session_track(&s, source, fx, 1, 0) >= 0);
@@ -274,6 +278,78 @@ static void test_channel_transitions(void) {
 	assert(out[0] == .25f && out[1] == .25f);
 	session_free(&s);
 	puts("OK: mono/stereo transitions, native mono-to-stereo DSP, explicit downmix and invalid-chain rollback");
+}
+
+static void export_session(Session *s, size_t frames, int overflow) {
+	int source = mock(s, 3, .25f), track = session_track(s, source, NULL, 0, 0);
+	assert(track >= 0 && !session_set(s, track, 0, 4));
+	if (overflow)
+		assert(!session_param(s, source, BLOCK, 0, FLT_MAX));
+	assert(!session_end(s, frames));
+}
+
+static void failed_exports(size_t frames, int overflow) {
+	for (int pcm16 = 0; pcm16 < 2; ++pcm16)
+		for (int normalize = 0; normalize < 2; ++normalize)
+			for (int existing = 0; existing < 2; ++existing) {
+				char directory[] = "build/export-test-XXXXXX", path[80];
+				assert(mkdtemp(directory));
+				snprintf(path, sizeof(path), "%s/score.wav", directory);
+				const char previous[] = "previous export";
+				if (existing) {
+					FILE *f = fopen(path, "wb");
+					assert(f && fwrite(previous, 1, sizeof(previous), f) == sizeof(previous) && !fclose(f));
+				}
+				Session s = {0};
+				export_session(&s, frames, overflow);
+				assert(write_score(&s, &(Output){pcm16, normalize ? .94f : 0}, path) < 0 && s.error);
+				if (overflow)
+					assert(!strcmp(s.error, "non-finite audio"));
+				if (frames == 2)
+					assert(s.time == frames); // The error happens after all audio has been rendered.
+				session_free(&s);
+				if (existing) {
+					char actual[sizeof(previous)];
+					FILE *f = fopen(path, "rb");
+					assert(f && fread(actual, 1, sizeof(actual), f) == sizeof(actual));
+					assert(!memcmp(actual, previous, sizeof(actual)) && fgetc(f) == EOF && !fclose(f));
+					assert(!unlink(path));
+				} else
+					assert(access(path, F_OK) != 0);
+				assert(!rmdir(directory)); // No temporary export survives an error.
+			}
+}
+
+static void test_atomic_export(void) {
+	failed_exports(BLOCK + 1, 1);
+	for (int late = 0; late < 2; ++late) {
+		pid_t child = fork();
+		assert(child >= 0);
+		if (!child) {
+			assert(signal(SIGXFSZ, SIG_IGN) != SIG_ERR);
+			rlim_t limit = late ? 48 : 128;
+			assert(!setrlimit(RLIMIT_FSIZE, &(struct rlimit){limit, limit}));
+			failed_exports(late ? 2 : BLOCK + 1, 0);
+			_exit(0);
+		}
+		int status;
+		assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	}
+	char directory[] = "build/export-test-XXXXXX", path[80];
+	assert(mkdtemp(directory));
+	snprintf(path, sizeof(path), "%s/score.wav", directory);
+	assert(!mkdir(path, 0700));
+	Session s = {0};
+	export_session(&s, 2, 0);
+	assert(write_score(&s, &(Output){0}, path) < 0 && s.error);
+	session_free(&s);
+	assert(!rmdir(path)); // Failed rename preserves the existing directory.
+	snprintf(path, sizeof(path), "%s/missing/score.wav", directory);
+	export_session(&s, 2, 0);
+	assert(write_score(&s, &(Output){0}, path) < 0 && s.time == 0 && s.error);
+	session_free(&s);
+	assert(!rmdir(directory));
+	puts("OK: failed render/write/finalization/rename preserves the destination and removes temporary files");
 }
 
 static void test_stereo_wav(void) {
@@ -322,59 +398,14 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 	session_free(&s);
 }
 
-static void test_plugins(void) {
-	Engine echo = {0};
-	float input[1025] = {1}, out[1025];
-	input[200] = .25f;
-	assert(!open_bundle(&echo, "plugins/echo/build/plugin.perone"));
-	echo.module->api->set_parameter(echo.instance, 0, 1); // 1 ms -> 44 samples.
-	echo.module->api->set_parameter(echo.instance, 3, 1);
-	echo.module->api->set_parameter(echo.instance, 4, 0);
-	echo.module->api->set_parameter(echo.instance, 5, 0);
-	echo.module->api->set_parameter(echo.instance, 6, 0);
-	const Event change = {100, 0, 2, {0}, 0};
-	echo.events = &change;
-	echo.count = 1;
-	render(&echo, out, input, 1025);
-	for (int i = 0; i < 1025; ++i)
-		assert(out[i] == (i == 44 ? 1 : i == 288 ? .25f : 0));
-	close_engine(&echo);
-	Engine a = {0}, b = {0};
-	float x[2000], y[2000];
-	assert(
-	    !open_bundle(&a, "plugins/drums/build/plugin.perone") && !open_bundle(&b, "plugins/drums/build/plugin.perone"));
-	const Event hits[] = {{0, -1, 0, {0x90, 4, 127}, 0}, {100, 0, .5f, {0}, 1}, {200, -1, 0, {0x90, 1, 100}, 2},
-	    {800, -1, 0, {0x90, 2, 80}, 3}};
-	a.events = b.events = hits;
-	a.count = b.count = 4;
-	render(&a, x, NULL, 2000);
-	for (size_t i = 0; i < 2000;) {
-		size_t n = 2000 - i < 257 ? 2000 - i : 257;
-		render(&b, y + i, NULL, n);
-		i += n;
-	}
-	assert(!memcmp(x, y, sizeof(x)));
-	for (int i = 0; i < 100; ++i) {
-		const uint8_t hit[] = {0x90, i % 7, 127};
-		a.module->api->midi_msg_in(a.instance, a.module->config.midi, hit);
-	}
-	a.module->api->set_parameter(a.instance, 0, 0);
-	render(&a, x, NULL, 2000);
-	for (int i = 0; i < 2000; ++i)
-		assert(x[i] == 0 && isfinite(y[i]));
-	close_engine(&a);
-	close_engine(&b);
-	puts("OK: echo timing/automation, deterministic percussion, voice bounds, live drum gain");
-}
-
 int main(void) {
 	test_external_metadata();
 	test_initial_parameters();
 	test_pipeline();
 	test_master();
-	test_plugins();
 	test_stereo_pipeline();
 	test_channel_transitions();
+	test_atomic_export();
 	test_stereo_wav();
 	test_wav(.25f, 1, (Output){0}, .25f);
 	test_wav(.25f, .5f, (Output){0}, .125f);
@@ -402,7 +433,7 @@ int main(void) {
 	bad_script("unknown-binding");
 	bad_script("(daw/end 1) (error \"expected failure after end\")");
 	bad_script("(+ 1 2)");
-	bad_script("(daw/plugin \"plugins/synth_mono/build/plugin.perone\") (daw/end 1)");
+	bad_script("(daw/plugin \"build/fixture.perone\") (daw/end 1)");
 	puts("OK: parse/runtime errors, missing end and orphan plugins fail cleanly");
 	return 0;
 }

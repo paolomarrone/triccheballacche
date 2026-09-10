@@ -19,7 +19,7 @@ CORE = engine.c loader.c
 HEADERS = engine.h loader.h module.h perone.h
 FORMAT_SOURCES = $(filter-out perone.h,$(wildcard *.c *.h test/*.c test/perone/*.c plugins/*/plugin.h examples/termux_synth/src/*.c))
 
-.PHONY: all test test-prog test-brickworks check-plugins run keys prog clean format format-check
+.PHONY: all test test-plugins test-prog test-brickworks check-plugins run keys prog clean format format-check
 all: build/host build/daw
 
 format:
@@ -74,6 +74,7 @@ check-plugins:
 	done
 
 TEST_BUNDLE = build/fixture.perone
+TEST_EFFECT = build/effect.perone
 $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture.so: test/perone/plugin.c perone.h
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -fPIC -fvisibility=hidden -shared $< -o $@
@@ -82,10 +83,21 @@ $(TEST_BUNDLE)/product.json: test/perone/product.json
 	mkdir -p $(dir $@)
 	cp $< $@
 
-test: check-plugins build/test build/termux_test build/daw_test $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture.so $(TEST_BUNDLE)/product.json
+$(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture.so: test/perone/plugin.c perone.h
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -DPERONE_TEST_EFFECT -fPIC -fvisibility=hidden -shared $< -o $@
+
+$(TEST_EFFECT)/product.json: test/perone/effect.json
+	mkdir -p $(dir $@)
+	cp $< $@
+
+test: build/test build/termux_test build/daw_test $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture.so $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture.so $(TEST_EFFECT)/product.json
 	./build/test
 	./build/termux_test
 	./build/daw_test
+
+test-plugins: check-plugins build/plugins_test
+	./build/plugins_test
 
 run: build/host
 	./build/host plugins/synth_mono/build/plugin.perone
@@ -96,8 +108,8 @@ keys: build/termux_synth
 build/daw: daw.c daw.h session.c session.h $(CORE) $(HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) daw.c session.c $(CORE) script.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
 
-build/daw_test: test/daw.c daw.c daw.h session.c session.h $(CORE) $(HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -DDAW_TEST -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) test/daw.c daw.c session.c $(CORE) script.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+build/%_test: test/%.c daw.c daw.h session.c session.h $(CORE) $(HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -DDAW_TEST -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) $< daw.c session.c $(CORE) script.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
 
 prog: check-plugins build/daw
 	./build/daw examples/prog/polpo.janet build/il_polpo_a_sette_gomiti.wav
@@ -107,8 +119,8 @@ test-prog: prog
 	cmp build/polpo-repeat.wav build/il_polpo_a_sette_gomiti.wav
 
 clean:
-	rm -f build/audio.o build/json.o build/perone.inc build/daw.inc build/host build/test build/termux_synth build/termux_test build/daw build/daw_test
-	rm -rf build/fixture.perone
+	rm -f build/audio.o build/json.o build/perone.inc build/daw.inc build/host build/test build/termux_synth build/termux_test build/daw build/daw_test build/plugins_test
+	rm -rf build/fixture.perone build/effect.perone
 
 # Read-only audit of the bundles built in Brickworks; no plugin compilation here.
 BRICKWORKS_PERONE ?= ../brickworks/build/perone

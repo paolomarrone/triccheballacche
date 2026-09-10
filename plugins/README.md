@@ -34,6 +34,7 @@ Makefile; quest'ultimo produce il bundle `build/plugin.perone` e segue le dipend
 Il JSON è la fonte dei default e dei metadati: non ci sono tabelle manuali parallele.
 I preset musicali restano nelle partiture Janet.
 
+`make test-plugins`, dalla radice dell'host, verifica i sei bundle già compilati.
 I test del synth verificano anche l'indipendenza dai blocchi e il pitch bend
 440/220/880/440 Hz. Queste correzioni devono essere presenti in Brickworks:
 il wrapper non applica patch DSP né altera i messaggi per compensare bug del synth.

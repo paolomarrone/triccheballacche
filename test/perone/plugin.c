@@ -6,7 +6,7 @@
 
 typedef struct {
 	perone_callbacks callbacks;
-	float gain, rate, *memory;
+	float gain, control, rate, gate, state, *memory;
 	int initialized;
 } Instance;
 
@@ -68,11 +68,17 @@ static void reset(void *p) {
 	Instance *i = p;
 	assert(i->rate == 44100 && i->memory);
 	*i->memory = 123;
+	i->state = 0;
+	i->gate = 1;
 }
 
 static void set(void *p, size_t index, float value) {
-	assert(index == 1);
-	((Instance *)p)->gain = value;
+	assert(index == 1 || index == 2);
+	Instance *i = p;
+	if (index == 1)
+		i->gain = value;
+	else
+		i->control = value;
 }
 
 static float get(void *p, size_t index) {
@@ -82,18 +88,36 @@ static float get(void *p, size_t index) {
 
 static void process(void *p, const float **in, float **out, size_t n) {
 	Instance *i = p;
-	assert(!in && i->initialized && *i->memory == 123);
+	assert(i->initialized && *i->memory == 123);
 	const char *bin = i->callbacks.get_bindir(i->callbacks.handle),
 	           *data = i->callbacks.get_datadir(i->callbacks.handle);
 	assert(!strncmp(bin, data, strlen(data)) && bin[strlen(data)] == '/');
 	for (size_t k = 0; k < n; ++k) {
-		out[0][k] = i->gain;
-		out[1][k] = -i->gain;
+#ifdef PERONE_TEST_EFFECT
+		assert(in && in[0]);
+		if (i->control)
+			i->state += i->control * (in[0][k] - i->state);
+		else
+			i->state = 0;
+		out[0][k] = (in[0][k] - i->state) * i->gain;
+#else
+		assert(!in);
+		out[0][k] = i->gain * i->gate;
+		out[1][k] = -out[0][k];
+#endif
 	}
 }
 
+#ifndef PERONE_TEST_EFFECT
+static void midi(void *p, size_t bus, const uint8_t *data) {
+	assert(bus == 0);
+	((Instance *)p)->gate = data[0] == 0x90 && data[2] != 0;
+}
+#endif
+
 __attribute__((visibility("default"))) const perone_api *perone_get_api(uint32_t version) {
-	static const perone_api api = {.alloc = allocate,
+	static const perone_api api = {
+	    .alloc = allocate,
 	    .free = release,
 	    .init = init,
 	    .fini = fini,
@@ -103,7 +127,11 @@ __attribute__((visibility("default"))) const perone_api *perone_get_api(uint32_t
 	    .reset = reset,
 	    .process = process,
 	    .set_parameter = set,
-	    .get_parameter = get};
+	    .get_parameter = get,
+#ifndef PERONE_TEST_EFFECT
+	    .midi_msg_in = midi,
+#endif
+	};
 	static const perone_api missing = {0};
 	return version != PERONE_ABI_VERSION || fails("abi") ? NULL : fails("function") ? &missing : &api;
 }

@@ -5,8 +5,9 @@ Plugin Perone mono e stereo a 44,1 kHz, tracce con effetti in serie e mix stereo
 
 ```sh
 make                    # Compila solo host e renderer Janet.
+make test               # Test del nucleo con fixture locali.
 make -C plugins         # Compilazione separata dei plugin di esempio.
-make test
+make test-plugins       # Integrazione con i sei plugin già compilati.
 make prog
 ./build/daw examples/hello.janet build/hello.wav
 ./build/daw examples/automation.janet build/automation.wav
@@ -65,9 +66,11 @@ l'esempio Janet legge la variabile d'ambiente omonima. Il percorso predefinito �
 `../brickworks/build/perone`. La partitura dimostra synth polifonico, compressore,
 pan mono→stereo e riverbero, usando anche gli esempi C++.
 
-`make test` e `make prog` richiedono i bundle di esempio già presenti e segnalano
-come compilarli se mancano. Il build dell'host non compila plugin di produzione;
-`make test` compila una piccola libreria di prova locale per verificare il ciclo di vita Perone.
+`make test` compila le fixture Perone locali (sorgente stereo MIDI ed effetto mono)
+e verifica il nucleo senza richiedere i progetti in `plugins/`, Tibia o Brickworks.
+`make test-plugins` e `make prog` richiedono i bundle di esempio già presenti e
+segnalano come compilarli se mancano. Il build dell'host e i test non compilano
+plugin di produzione.
 `make clean` pulisce i programmi dell'host; `make -C plugins clean` pulisce i plugin.
 `make keys` compila e avvia il synth da terminale autonomo in `examples/termux_synth/`.
 
@@ -223,6 +226,11 @@ Opzioni di `daw/end`:
 `:normalize` imposta il picco, da 0 a 1; 0 (default) la disabilita.
 La normalizzazione usa un file temporaneo, non un buffer dell'intero brano.
 
+L'export della DAW scrive un WAV temporaneo nella directory di destinazione e
+sostituisce il file richiesto soltanto dopo la chiusura riuscita. Se il rendering
+o la scrittura falliscono, il WAV precedente resta intatto; se non esisteva,
+non viene pubblicato un file incompleto.
+
 Plugin inclusi oltre al synth e all'effetto di test:
 
 - `plugins/shape/build/plugin.perone`: waveshaper, drive/level e filtri DC/lowpass a coefficienti espliciti.
@@ -286,11 +294,16 @@ Script e plugin devono essere fidati: nessuna sandbox o isolamento dei crash nat
 Le chiamate `daw/*` costruiscono la sessione in modo sincrono; thread e task asincroni
 che modificano la sessione non sono supportati.
 
-`make test` copre scheduler, DSP, API, errori, catene, neutralità, automazione del
+`make test` copre scheduler, ciclo di vita Perone, API, errori, catene, neutralità, automazione del
 mixer/master, separazione dei canali, effetti mono su stereo, effetti stereo
 con interazione L/R, conversioni dei canali, crescita degli eventi e formati WAV.
 Include `test/music.janet`, che prova le funzioni musicali senza dipendere da `daw/*`,
-e una curva della libreria collegata al synth tramite l'API reale.
+e una curva della libreria collegata alla fixture tramite l'API reale. Verifica
+anche la conservazione del WAV precedente e la pulizia dei temporanei dopo errori
+di rendering, scrittura, finalizzazione e sostituzione del file.
+`make test-plugins` conserva le regressioni dei DSP reali: synth e pitch bend,
+inviluppo indipendente dai blocchi, filtro, delay, percussioni e waveshaper,
+oltre ai metadati Brickworks usati da una partitura Janet.
 La vecchia API sperimentale cambia: `instrument` diventa `plugin` + `track`,
 `export` diventa `end`; `color`, `send` e `drum` non sono più casi speciali dell'host.
 
