@@ -21,7 +21,7 @@ Servono compilatore C, make, git e curl. Su Termux:
 Il build dell'host scarica in `.deps/` Janet v1.41.2, miniaudio 0.11.25
 (se non trova `../miniaudio.h`) e il solo [modulo JSON di Spork](https://github.com/janet-lang/spork/blob/0667f96b74de52747ffe5e19e185563ebf53816b/src/json.c),
 a una revisione fissata nel Makefile. Janet e JSON sono collegati staticamente;
-le librerie Janet dell'host sono incorporate nei binari. Non occorre installare
+l'API Janet della DAW e il lettore Perone sono incorporati nei binari. Non occorre installare
 Janet, Spork o jpm. I build successivi sono offline.
 
 ## Build separati: host e plugin
@@ -59,11 +59,12 @@ Gli esempi già compilati in Brickworks sono utilizzabili direttamente:
 ./build/host ../brickworks/build/perone/synthpp_mono/build/bw_example_synthpp_mono.perone --wav build/synth.wav
 ./build/daw examples/brickworks.janet build/brickworks.wav
 ./build/daw examples/rame.janet build/rame.wav
+./build/daw examples/patterns.janet build/patterns.wav
 make test-brickworks    # Carica e processa tutti i bundle presenti, senza ricompilarli.
 ```
 
 `BRICKWORKS_PERONE` configura il percorso della raccolta per `make test-brickworks`;
-entrambi gli esempi Janet leggono la variabile d'ambiente omonima. Il percorso
+gli esempi Janet leggono la variabile d'ambiente omonima. Il percorso
 predefinito è `../brickworks/build/perone`. `brickworks.janet` dimostra synth
 polifonico, compressore, pan mono→stereo e riverbero, usando anche gli esempi C++.
 
@@ -73,9 +74,11 @@ bundle Brickworks: accordi, basso, arpeggio, melodia e tre synth per la batteria
 La partitura automatizza filtri, risonanza, pulse width, distorsione, chorus,
 pan e riverberi; la cassa ha una discesa d'intonazione a ogni colpo. Esporta un
 WAV stereo PCM16 normalizzato a 0,94, con sei secondi per la coda finale.
-`opening` e `piece` descrivono l'arrangiamento; ogni sezione unisce note e
-automazioni con tempi relativi. Le durate delle sezioni determinano l'inizio
-delle successive e la posizione dell'accordo finale.
+`opening` e `piece` costruiscono l'arrangiamento come pattern immutabili; ogni
+sezione unisce note e automazioni con tempi relativi. Le durate delle sezioni
+determinano l'inizio delle successive e la posizione dell'accordo finale.
+[patterns.janet](examples/patterns.janet) mostra in pochi passaggi ripetizione,
+inversione, trasposizione e dilatazione dello stesso motivo, con una curva del filtro.
 
 `make test` compila le fixture Perone locali (sorgente stereo MIDI ed effetto mono)
 e verifica il nucleo senza richiedere i progetti in `plugins/`, Tibia o Brickworks.
@@ -128,6 +131,7 @@ Tempo, battute, accordi, rampe e pattern sono funzioni della libreria Janet `lib
 | `daw/param node time parameter value` | Automatizza un parametro del plugin, della traccia o del master. |
 | `daw/info node` | Descrizioni immutabili dei parametri, inclusi mapping ed etichette dei valori enumerati. |
 | `daw/product node` | Metadati completi del prodotto letti dal JSON; `nil` per i mixer. |
+| `daw/schedule start bpm pattern` | Emette un pattern in quarti a partire da `start` secondi e restituisce la fine nominale in secondi. |
 | `daw/end seconds &opt options` | Chiude la partitura e imposta durata e formato. La CLI esporta dopo il successo dello script. |
 
 Opzioni traccia: `:gain` 0–4 (default 1), `:pan` −1–1 (default 0),
@@ -163,97 +167,106 @@ di inserimento. Le curve Janet generano eventi discreti: nessuna interpolazione
 implicita del mixer, e lo smussamento dei parametri DSP dipende dal plugin.
 `examples/automation.janet` mostra un minuto di automazione su effetto e panorama.
 
-## Libreria musicale Janet
+## Tempo, pitch e pattern Janet
 
-`lib/music.janet` contiene solo calcoli musicali e funzioni sincrone: nessun plugin,
-stato di sessione, tempo globale o riferimento a `daw/*`. La partitura sceglie gli
-strumenti e passa alle sequenze e alle curve una funzione che riceve tempo e valore.
-Sequenze, curve e composizione di frasi usano l'unità di tempo scelta dal chiamante:
-inizio, passo, durata e fine devono essere coerenti. Il C continua a ricevere
-soltanto note e parametri con tempi in secondi.
+`lib/music.janet` contiene cinque funzioni matematiche, senza stato di sessione:
 
-Da una partitura nella radice del repository:
-
-```janet
-(import ./lib/music)
-
-(def bpm 154)
-(def step (music/seconds bpm 0.5)) # Un ottavo; BPM sempre riferiti ai quarti.
-(def bass (daw/plugin "plugins/synth_mono/build/plugin.perone" {:vcf_cutoff 900}))
-(daw/track bass)
-(def phrase [40 40 47 nil 40 50 44]) # nil occupa un passo senza emettere una nota.
-(music/sequence 0 step phrase
-  (fn [t pitch] (daw/note bass t (* step 0.8) pitch)))
-(music/curve 0 1.8 90 |(music/lerp 900 3000 $)
-  (fn [t cutoff] (daw/param bass t :vcf_cutoff cutoff)))
-(daw/end 2)
-```
-
-Gli import relativi sono risolti dalla directory della partitura: negli esempi
-si usa `../lib/music`, nel brano prog `../../lib/music`. I percorsi dei plugin
-restano relativi alla directory da cui si esegue l'host.
-
-| Funzione | Risultato o comportamento |
+| Funzione | Risultato |
 | --- | --- |
 | `music/seconds bpm beats` | Converte quarti in secondi; accetta frazioni e offset negativi. |
 | `music/bars bpm count &opt numerator denominator` | Durata di `count` battute in secondi, metro 4/4 di default. Due battute di 7/8 a 120 BPM durano 3,5 secondi. |
-| `music/degree root intervals n` | Grado di scala a partire da zero; ripete gli intervalli ogni ottava, anche per gradi negativi. |
-| `music/chord root intervals` | Array di altezze MIDI, preservando ordine e disposizione degli intervalli. |
-| `music/sequence start step values emit` | Chiama `emit(time, value)` per ogni valore diverso da `nil`; restituisce `start + step * length(values)`. |
-| `music/lerp a b x` | Interpolazione lineare: `a` a zero, `b` a uno; nessun limite implicito a `x`. |
-| `music/curve start duration steps shape emit` | Genera `steps + 1` eventi, estremi inclusi; chiama `emit(time, shape(x))` con `x` da zero a uno. Restituisce il tempo finale. |
-| `music/serial start parts` | Chiama ogni frase con la fine della precedente; restituisce la fine dell'ultima. |
-| `music/parallel start parts` | Chiama tutte le frasi con lo stesso inizio; restituisce la fine più lontana. |
+| `music/degree root intervals n` | Grado di scala a partire da zero, ripetendo gli intervalli ogni ottava anche per gradi negativi. |
+| `music/chord root intervals` | Altezze MIDI nell'ordine dato. Non alloca voci o plugin. |
+| `music/lerp a b x` | Interpolazione lineare; `x` non viene limitato a 0–1. |
 
-Una sequenza può contenere note, nomi di percussioni o accordi: il significato del
-valore appartiene alla funzione passata dalla partitura. Il tempo restituito permette
-di concatenare sequenze e comprende anche le pause finali. La durata delle note è
-scelta dalla partitura e può superare la durata del passo.
-
-`music/chord` calcola altezze; non crea voci. Per gli accordi con `synth_mono` si usano
-istanze distinte, come in `examples/prog/polpo.janet`. Per esempio,
-`(music/chord 60 [0 3 7])` dà `@[60 63 67]`, mentre
-`(music/degree 60 [0 2 3 5 7 8 11] -1)` dà `59`.
-
-Le curve emettono controlli discreti. `steps` è un intero positivo; `duration` usa
-la stessa unità di `start`. La forma può essere una normale funzione, per esempio `|(* $ $)`.
-L'ultimo controllo è a `start + duration`: deve precedere `daw/end`, perché il
-campione di fine export è escluso, dopo la conversione in secondi.
-
-Una **frase** è una normale funzione `start → end`: emette note, controlli o altre
-frasi con tempi relativi a `start`, e restituisce una fine finita maggiore o uguale
-all'inizio. La fine dichiara lo spazio occupato nell'arrangiamento, comprese le
-pause; note e code possono proseguire oltre. Una pausa è semplicemente `|(+ $ durata)`.
-Una lista vuota restituisce `start` in entrambe le composizioni.
-
-Le funzioni sono eseguite subito, una volta ciascuna e nell'ordine della lista,
-anche in `parallel`: il parallelismo riguarda i tempi musicali. Gli errori si
-propagano al chiamante. La composizione non riordina gli eventi, non ripristina
-parametri e non calcola le code dei plugin; restano valide le regole dell'host per
-eventi allo stesso campione. Il brano riserva esplicitamente il tempo per le code.
-
-Per esempio, con `synth` già collegato alla traccia `track`, questa frase combina
-una sequenza di note e un'automazione del gain:
+`lib/pattern.janet` costruisce e trasforma dati musicali finiti. Un pattern è una
+struttura con durata nominale `:length` e una sequenza di eventi `[inizio fine valore]`:
 
 ```janet
-(defn phrase [bpm transpose start]
-  (def step (music/seconds bpm 0.5))
-  (music/parallel start [
-    (fn [t]
-      (music/sequence t step [60 nil 64 nil]
-        (fn [time pitch] (daw/note synth time (* step 0.8) (+ pitch transpose)))))
-    (fn [t]
-      (music/curve t (* 4 step) 32 identity
-        (fn [time value] (daw/param track time :gain value))))]))
-
-(def motif (partial phrase 120 0))
-(def end (music/serial 0 [motif motif |(+ $ 0.5) (partial phrase 90 12)]))
-(daw/end (+ end 1))
+{:length 4
+ :events [[0 0.75 60] [1 1.5 64] [3 3.5 67]]}
 ```
 
-Ripetizione, trasposizione e cambio di BPM sono normali chiamate e argomenti Janet.
-La frase dell'esempio lavora in secondi; Rame compone le sezioni in quarti e converte
-al confine con `daw/*`. Entrambe usano lo stesso contratto, senza stato temporale globale.
+Tutti i tempi del pattern sono **quarti relativi**, senza BPM. Qui la pausa finale
+fino al quarto beat appartiene alla frase. Le note possono proseguire oltre la
+lunghezza dichiarata; sono ammessi anche anticipi negativi. Un evento con inizio e
+fine uguali rappresenta un punto, utile per i controlli. La durata nominale può
+essere zero, anche con eventi; una pausa è `(p/events durata [])`.
+
+Le funzioni restituiscono nuove strutture senza chiamare `daw/*`. `events` copia e
+congela ricorsivamente sequenze, dizionari e buffer, compresi i valori degli eventi.
+Il valore resta generico: numero, accordo, comando o altro dato Janet. Per valori
+opachi come closure e abstract valgono i limiti di `freeze` di Janet: il loro stato
+interno non viene congelato. L'ordine di inserimento degli eventi viene conservato.
+
+| Operazione | Significato |
+| --- | --- |
+| `p/events length items` | Valida e congela gli eventi. Tempi finiti, `length >= 0`, `inizio <= fine`. |
+| `p/steps step values` | Intervalli contigui di `step` quarti; `nil` occupa un passo di pausa. Durata totale `step * length(values)`. |
+| `p/curve length steps shape` | `steps + 1` punti `[t t shape(x)]` per `x=0..1`, estremi inclusi. Lunghezza positiva. |
+| `p/serial patterns` | Somma le durate e sposta ogni pattern dopo il precedente, conservando anticipi e prolungamenti. |
+| `p/parallel patterns` | Sovrappone a zero e usa la durata maggiore, nell'ordine della lista. |
+| `p/map f pattern` | Trasforma soltanto i valori. Un valore `nil` restituito da `f` resta un evento. |
+| `p/stretch factor pattern` | Moltiplica tempi e durata per un fattore positivo. `0.5` dimezza la durata. |
+| `p/reverse pattern` | Inverte `[a b]` in `[length-b length-a]`, mantenendo valori e ordine di inserimento. |
+
+`serial` e `parallel` su una lista vuota restituiscono un pattern vuoto di durata
+zero. Non tagliano gli eventi ai confini della frase. `reverse` può trasformare un
+prolungamento in un anticipo, e porta un controllo a tempo zero sulla fine della
+frase. Trasforma gli intervalli e i punti musicali, senza invertire audio o stato DSP.
+Le curve sono controlli discreti: la risoluzione è esplicita e lo smussamento dipende
+dal plugin. Gli estremi coincidenti seguono l'ordine della composizione.
+
+Da una partitura nella radice del repository, con `synth` già collegato a una traccia:
+
+```janet
+(import ./lib/music)
+(import ./lib/pattern :as p)
+
+(def motif (p/steps 0.5 [60 nil 64 67]))
+(def theme (p/serial [motif (p/reverse motif) (p/map |(+ $ 12) motif)]))
+(def cutoff (p/curve (theme :length) 96 |(music/lerp 400 4000 $)))
+(def score
+  (p/parallel [(p/map |[:note synth $ 100] theme)
+               (p/map |[:param synth :vcf_cutoff $] cutoff)]))
+(def end (daw/schedule 0 112 score))
+(daw/end (+ end 2))
+```
+
+`daw/schedule start bpm pattern` converte i quarti in secondi assoluti ed emette
+immediatamente gli eventi. Accetta due comandi, entrambi con quattro elementi:
+
+- `[:note node pitch velocity]`: l'intervallo deve avere durata positiva. Stessi
+  limiti di `daw/note`, compresa la velocity MIDI 1–127.
+- `[:param node parameter value]`: l'evento deve essere un punto. Nomi, range e
+  valori interi sono verificati attraverso gli stessi metadati di `daw/param`.
+
+Una nota deve durare almeno un campione dopo la conversione. Inizio, fine nominale
+ed eventi devono rientrare nel limite dell'host di 3600 secondi; gli anticipi devono
+quindi essere posizionati abbastanza avanti. Il valore restituito è la fine nominale,
+che può precedere un note-off: la partitura sceglie `daw/end` includendo note e code.
+Un controllo alla fine nominale richiede un export più lungo di almeno un campione.
+Le operazioni non ripristinano parametri né allocano copie dei plugin; ripetere un
+pattern sullo stesso strumento ne continua lo stato DSP. Gli errori interrompono lo
+script; se catturati, gli eventi già emessi prima dell'errore restano nella sessione.
+
+Il C mantiene parametri → note-off → note-on a parità di campione e, tra controlli,
+l'ordine di inserimento. L'ultimo valore per lo stesso parametro prevale. I tempi
+sono numeri Janet e vengono arrotondati al campione solo dall'host: cambiare l'ordine
+di calcolo dei tempi può spostare di un campione un evento esattamente tra due campioni.
+
+Gli import sono relativi alla partitura: `../lib/pattern` negli esempi e
+`../../lib/pattern` nel brano prog. I percorsi dei plugin restano relativi alla
+directory da cui si esegue l'host. L'esempio prog incorpora i cambi di tempo nelle
+posizioni degli eventi e programma il risultato a 60 BPM, un quarto per secondo.
+
+I vecchi `music/sequence`, `music/curve`, `music/serial` e `music/parallel` a callback
+sono stati sostituiti dai pattern. Le funzioni che prima emettevano eventi e
+restituivano una fine ora costruiscono e restituiscono un pattern. La programmazione
+nella sessione avviene con `daw/schedule`; `daw/note` e `daw/param` restano disponibili
+come API a basso livello. Non c'è ripetizione infinita o allineamento implicito dei
+valori tra pattern con ritmi diversi: ripetizione e alternanza si costruiscono con
+le normali funzioni Janet e `p/serial`.
 
 ## Rendering neutro, elaborazione esplicita
 

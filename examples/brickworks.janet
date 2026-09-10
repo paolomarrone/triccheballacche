@@ -1,4 +1,6 @@
 # Uses precompiled Brickworks bundles directly, including C++ and stereo plugins.
+(import ../lib/pattern :as p)
+
 (def root (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
 
 (defn bundle [name] (string root "/" name "/build/bw_example_" name ".perone"))
@@ -8,6 +10,9 @@
 (def pan (daw/plugin (bundle "fx_pan")))
 (def reverb (daw/plugin (bundle "fxpp_reverb")))
 (daw/track synth {:effects [comp pan reverb] :gain 0.3})
-(each pitch [60 64 67] (daw/note synth 0 1.5 pitch))
-(each pitch [62 65 69] (daw/note synth 2 1.5 pitch))
+(defn chord [pitches]
+  (p/events 2 (map |[0 1.5 $] pitches)))
+
+(daw/schedule 0 60
+  (p/map |[:note synth $ 100] (p/serial [(chord [60 64 67]) (chord [62 65 69])])))
 (daw/end 5)

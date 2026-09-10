@@ -1,5 +1,7 @@
 (import ./music :as music-test)
+(import ./pattern :as pattern-test)
 (import ../lib/music)
+(import ../lib/pattern :as p)
 
 (defn rejects [f]
   (assert (try (do (f) false) ([_] true)) "expected an API error"))
@@ -77,8 +79,8 @@
   (rejects f))
 (daw/note synth 0 60 60)
 # One minute at 50 Hz, beyond the former 2048-event limit.
-(music/curve 0 60 3000 |(music/lerp 0.25 0.75 $)
-  (fn [t value] (daw/param synth t :gain value)))
+(daw/schedule 0 60
+  (p/map |[:param synth :gain $] (p/curve 60 3000 |(music/lerp 0.25 0.75 $))))
 (daw/param filter 1 :gain 0.5)
 (daw/param track 2 :gain 0.5)
 (daw/param track 3 :pan 0.75)

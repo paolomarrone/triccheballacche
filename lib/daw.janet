@@ -57,3 +57,33 @@
 
 (def daw/note native/note)
 (def daw/end native/end)
+
+(defn daw/schedule
+  "Emit a beat pattern at start seconds and bpm. Values are [:note node pitch velocity] or [:param node key value]."
+  [start bpm pattern]
+  (assert (and (number? start) (<= 0 start 3600)) "start must be between 0 and 3600 seconds")
+  (assert (and (number? bpm) (= (- bpm bpm) 0) (> bpm 0)) "BPM must be finite and positive")
+  (assert (and (dictionary? pattern) (= (length pattern) 2)
+               (number? (pattern :length)) (>= (pattern :length) 0)
+               (indexed? (pattern :events))) "expected a pattern")
+  (def unit (/ 60 bpm))
+  (def end (+ start (* unit (pattern :length))))
+  (assert (<= start end 3600) "pattern end must be within 3600 seconds")
+  (each item (pattern :events)
+    (assert (and (indexed? item) (= (length item) 3)) "expected [start end value]")
+    (def [a b command] item)
+    (assert (and (number? a) (number? b) (<= a b)
+                 (indexed? command) (= (length command) 4)) "invalid scheduled event")
+    (def time (+ start (* unit a)))
+    (def until (+ start (* unit b)))
+    (assert (<= 0 time until 3600) "event must be within 0..3600 seconds")
+    (def [kind node key value] command)
+    (case kind
+      :note (do
+        (assert (< a b) "note must have positive duration")
+        (daw/note node time (- until time) key value))
+      :param (do
+        (assert (= a b) "parameter must be a point event")
+        (daw/param node time key value))
+      (error "expected :note or :param command")))
+  end)

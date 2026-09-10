@@ -42,6 +42,36 @@ static void test_external_metadata(void) {
 	puts("OK: external Unicode metadata, scale points, output-first indices and Janet lifetime");
 }
 
+static void test_pattern_schedule(void) {
+	Session s = {0};
+	Output cfg;
+	assert(!load_score(&s, &cfg, "test/schedule.janet"));
+	assert(s.nnodes == 2 && s.nodes[0].count == 10 && s.frames == 66150);
+	const Event *e = s.nodes[0].events;
+	assert(e[0].time == 16538 && e[0].midi[0] == 0x90 && e[0].midi[1] == 72);
+	assert(e[1].time == 22050 && e[1].parameter == 1 && e[1].value == .25f);
+	assert(e[2].time == 27563 && e[2].midi[0] == 0x80 && e[2].midi[1] == 72);
+	assert(e[3].time == 33075 && e[3].parameter == 1 && e[3].value == .5f);
+	assert(e[4].time == 33075 && e[4].parameter == 1 && e[4].value == .75f);
+	assert(e[5].time == 33075 && e[5].midi[0] == 0x90 && e[5].midi[1] == 76);
+	assert(e[6].time == 55125 && e[6].parameter == 1 && e[6].value == .5f);
+	assert(e[7].time == 55125 && e[7].midi[0] == 0x80 && e[7].midi[1] == 76);
+	assert(e[8].time == 55125 && e[8].midi[0] == 0x90 && e[8].midi[1] == 79);
+	assert(e[9].time == 60638 && e[9].midi[0] == 0x80 && e[9].midi[1] == 79);
+	float audio[BLOCK * 2];
+	while (s.time < s.frames) {
+		size_t start = s.time, n = s.frames - start < BLOCK ? s.frames - start : BLOCK;
+		assert(!session_render(&s, audio, n));
+		for (size_t i = 0; i < n; ++i) {
+			size_t t = start + i;
+			float value = t < 27563 ? .25f : t < 33075 ? 0 : t < 55125 ? .75f : t < 60638 ? .5f : 0;
+			assert(fabsf(audio[2 * i] - value) < 1e-6f && audio[2 * i + 1] == -audio[2 * i]);
+		}
+	}
+	session_free(&s);
+	puts("OK: pattern scheduling, tempo/offset, pickups, overhangs and stable control order");
+}
+
 static void bad_script(const char *source) {
 	Session s = {0};
 	Output cfg;
@@ -400,6 +430,7 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 
 int main(void) {
 	test_external_metadata();
+	test_pattern_schedule();
 	test_initial_parameters();
 	test_pipeline();
 	test_master();
