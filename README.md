@@ -5,12 +5,13 @@ Plugin Perone mono e stereo, tracce con effetti in serie e mix stereo.
 44,1 kHz di default, sample rate configurabile per sessione; nucleo C e Janet condivisi fra host nativo e Wasm.
 
 ```sh
-make                    # Compila solo host e renderer Janet.
+make                    # Compila host e DAW Janet.
 make test               # Test del nucleo con fixture locali.
 make -C plugins         # Compilazione separata dei plugin di esempio.
 make test-plugins       # Integrazione con i sei plugin già compilati.
 make prog
 ./build/daw examples/hello.janet build/hello.wav
+./build/daw --play examples/hello.janet
 ./build/daw examples/automation.janet build/automation.wav
 ./build/host plugins/synth_mono/build/plugin.perone --wav build/demo.wav
 ./build/host plugins/tibia_test/build/plugin.perone --input
@@ -294,6 +295,23 @@ sostituisce il file richiesto soltanto dopo la chiusura riuscita. Se il renderin
 o la scrittura falliscono, il WAV precedente resta intatto; se non esisteva,
 non viene pubblicato un file incompleto.
 
+La stessa partitura può essere riprodotta direttamente sul dispositivo audio:
+
+```sh
+./build/daw --play examples/hello.janet           # 44100 Hz
+./build/daw --play examples/hello.janet 48000
+```
+
+`--play` prepara la sessione Janet e la riproduce in streaming tramite miniaudio,
+con la stessa callback C usata dal browser. Termina alla fine del brano; Ctrl-C o
+SIGTERM interrompono la riproduzione e liberano prima il dispositivo, poi la sessione.
+L'ultimo blocco viene completato con silenzio e il player lascia scorrere la coda
+del dispositivo prima di segnalare il completamento. La durata musicale resta quella
+di `daw/end`, comprese le code degli effetti scelte dalla partitura.
+L'uscita del player è float32 stereo; `:format` riguarda soltanto il WAV.
+Una partitura con `:normalize` diverso da zero viene rifiutata dalla riproduzione
+diretta, sia nativa sia web: la normalizzazione del picco richiede il render completo.
+
 Plugin inclusi oltre al synth e all'effetto di test:
 
 - `plugins/shape/build/plugin.perone`: waveshaper, drive/level e filtri DC/lowpass a coefficienti espliciti.
@@ -366,7 +384,7 @@ all'AudioWorklet, che ricrea le istanze DSP dopo aver liberato quelle della prep
 gli identificatori C. La ricostruzione riguarda soltanto lo stato iniziale: dopo rendering
 o MIDI viene rifiutata. Gli identificatori ceduti al worklet restano registrati sull'host
 fino al rilascio della sessione; un identificatore sconosciuto è un errore.
-La callback C di miniaudio richiama `session_render`: il player produce i blocchi su
+La callback comune in `player.c` richiama `session_render`: il player produce i blocchi su
 richiesta senza conservare il PCM dell'intero pezzo. `web/worklet.js` gestisce soltanto
 preparazione e rilascio dei plugin; il processore audio è quello di miniaudio.
 
@@ -410,8 +428,14 @@ processamento viene rifiutata. Le dimensioni iniziali delle memorie dipendono da
 
 `engine.c/h` gestisce istanze e scheduler, senza CLI né Janet.
 `session.c/h` contiene lo stato esplicito della sessione, le catene e il mixer.
-`daw.c` collega Janet alla sessione; `daw_main.c` è la CLI di rendering.
+`daw.c` collega Janet alla sessione; `daw_main.c` è la CLI di export e riproduzione.
 `export.c` contiene la scrittura WAV e la pubblicazione del file, specifiche del backend POSIX.
+`player.c/h` gestisce il dispositivo miniaudio, la callback e lo stato di riproduzione,
+condivisi fra nativo e Wasm. Il player prende in prestito una sessione appena preparata
+e chiusa con `session_end`: il chiamante deve liberare il player prima della sessione,
+che durante la riproduzione è usata soltanto dalla callback audio.
+`web/player.c` adatta lo score web al player e restituisce gli identificatori di
+AudioContext e AudioWorklet; la gestione asincrona rimane in `web/player.js`.
 `main.c` è la demo audio nativa. `loader.c` implementa il backend DSP nativo;
 `web/loader.c` e `web/perone.js` quello Wasm. Il motore chiama lo stesso piccolo
 insieme di operazioni per apertura, chiusura, parametri, reset, MIDI e processamento.
@@ -472,6 +496,10 @@ Include `test/music.janet`, che prova le funzioni musicali senza dipendere da `d
 e una curva della libreria collegata alla fixture tramite l'API reale. Verifica
 anche la conservazione del WAV precedente e la pulizia dei temporanei dopo errori
 di rendering, scrittura, finalizzazione e sostituzione del file.
+`test/player.c` confronta l'uscita della callback con il WAV a 44,1/48 kHz, usando
+blocchi variabili e un dispositivo simulato: verifica silenzio finale, attesa della
+coda, errori di inizializzazione/avvio/rendering, interruzione e CLI `--play`.
+Il test usa Janet e DSP reali delle fixture e non richiede un dispositivo audio.
 `make test-plugins` conserva le regressioni dei DSP reali: synth e pitch bend,
 inviluppo indipendente dai blocchi, filtro, delay, percussioni e waveshaper,
 oltre ai metadati Brickworks usati da una partitura Janet.

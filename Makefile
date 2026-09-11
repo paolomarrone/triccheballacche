@@ -98,10 +98,11 @@ $(TEST_EFFECT)/product.json: test/perone/effect.json
 	mkdir -p $(dir $@)
 	cp $< $@
 
-test: build/test build/termux_test build/daw_test $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/product.json
+test: build/test build/termux_test build/daw_test build/player_test $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/product.json
 	./build/test
 	./build/termux_test
 	./build/daw_test
+	./build/player_test
 
 test-plugins: check-plugins build/plugins_test
 	./build/plugins_test
@@ -112,11 +113,13 @@ run: build/host
 keys: build/termux_synth
 	./build/termux_synth --keys
 
-build/daw: daw_main.c export.c $(SCORE_SOURCES) $(SCORE_HEADERS) loader.c $(HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) daw_main.c export.c $(SCORE_SOURCES) loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+build/daw: daw_main.c player.c player.h export.c $(SCORE_SOURCES) $(SCORE_HEADERS) loader.c $(HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) daw_main.c player.c export.c $(SCORE_SOURCES) loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
 
 build/%_test: test/%.c export.c $(SCORE_SOURCES) $(SCORE_HEADERS) loader.c $(HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) $< export.c $(SCORE_SOURCES) loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+
+build/player_test: player.c player.h daw_main.c
 
 prog: check-plugins build/daw
 	./build/daw examples/prog/polpo.janet build/il_polpo_a_sette_gomiti.wav
@@ -126,7 +129,7 @@ test-prog: prog
 	cmp build/polpo-repeat.wav build/il_polpo_a_sette_gomiti.wav
 
 clean:
-	rm -f build/audio.o build/json.o build/perone.inc build/daw.inc build/host build/test build/termux_synth build/termux_test build/daw build/daw_test build/plugins_test
+	rm -f build/audio.o build/json.o build/perone.inc build/daw.inc build/host build/test build/termux_synth build/termux_test build/daw build/daw_test build/plugins_test build/player_test
 	rm -rf build/fixture.perone build/effect.perone build/web
 
 # Read-only audit of the bundles built in Brickworks; no plugin compilation here.
@@ -145,7 +148,7 @@ WEB_LINK = -lm --no-entry -sMODULARIZE -sEXPORT_ES6 -sALLOW_MEMORY_GROWTH -sSTAC
 WEB_METHODS = "FS","ccall","HEAPU8","HEAPU32","HEAPF32"
 WEB_EXPORTS = '["_score_new","_score_free","_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sAUDIO_WORKLET -sWASM_WORKERS -sASYNCIFY -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
-PLAYER_EXPORTS = '["_score_new","_score_free","_player_new","_player_free","_player_start","_player_stop","_player_status","_player_context","_player_node"]'
+PLAYER_EXPORTS = '["_score_new","_score_free","_score_player","_player_free","_player_start","_player_stop","_player_status","_player_context","_player_node"]'
 .PHONY: web
 web: build/web/daw.mjs build/web/player.mjs
 
@@ -174,8 +177,8 @@ build/web/miniaudio.h: $(MINIAUDIO) web/miniaudio.patch
 	patch --silent $@.tmp web/miniaudio.patch
 	mv $@.tmp $@
 
-build/web/player.mjs: $(WEB_DEPS) web/player.c web/runtime.js web/audio.js audio.c audio.h build/web/miniaudio.h build/web/player-janet.o build/web/player-json.o Makefile
-	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) $(PLAYER_FLAGS) -Ibuild/web $(WEB_SOURCES) web/player.c audio.c \
+build/web/player.mjs: $(WEB_DEPS) player.c player.h web/player.c web/runtime.js web/audio.js audio.c audio.h build/web/miniaudio.h build/web/player-janet.o build/web/player-json.o Makefile
+	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) $(PLAYER_FLAGS) -Ibuild/web $(WEB_SOURCES) player.c web/player.c audio.c \
 	    build/web/player-janet.o build/web/player-json.o $(WEB_LINK) --post-js web/runtime.js --js-library web/audio.js \
 	    -sENVIRONMENT=web,worker,worklet -sEXPORTED_FUNCTIONS=$(PLAYER_EXPORTS) \
 	    -sEXPORTED_RUNTIME_METHODS='[$(WEB_METHODS),"emscriptenGetAudioObject"]' -o $@

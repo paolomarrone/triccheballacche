@@ -49,7 +49,7 @@ export async function preparePlayer(host, path, sampleRate) {
     try {
         score = host.ccall("score_new", "number", ["string", "number"], [path, sampleRate]);
         if (!score) throw Error("Score preparation failed; see Janet diagnostics");
-        player = await host.ccall("player_new", "number", ["number"], [score], {async: true});
+        player = await host.ccall("score_player", "number", ["number"], [score], {async: true});
         if (!player) throw Error("Miniaudio initialization failed; see diagnostics");
         context = host.emscriptenGetAudioObject(host._player_context(player));
         if (stopping) throw Error("Player preparation cancelled");
