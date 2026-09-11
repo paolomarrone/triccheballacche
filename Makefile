@@ -201,3 +201,8 @@ test-web: web build/daw $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/product.json 
 .PHONY: test-browser
 test-browser: test-web
 	node test/browser.mjs
+
+# Production bundles must already contain their separately compiled wasm32 binaries.
+.PHONY: test-polpo-web
+test-polpo-web: web
+	node test/browser.mjs test/polpo.html

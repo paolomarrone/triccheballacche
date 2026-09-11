@@ -50,7 +50,8 @@ try {
     };
     await call("Runtime.enable");
     await call("Page.enable");
-    await call("Page.navigate", {url: `http://127.0.0.1:${server.address().port}/test/web.html`});
+    const page = process.argv[2] || "test/web.html";
+    await call("Page.navigate", {url: `http://127.0.0.1:${server.address().port}/${page}`});
     let result;
     for (let i = 0; i < 200; i++) {
         result = await evaluate('({text: document.querySelector("#status")?.textContent, disabled: document.querySelector("#run")?.disabled})');
@@ -62,7 +63,7 @@ try {
     const {x, y} = await evaluate('(() => { const r = document.querySelector("#run").getBoundingClientRect(); return {x: r.x + r.width / 2, y: r.y + r.height / 2}; })()');
     await call("Input.dispatchMouseEvent", {type: "mousePressed", x, y, button: "left", clickCount: 1});
     await call("Input.dispatchMouseEvent", {type: "mouseReleased", x, y, button: "left", clickCount: 1});
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < 500; i++) {
         await new Promise(resolve => setTimeout(resolve, 100));
         result = await evaluate('({text: document.querySelector("#status").textContent, disabled: document.querySelector("#run").disabled})');
         if (!result.disabled) break;

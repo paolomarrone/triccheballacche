@@ -4,8 +4,24 @@ import {renderScore, addFile} from "../web/host.js";
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const check = (ok, message) => { if (!ok) throw Error(message); };
 
+// Compare playback with the session mix, before offline export normalization.
+function renderMix(host, path, rate) {
+    const score = host.ccall("score_new", "number", ["string", "number"], [path, rate]);
+    check(score, "Reference preparation failed");
+    try {
+        const audio = new Float32Array(host._score_frames(score) * 2), pointer = host._score_buffer(score) / 4;
+        for (let position = 0; position < audio.length;) {
+            const n = host._score_render(score);
+            check(n > 0, "Reference render failed");
+            audio.set(host.HEAPF32.subarray(pointer, pointer + n * 2), position);
+            position += n * 2;
+        }
+        return audio;
+    } finally { host._score_free(score); }
+}
+
 export async function testPlayback(host, reference, path, rate) {
-    const expected = renderScore(reference, path, rate);
+    const expected = renderMix(reference, path, rate);
     const player = await preparePlayer(host, path, rate);
     try {
         check(host.perone.instances.size === 0, "DSP instances must move to the worklet");
@@ -20,7 +36,8 @@ export async function testPlayback(host, reference, path, rate) {
         player.node.disconnect();
         player.node.connect(capture).connect(gain).connect(player.context.destination);
         await player.start();
-        for (let i = 0; !player.status && i < 200; i++) await sleep(50);
+        const deadline = performance.now() + expected.length / (2 * rate) * 1000 + 5000;
+        while (!player.status && performance.now() < deadline) await sleep(50);
         check(player.status === 1, "Playback did not finish");
         await sleep(100);
         const received = new Promise(resolve => { capture.port.onmessage = ({data}) => resolve(data); });
@@ -46,8 +63,6 @@ export async function testPlayerExportOptions(host, reference) {
     await addFile(host, path, configured);
     await addFile(reference, path, configured);
     check(renderScore(reference, path, 48000)[0] === Math.fround(0.9), "Offline normalization must still apply");
-    // The same path on the reference host supplies the unnormalized mix for comparison.
-    await addFile(reference, path, new TextEncoder().encode(source + '(daw/end 0.05003)'));
     await testPlayback(host, reference, path, 48000);
 }
 

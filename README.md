@@ -369,6 +369,23 @@ Usa fixture e non richiede plugin esterni.
 La lettura di `product.json`, i pattern, la validazione, la schedulazione e il mix vengono
 eseguiti dal codice comune. `test-web` confronta anche un minuto di automazioni con il nativo.
 
+`test/polpo.html` esegue invece la partitura originale `examples/prog/polpo.janet`,
+con synth, waveshaper, echo e percussioni Perone: 34 istanze DSP, 30 secondi a 48 kHz.
+Il pulsante riproduce il pezzo tramite miniaudio e confronta tutti i campioni emessi
+dall'AudioWorklet con il mix offline Wasm, verificando anche il rilascio delle risorse.
+Il volume di ascolto del test è ridotto dopo il punto di acquisizione del PCM.
+
+```sh
+make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
+make test-polpo-web               # Prova completa in Chromium; richiede i bundle già compilati.
+node test/server.mjs
+# Aprire http://localhost:8000/test/polpo.html e premere Riproduci e verifica Polpo.
+```
+
+Il build Wasm dei plugin locali usa Emscripten anche per libc/libm, mantenendo
+moduli Perone autonomi. Se `emcc` non è nel `PATH`, passare `EMCC=/percorso/assoluto/emcc`
+ai comandi `make`; il [README dei plugin](plugins/README.md) descrive il build separato.
+
 Il player richiede HTTPS (oppure localhost), AudioWorklet e memoria condivisa.
 Il server di test imposta `Cross-Origin-Opener-Policy: same-origin` e
 `Cross-Origin-Embedder-Policy: require-corp`; un normale `python -m http.server`

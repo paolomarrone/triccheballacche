@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Il polpo a sette gomiti — triccheballacche/Wasm</title>
+<button id="run" disabled>Riproduci e verifica Polpo</button>
+<pre id="status">Caricamento…</pre>
+<script type="module">
+import {createPlayerHost} from "../web/player.js";
+import {createHost, addFile} from "../web/host.js";
+import {testPlayback} from "./playback.mjs";
+
+const run = document.querySelector("#run");
+const status = document.querySelector("#status"), score = "examples/prog/polpo.janet";
+try {
+    if (!crossOriginIsolated) throw Error("Avviare il server con node test/server.mjs (servono COOP/COEP).");
+    const host = await createPlayerHost(), reference = await createHost();
+    const files = ["lib/music.janet", "lib/pattern.janet", score];
+    for (const [plugin, binary] of [["synth_mono", "bw_example_synth_mono"], ["shape", "shape"],
+        ["echo", "echo"], ["drums", "drums"]]) {
+        const bundle = `plugins/${plugin}/build/plugin.perone`;
+        files.push(`${bundle}/product.json`, `${bundle}/wasm32/${binary}.wasm`);
+    }
+    for (const path of files) {
+        const response = await fetch("../" + path);
+        if (!response.ok) throw Error("Cannot load " + path + "; build the Perone wasm32 plugins separately.");
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        await addFile(host, path, bytes);
+        await addFile(reference, path, bytes);
+    }
+    run.disabled = false;
+    status.textContent = "Pronto: Polpo completo, 30 secondi a 48 kHz. Volume di ascolto ridotto nel test.";
+    run.onclick = async () => {
+        run.disabled = true;
+        status.textContent = "Render di riferimento, poi riproduzione e confronto dei campioni…";
+        try {
+            await testPlayback(host, reference, score, 48000);
+            status.textContent = "OK: Polpo completo, PCM identico al mix offline Wasm a 48 kHz, risorse rilasciate.";
+        } catch (error) {
+            status.textContent = String(error);
+        } finally {
+            run.disabled = false;
+        }
+    };
+} catch (error) { status.textContent = String(error); }
+</script>

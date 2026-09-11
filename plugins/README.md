@@ -15,6 +15,22 @@ make -C plugins TIBIA=/percorso/tibia BRICKWORKS=/percorso/brickworks
 make -C plugins clean
 ```
 
+Per compilare le versioni Wasm, con Emscripten nel `PATH`:
+
+```sh
+make -C plugins PERONE_PLATFORM=wasm32
+# Oppure soltanto i bundle usati da Polpo:
+make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
+```
+
+`EMCC` e `EMXX` configurano i compilatori; se non sono nel `PATH`, usare percorsi
+assoluti, perché il build entra nelle directory dei plugin e del codice generato.
+Il build locale usa la libreria C e matematica di Emscripten per i DSP che ne hanno
+bisogno, mantenendo il wrapper e l'ABI Perone di Tibia. Produce moduli `.wasm`
+autonomi, senza JavaScript o import WASI; la memoria iniziale è 1 MiB e può crescere
+durante la preparazione. I binari nativi già presenti nel bundle vengono conservati.
+L'host continua a caricare bundle precompilati e non partecipa a questo build.
+
 `TIBIA` indica il generatore, non la copia dell'header nel repository dell'host.
 Il modulo `dot` deve essere risolvibile da Node (ad esempio `npm install dot`
 nel checkout Tibia). I plugin non richiedono Janet, miniaudio o sorgenti dell'host.
@@ -52,7 +68,11 @@ build/plugin.perone/
   product.json
   <architettura>-<sistema>/
     <bundleName>.so
+  wasm32/
+    <bundleName>.wasm
 ```
+
+Ogni directory di piattaforma è presente dopo averne eseguito il relativo build.
 
 Il JSON è esterno e va distribuito insieme al binario. Janet lo legge al caricamento
 per interpretare bus, parametri, mapping e scale points. Il C riceve soltanto
