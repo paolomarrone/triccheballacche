@@ -6,7 +6,7 @@
 <script type="module">
 import {createPlayerHost} from "../web/player.js";
 import {createHost, addFile} from "../web/host.js";
-import {testPlayback, testPlayerErrors} from "./playback.mjs";
+import {testPlayback, testPlayerExportOptions, testPlayerErrors} from "./playback.mjs";
 import {testPlayerLifecycle} from "./player-lifecycle.mjs";
 
 const button = document.querySelector("#run"), status = document.querySelector("#status");
@@ -32,6 +32,7 @@ try {
                 for (const path of ["test/schedule.janet", "test/playback.janet"])
                     await testPlayback(host, reference, path, rate);
             }
+            await testPlayerExportOptions(host, reference);
             await testPlayerErrors(host);
             status.textContent = "Verifica chiusura, errori e timeout del worklet…";
             await testPlayerLifecycle(host);

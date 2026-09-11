@@ -111,7 +111,8 @@ static void reference(const char *path, unsigned rate) {
 	Output output;
 	assert(!load_score(&s, &output, path));
 	expected_frames = s.frames;
-	assert(!write_score(&s, &output, "build/player-reference.wav"));
+	// Playback uses the mix before export normalization or PCM16 conversion.
+	assert(!write_score(&s, &(Output){0}, "build/player-reference.wav"));
 	session_free(&s);
 	FILE *file = fopen("build/player-reference.wav", "rb");
 	unsigned char header[44];
@@ -217,17 +218,21 @@ static void test_cli(void) {
 	int fd = mkstemp(path);
 	FILE *file = fdopen(fd, "w");
 	assert(fd >= 0 && file);
-	assert(
-	    fputs("(def s (daw/plugin \"build/fixture.perone\")) (daw/track s) (daw/end 1 {:normalize 0.9})", file) >= 0);
+	assert(fputs("(def s (daw/plugin \"build/fixture.perone\" {:gain 0.25})) (daw/track s) "
+	             "(daw/end 0.05003 {:format :pcm16 :normalize 0.9})",
+	           file) >= 0);
 	assert(!fclose(file));
 	args[2] = path;
-	assert(cli_main(3, args));
+	reference(path, 44100);
+	assert(!cli_main(3, args) && emitted >= expected_frames + queue_frames);
+	free(expected);
+	expected = NULL;
 	assert(!unlink(path));
 	assert(cli_main(3, args)); // Missing score also fails before opening a device.
-	assert(opened == before && opened == closed);
+	assert(opened == before + 1 && opened == closed);
 	signal(SIGINT, SIG_DFL);
 	signal(SIGTERM, SIG_DFL);
-	puts("OK: --play CLI, rate/argument validation, normalization rejection, cancellation and device errors");
+	puts("OK: --play CLI, rate/argument validation, export-only options, cancellation and device errors");
 }
 
 int main(void) {

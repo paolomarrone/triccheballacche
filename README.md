@@ -134,7 +134,7 @@ Tempo, battute, accordi, rampe e pattern sono funzioni della libreria Janet `lib
 | `daw/info node` | Descrizioni immutabili dei parametri, inclusi mapping ed etichette dei valori enumerati. |
 | `daw/product node` | Metadati completi del prodotto letti dal JSON; `nil` per i mixer. |
 | `daw/schedule start bpm pattern` | Emette un pattern in quarti a partire da `start` secondi e restituisce la fine nominale in secondi. |
-| `daw/end seconds &opt options` | Chiude la partitura e imposta durata e formato. La CLI esporta dopo il successo dello script. |
+| `daw/end seconds &opt options` | Chiude la partitura e imposta durata e opzioni di export. Riproduzione ed export iniziano dopo il successo dello script. |
 
 Opzioni traccia: `:gain` 0–4 (default 1), `:pan` −1–1 (default 0),
 `:effects [fx1 fx2 ...]` nell'ordine di elaborazione. Il master accetta `:gain` e
@@ -280,7 +280,7 @@ Il default è WAV float32 stereo: niente saturazione, filtro DC, fade, normalizz
 o clipping automatico. I valori oltre ±1 vengono conservati nel file; attenzione
 al livello quando lo si riproduce.
 
-Opzioni di `daw/end`:
+Opzioni di export di `daw/end`:
 
 ```janet
 (daw/end 30 {:format :pcm16 :normalize 0.94})
@@ -308,9 +308,10 @@ SIGTERM interrompono la riproduzione e liberano prima il dispositivo, poi la ses
 L'ultimo blocco viene completato con silenzio e il player lascia scorrere la coda
 del dispositivo prima di segnalare il completamento. La durata musicale resta quella
 di `daw/end`, comprese le code degli effetti scelte dalla partitura.
-L'uscita del player è float32 stereo; `:format` riguarda soltanto il WAV.
-Una partitura con `:normalize` diverso da zero viene rifiutata dalla riproduzione
-diretta, sia nativa sia web: la normalizzazione del picco richiede il render completo.
+L'uscita del player è il mix float32 stereo. `:format` e `:normalize` riguardano
+l'export e vengono ignorati durante la riproduzione, sia nativa sia web: la stessa
+partitura può essere ascoltata ed esportata senza modifiche. I livelli in riproduzione
+dipendono dai gain della partitura; il WAV normalizzato può avere un livello diverso.
 
 Plugin inclusi oltre al synth e all'effetto di test:
 
@@ -398,7 +399,7 @@ dell'host restano attivi: si può ritentare `close()` o `closePlayer(host)`. La 
 durante la preparazione attende l'inizializzazione asincrona di miniaudio; da quando inizia
 la chiusura, `start()` e `status` non sono più disponibili. `context` e `node` permettono
 di collegare l'uscita ad altri nodi Web Audio. La normalizzazione del
-picco richiede l'intero render e viene rifiutata dal player: resta disponibile offline.
+picco si applica soltanto al rendering offline; il player riproduce il mix della sessione.
 Le partiture sono ancora preparate in anticipo; questo non introduce live coding.
 
 La copia generata `build/web/miniaudio.h` applica `web/miniaudio.patch` alla versione
@@ -499,6 +500,8 @@ di rendering, scrittura, finalizzazione e sostituzione del file.
 `test/player.c` confronta l'uscita della callback con il WAV a 44,1/48 kHz, usando
 blocchi variabili e un dispositivo simulato: verifica silenzio finale, attesa della
 coda, errori di inizializzazione/avvio/rendering, interruzione e CLI `--play`.
+Le opzioni di export non impediscono l'ascolto e non alterano il PCM del player;
+la stessa distinzione è verificata nell'AudioWorklet.
 Il test usa Janet e DSP reali delle fixture e non richiede un dispositivo audio.
 `make test-plugins` conserva le regressioni dei DSP reali: synth e pitch bend,
 inviluppo indipendente dai blocchi, filtro, delay, percussioni e waveshaper,

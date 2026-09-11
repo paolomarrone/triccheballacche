@@ -13,11 +13,7 @@ static void stop(int sig) {
 	stopped = 1;
 }
 
-static int play_score(Session *s, const Output *cfg) {
-	if (cfg->normalize) {
-		s->error = "normalization requires offline rendering";
-		return -1;
-	}
+static int play_score(Session *s) {
 	Player *p = player_new(s);
 	if (!p)
 		return -1;
@@ -63,7 +59,7 @@ int main(int argc, char **argv) {
 	int play = !strcmp(argv[1], "--play");
 	Output cfg;
 	int result = load_score(&session, &cfg, argv[play ? 2 : 1]) ||
-	    (play ? play_score(&session, &cfg) : write_score(&session, &cfg, argv[2]));
+	    (play ? play_score(&session) : write_score(&session, &cfg, argv[2]));
 	if (result)
 		fprintf(stderr, "Score/audio failed%s%s\n", session.error ? ": " : "", session.error ? session.error : "");
 	else if (!play)

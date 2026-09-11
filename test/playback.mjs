@@ -39,9 +39,21 @@ export async function testPlayback(host, reference, path, rate) {
         "Incomplete cleanup");
 }
 
+export async function testPlayerExportOptions(host, reference) {
+    const path = "test/export-options.janet";
+    const source = '(def s (daw/plugin "build/fixture.perone" {:gain 0.25})) (daw/track s) ';
+    const configured = new TextEncoder().encode(source + '(daw/end 0.05003 {:format :pcm16 :normalize 0.9})');
+    await addFile(host, path, configured);
+    await addFile(reference, path, configured);
+    check(renderScore(reference, path, 48000)[0] === Math.fround(0.9), "Offline normalization must still apply");
+    // The same path on the reference host supplies the unnormalized mix for comparison.
+    await addFile(reference, path, new TextEncoder().encode(source + '(daw/end 0.05003)'));
+    await testPlayback(host, reference, path, 48000);
+}
+
 export async function testPlayerErrors(host) {
     for (const source of ['(error "intentional Janet error")',
-        '(def s (daw/plugin "build/fixture.perone")) (daw/track s) (daw/end 1 {:normalize 0.9})']) {
+        '(daw/plugin "build/fixture.perone") (daw/end 1)']) {
         await addFile(host, "test/failure.janet", new TextEncoder().encode(source));
         const failed = await preparePlayer(host, "test/failure.janet", 48000).then(() => false, () => true);
         check(failed && host.perone.instances.size === 0, "Preparation failure leaked instances");
