@@ -4,6 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __wasm__
+#undef assert
+#define assert(x) ((x) ? (void)0 : __builtin_trap())
+#endif
+
 typedef struct {
 	perone_callbacks callbacks;
 	float gain, control, rate, gate, state, *memory;
@@ -13,8 +18,13 @@ typedef struct {
 static int live, initialized;
 
 static int fails(const char *stage) {
+#ifdef __wasm__
+	(void)stage;
+	return 0;
+#else
 	const char *s = getenv("PERONE_TEST_FAIL");
 	return s && !strcmp(s, stage);
+#endif
 }
 
 static void *allocate(void) {
@@ -66,7 +76,7 @@ static void mem_set(void *p, void *mem) {
 
 static void reset(void *p) {
 	Instance *i = p;
-	assert(i->rate == 44100 && i->memory);
+	assert((i->rate > 0) && i->memory);
 	*i->memory = 123;
 	i->state = 0;
 	i->gate = 1;
@@ -102,7 +112,7 @@ static void process(void *p, const float **in, float **out, size_t n) {
 		out[0][k] = (in[0][k] - i->state) * i->gain;
 #else
 		assert(!in);
-		out[0][k] = i->gain * i->gate;
+		out[0][k] = i->gain * i->gate * (i->control == 3 ? i->rate / 44100 : 1);
 		out[1][k] = -out[0][k];
 #endif
 	}

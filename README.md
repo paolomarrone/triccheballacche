@@ -1,7 +1,8 @@
 # triccheballacche
 
 Una base minimale per una DAW scriptabile: partiture in Janet, audio in C.
-Plugin Perone mono e stereo a 44,1 kHz, tracce con effetti in serie e mix stereo.
+Plugin Perone mono e stereo, tracce con effetti in serie e mix stereo.
+44,1 kHz di default, sample rate configurabile per sessione; nucleo C e Janet condivisi fra host nativo e Wasm.
 
 ```sh
 make                    # Compila solo host e renderer Janet.
@@ -41,7 +42,7 @@ corrente tramite `perone_get_api(PERONE_ABI_VERSION)`. Il nome del binario viene
 `product.bundleName`; la directory del bundle può essere rinominata o spostata.
 `PERONE_PLATFORM` nel Makefile permette di selezionare la piattaforma di destinazione
 per la compilazione incrociata, come in Tibia. Il default è `uname -m` più
-`uname -s` in minuscolo, per esempio `x86_64-linux` o `aarch64-linux`.
+`TARGET_OS` (`uname -s`) in minuscolo, per esempio `x86_64-linux` o `aarch64-linux`.
 
 I progetti di esempio in `plugins/<nome>/` hanno build separati:
 `make -C plugins/synth_mono` produce `plugins/synth_mono/build/plugin.perone`.
@@ -307,11 +308,117 @@ Il [WAV storico](examples/prog/il_polpo_a_sette_gomiti.wav) resta incluso e inva
 Il nuovo render non è bit-identico: percussioni e delay ora usano istanze e catene
 indipendenti. `make test-prog` verifica che due nuovi render siano identici.
 
+## Portabilità e test web
+
+Il nucleo (`engine.c`, `session.c`, `daw.c`, `script.c`) non usa direttamente API POSIX.
+Il backend nativo conserva `dlopen` e `realpath` in `loader.c`; l'export POSIX conserva
+file temporanei, seek e sostituzione del WAV in `export.c`. Attesa e terminale restano
+nelle CLI native. `PERONE_PLATFORM` e `PERONE_SUFFIX` selezionano directory e suffisso
+del binario (`.so` sul backend nativo attuale, `.wasm` sul web).
+`TARGET_OS=Darwin` esclude `-ldl`; Windows richiede ancora un backend nativo per loader,
+export e attesa della CLI. Le build native dei plugin devono essere fornite per ciascuna
+piattaforma. Sono verificati qui Linux e Wasm; gli altri sistemi non sono ancora certificati.
+
+La CLI può scegliere il sample rate senza modificare la partitura:
+
+```sh
+./build/daw examples/patterns.janet build/patterns-48k.wav 48000
+```
+
+Per Wasm serve Emscripten (verificato con 6.0.9), e `patch` per il player; i test richiedono anche Node.js
+(verificato con 24.18).
+Janet viene compilato da sorgente con Emscripten, separatamente dalla libreria nativa.
+I plugin restano moduli Perone wasm32 autonomi, compilati e distribuiti separatamente.
+Il player web usa miniaudio con AudioWorklet; il runtime offline rimane indipendente
+dal dispositivo audio. Nessuna build web collega l'export POSIX.
+
+```sh
+make web                         # Runtime offline daw.mjs e player miniaudio player.mjs in build/web/.
+make test-web                    # Fixture indipendenti da Tibia/Brickworks e confronto PCM nativo/Wasm.
+make test-browser                # Verifica anche l'uscita AudioWorklet in Chromium (CHROMIUM=/percorso opzionale).
+# Se emcc non è nel PATH: make test-web EMCC=/percorso/emsdk/upstream/emscripten/emcc
+node test/server.mjs
+# Aprire http://localhost:8000/test/web.html e premere Esegui test.
+```
+
+`test/web.html` è un banco di prova senza CSS. Riproduce `test/schedule.janet` e
+`test/playback.janet` tramite miniaudio, confrontando i campioni emessi dall'AudioWorklet
+con il render offline a 44,1 e 48 kHz. Verifica MIDI, effetti mono su stereo, silenzio
+nel blocco finale, arresto, riavvio ed errori. Include chiusura esterna del contesto,
+timeout del worklet, cancellazione durante l'inizializzazione e ritentativi dopo errori.
+Usa fixture e non richiede plugin esterni.
+La lettura di `product.json`, i pattern, la validazione, la schedulazione e il mix vengono
+eseguiti dal codice comune. `test-web` confronta anche un minuto di automazioni con il nativo.
+
+Il player richiede HTTPS (oppure localhost), AudioWorklet e memoria condivisa.
+Il server di test imposta `Cross-Origin-Opener-Policy: same-origin` e
+`Cross-Origin-Embedder-Policy: require-corp`; un normale `python -m http.server`
+senza questi header non basta. La riproduzione è verificata in Chromium; Firefox e
+Safari restano da verificare. La build usa `MA_ENABLE_AUDIO_WORKLETS`, `AUDIO_WORKLET`,
+`WASM_WORKERS`, `ASYNCIFY` e `-pthread` per le primitive di sincronizzazione di miniaudio.
+
+`web/player.js` espone `createPlayerHost`, `preparePlayer(host, path, sampleRate)` e
+`closePlayer(host)` per cancellare una preparazione o ritentarne la pulizia se fallisce.
+I file vengono precaricati con `addFile`, come nel runtime offline. Janet prepara la
+sessione prima dell'avvio; i moduli compilati e i parametri iniziali vengono poi passati
+all'AudioWorklet, che ricrea le istanze DSP dopo aver liberato quelle della preparazione.
+`releasePrepared` e `restorePrepared` usano configurazioni con campi nominati e conservano
+gli identificatori C. La ricostruzione riguarda soltanto lo stato iniziale: dopo rendering
+o MIDI viene rifiutata. Gli identificatori ceduti al worklet restano registrati sull'host
+fino al rilascio della sessione; un identificatore sconosciuto è un errore.
+La callback C di miniaudio richiama `session_render`: il player produce i blocchi su
+richiesta senza conservare il PCM dell'intero pezzo. `web/worklet.js` gestisce soltanto
+preparazione e rilascio dei plugin; il processore audio è quello di miniaudio.
+
+Il player restituito espone `start()`, `status` (0 in corso, 1 terminato, -1 errore) e
+`close()`, da attendere prima di riusare l'host. Un host gestisce un player alla volta;
+`close()` silenzia la callback, attende la sospensione, chiede il rilascio dei DSP e
+chiude il contesto prima di liberare la memoria C condivisa. Le risposte del worklet
+hanno un timeout di 10 secondi e gli errori di pulizia vengono riportati senza saltare
+i rilasci successivi. Se la chiusura del contesto non è confermata, la memoria e il blocco
+dell'host restano attivi: si può ritentare `close()` o `closePlayer(host)`. La cancellazione
+durante la preparazione attende l'inizializzazione asincrona di miniaudio; da quando inizia
+la chiusura, `start()` e `status` non sono più disponibili. `context` e `node` permettono
+di collegare l'uscita ad altri nodi Web Audio. La normalizzazione del
+picco richiede l'intero render e viene rifiutata dal player: resta disponibile offline.
+Le partiture sono ancora preparate in anticipo; questo non introduce live coding.
+
+La copia generata `build/web/miniaudio.h` applica `web/miniaudio.patch` alla versione
+0.11.25: conserva e libera correttamente lo stack allineato dell'AudioWorklet, anche
+nei percorsi di errore. Il sorgente scaricato e la build nativa restano invariati.
+La patch andrà rimossa quando la correzione sarà disponibile nella dipendenza.
+`web/audio.js` corregge inoltre la deregistrazione del contesto in Emscripten 6.0.9:
+evita di chiamare `suspend()` su un contesto già chiuso, rendendo sicuro l'ordine di rilascio.
+
+`web/host.js` espone `createHost`, `addFile` e `renderScore`. Il chiamante precarica
+script, import e bundle nel filesystem virtuale mantenendo i relativi percorsi;
+`addFile` prepara anche i moduli `.wasm`. Janet continua a leggere e interpretare
+il JSON. `web/worker.js` gestisce una sola esecuzione, cancellabile terminando il Worker.
+Il risultato è PCM float stereo interleaved, con l'eventuale normalizzazione della
+partitura; `:format` riguarda l'export WAV nativo. Solo questa API offline raccoglie
+l'intero render in memoria; può continuare a essere eseguita in un normale Worker.
+
+Il collegamento Wasm segue il trasferimento dei buffer del template `web` di Tibia,
+usando però l'ABI Perone generica. Ogni istanza DSP usa una propria istanza WebAssembly;
+i buffer vengono allocati nella memoria del plugin e copiati da/verso quella del motore.
+Le callback delle directory usano funzioni Wasm tipizzate. Allocazioni e crescita della
+tabella avvengono durante la preparazione; la crescita della memoria DSP durante il
+processamento viene rifiutata. Le dimensioni iniziali delle memorie dipendono dai bundle
+(ad esempio, quelli Brickworks attuali riservano circa 8 MiB ciascuno).
+
 ## Struttura e limiti
 
 `engine.c/h` gestisce istanze e scheduler, senza CLI né Janet.
 `session.c/h` contiene lo stato esplicito della sessione, le catene e il mixer.
-`daw.c` collega le chiamate native della sessione e l'export; `main.c` è la demo audio.
+`daw.c` collega Janet alla sessione; `daw_main.c` è la CLI di rendering.
+`export.c` contiene la scrittura WAV e la pubblicazione del file, specifiche del backend POSIX.
+`main.c` è la demo audio nativa. `loader.c` implementa il backend DSP nativo;
+`web/loader.c` e `web/perone.js` quello Wasm. Il motore chiama lo stesso piccolo
+insieme di operazioni per apertura, chiusura, parametri, reset, MIDI e processamento.
+Il contratto completo è in `loader.h`: `Engine` contiene configurazione e un puntatore
+opaco `DSP`, oltre allo scheduler. `module.h` è privato al loader nativo e alle fixture
+che ne costruiscono istanze; memoria DSP, handle di libreria e API Perone non entrano
+nel motore comune. L'apertura fallita libera le risorse del backend e non modifica l'engine.
 `script.c` prepara Janet e trasferisce configurazioni numeriche al motore C.
 `lib/perone.janet` legge i bundle, interpreta bus, default e parametri;
 `lib/daw.janet` espone l'API delle partiture e conserva i metadati completi.
@@ -332,7 +439,9 @@ i blocchi. Il mix occupa memoria indipendente dalla durata, più lo stato dei pl
 e gli eventi. Limiti attuali: un export per esecuzione, 32 tracce, 128 nodi totali
 (plugin e mixer), 8 effetti per catena, 64 parametri per plugin, 3600 secondi.
 L'host accetta un bus audio principale di uscita mono/stereo, al massimo un bus
-principale di ingresso mono/stereo e un ingresso MIDI, a 44,1 kHz. Le sidechain
+principale di ingresso mono/stereo e un ingresso MIDI. Il sample rate viene fissato
+prima della preparazione (`Session.sample_rate`, zero sceglie 44100), fra 1 e 384000 Hz;
+non può essere cambiato durante la sessione. Le sidechain
 opzionali rimangono scollegate: il DSP riceve `NULL` nelle loro posizioni originali.
 Sono supportati fino a 8 canali di ingresso complessivi, inclusi quelli scollegati.
 CV, sidechain obbligatorie e bus principali aggiuntivi vengono rifiutati prima

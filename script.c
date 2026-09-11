@@ -1,4 +1,5 @@
 #include "script.h"
+#include "util.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,7 @@ JanetTable *script_env(void) {
 	Janet decode;
 	janet_resolve(json, janet_csymbol("decode"), &decode);
 	janet_def(env, "json/decode", decode, NULL);
+	janet_def(env, "host/binary-suffix", janet_cstringv(PERONE_SUFFIX), NULL);
 	janet_def(env, "host/platform", janet_cstringv(PERONE_PLATFORM), NULL);
 	janet_def(env, "host/max-params", janet_wrap_integer(MAX_PARAMS), NULL);
 	janet_def(env, "host/max-inputs", janet_wrap_integer(MAX_INPUTS), NULL);
@@ -61,7 +63,7 @@ static Janet config_native(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 4);
 	Bundle *bundle = janet_getpointer(argv, 0);
 	script_config(argv[2], argv[3], bundle->config);
-	*bundle->binary = strdup(janet_getcstring(argv, 1));
+	*bundle->binary = copy_string(janet_getcstring(argv, 1));
 	if (!*bundle->binary)
 		janet_panic("out of memory");
 	return janet_wrap_nil();
@@ -83,12 +85,12 @@ int read_bundle(const char *path, char **binary, PluginConfig *config) {
 	return result ? -1 : 0;
 }
 
-int open_bundle(Engine *e, const char *path) {
+int open_bundle(Engine *e, const char *path, unsigned sample_rate) {
 	char *binary;
 	PluginConfig config;
 	if (read_bundle(path, &binary, &config))
 		return -1;
-	int result = open_engine(e, binary, &config);
+	int result = open_engine(e, binary, &config, sample_rate);
 	free(binary);
 	return result;
 }

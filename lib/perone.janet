@@ -84,7 +84,7 @@
   (def parameters (perone/parameters (product :parameters)))
   {:product product
    :parameters parameters
-   :binary (string path "/" host/platform "/" name ".so")
+   :binary (string path "/" host/platform "/" name host/binary-suffix)
    :layout {:input-channels input
             :output-channels output
             :midi-bus midi

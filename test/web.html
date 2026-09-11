@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>triccheballacche — miniaudio/Wasm</title>
+<button id="run" disabled>Esegui test</button>
+<pre id="status">Caricamento…</pre>
+<script type="module">
+import {createPlayerHost} from "../web/player.js";
+import {createHost, addFile} from "../web/host.js";
+import {testPlayback, testPlayerErrors} from "./playback.mjs";
+import {testPlayerLifecycle} from "./player-lifecycle.mjs";
+
+const button = document.querySelector("#run"), status = document.querySelector("#status");
+try {
+    if (!crossOriginIsolated) throw Error("Avviare il server con node test/server.mjs (servono COOP/COEP).");
+    const host = await createPlayerHost({printErr: () => {}}), reference = await createHost();
+    for (const path of ["lib/pattern.janet", "test/schedule.janet", "test/playback.janet",
+        "build/fixture.perone/product.json", "build/effect.perone/product.json",
+        "build/fixture.perone/wasm32/fixture.wasm", "build/effect.perone/wasm32/fixture.wasm"]) {
+        const response = await fetch("../" + path);
+        if (!response.ok) throw Error("Cannot load " + path);
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        await addFile(host, path, bytes);
+        await addFile(reference, path, bytes);
+    }
+    button.disabled = false;
+    status.textContent = "Pronto: confronto PCM offline/miniaudio, poi arresto e riavvio.";
+    button.onclick = async () => {
+        button.disabled = true;
+        try {
+            for (const rate of [44100, 48000]) {
+                status.textContent = `Riproduzione e verifica a ${rate} Hz…`;
+                for (const path of ["test/schedule.janet", "test/playback.janet"])
+                    await testPlayback(host, reference, path, rate);
+            }
+            await testPlayerErrors(host);
+            status.textContent = "Verifica chiusura, errori e timeout del worklet…";
+            await testPlayerLifecycle(host);
+            await testPlayback(host, reference, "test/playback.janet", 48000);
+            status.textContent = "OK: miniaudio/AudioWorklet, PCM identico a 44,1/48 kHz, MIDI, effetti mono/stereo, fine blocco, arresto e riavvio.";
+        } catch (error) {
+            status.textContent = String(error);
+        } finally {
+            button.disabled = false;
+        }
+    };
+} catch (error) {
+    status.textContent = String(error);
+}
+</script>

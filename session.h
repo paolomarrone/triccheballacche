@@ -22,10 +22,12 @@ typedef struct {
 	Node nodes[MAX_NODES];
 	Track tracks[MAX_TRACKS], master;
 	int nnodes, ntracks, has_master, sealed;
+	unsigned sample_rate; // Set before preparation; zero selects DEFAULT_SAMPLE_RATE.
 	size_t frames, time;
 	const char *error;
 } Session;
 
+unsigned session_rate(Session *s);
 int session_plugin(Session *s, const char *path, const PluginConfig *config);
 int session_set(Session *s, int id, int param, float value);
 int session_track(Session *s, int source, const int *effects, int count, int master);

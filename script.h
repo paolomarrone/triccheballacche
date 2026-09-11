@@ -7,5 +7,5 @@ JanetTable *script_env(void);
 void script_config(Janet layout, Janet defaults, PluginConfig *config);
 // These helpers start and close Janet themselves; call without an active VM.
 int read_bundle(const char *path, char **binary, PluginConfig *config);
-int open_bundle(Engine *engine, const char *path);
+int open_bundle(Engine *engine, const char *path, unsigned sample_rate);
 #endif

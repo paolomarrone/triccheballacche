@@ -1,3 +1,4 @@
+#include "module.h"
 #include "script.h"
 #include <assert.h>
 #include <math.h>
@@ -24,10 +25,11 @@ static void test_scheduler(void) {
 	float value = 0, out[8195] = {123};
 	out[8194] = 123;
 	const perone_api api = {.process = mock_process, .set_parameter = mock_param, .midi_msg_in = mock_midi};
-	Module module = {.api = &api, .config = {.input = 1, .inputs = 1, .output = 1, .midi = 7}};
+	DSP dsp = {.api = &api, .instance = &value};
+	PluginConfig config = {.input = 1, .inputs = 1, .output = 1, .midi = 7};
 	const Event events[] = {
 	    {0, 0, 1, {0}, 0}, {4, 0, 2, {0}, 0}, {4, -1, 0, {0x90, 3, 100}, 0}, {8, 0, 4, {0}, 0}, {8192, 0, 5, {0}, 0}};
-	Engine e = {.module = &module, .instance = &value, .events = events, .count = 5};
+	Engine e = {.dsp = &dsp, .config = config, .events = events, .count = 5};
 	render(&e, out + 1, NULL, 8);
 	assert(e.next == 3 && e.time == 8);
 	render(&e, out + 9, NULL, 8185);
@@ -53,9 +55,10 @@ static void test_stereo_scheduler(void) {
 		input[2 * i + 1] = -2 * i;
 	}
 	const perone_api api = {.process = stereo_process, .set_parameter = mock_param};
-	Module module = {.api = &api, .config = {.input = 2, .inputs = 2, .output = 2, .midi = -1}};
+	DSP dsp = {.api = &api, .instance = &value};
+	PluginConfig config = {.input = 2, .inputs = 2, .output = 2, .midi = -1};
 	const Event events[] = {{0, 0, 1, {0}, 0}, {7, 0, 2, {0}, 0}, {512, 0, 3, {0}, 0}, {8192, 0, 4, {0}, 0}};
-	Engine e = {.module = &module, .instance = &value, .events = events, .count = 4};
+	Engine e = {.dsp = &dsp, .config = config, .events = events, .count = 4};
 	out[0] = out[FRAMES * 2 + 1] = 123;
 	render(&e, out + 1, input, FRAMES);
 	assert(out[0] == 123 && out[FRAMES * 2 + 1] == 123);
@@ -84,8 +87,9 @@ static void disconnected_process(void *p, const float **in, float **out, size_t 
 static void test_disconnected_inputs(void) {
 	float value = 1, in[] = {2, 3, 4, 5}, out[4];
 	const perone_api api = {.process = disconnected_process};
-	Module module = {.api = &api, .config = {.input = 2, .output = 2, .inputs = 4, .input_offset = 1, .midi = -1}};
-	Engine e = {.module = &module, .instance = &value};
+	DSP dsp = {.api = &api, .instance = &value};
+	PluginConfig config = {.input = 2, .output = 2, .inputs = 4, .input_offset = 1, .midi = -1};
+	Engine e = {.dsp = &dsp, .config = config};
 	render(&e, out, in, 2);
 	assert(out[0] == 3 && out[1] == 2 && out[2] == 5 && out[3] == 4);
 	render(&e, out, NULL, 2);
@@ -99,26 +103,28 @@ static void test_lifecycle(void) {
 	for (size_t i = 0; i < sizeof(stages) / sizeof(*stages); ++i) {
 		assert(!setenv("PERONE_TEST_FAIL", stages[i], 1));
 		Engine e = {0};
-		assert(open_bundle(&e, path) < 0);
-		assert(!e.module && !e.instance && !e.memory);
+		assert(open_bundle(&e, path, DEFAULT_SAMPLE_RATE) < 0);
+		assert(!e.dsp);
 		close_engine(&e);
 	}
 	assert(!unsetenv("PERONE_TEST_FAIL"));
 	Engine e = {0};
-	assert(!open_bundle(&e, path));
-	assert(e.module->config.nparams == 3 && e.module->config.outputs == 1);
+	assert(!open_bundle(&e, path, DEFAULT_SAMPLE_RATE));
+	DSP *original = e.dsp;
+	assert(open_bundle(&e, path, DEFAULT_SAMPLE_RATE) < 0 && e.dsp == original);
+	assert(e.config.nparams == 3 && e.config.outputs == 1);
 	float out[6];
 	render(&e, out, NULL, 3);
 	assert(out[0] == .5f && out[1] == -.5f);
-	assert(e.module->api->get_parameter(e.instance, 0) == .5f);
+	assert(e.dsp->api->get_parameter(e.dsp->instance, 0) == .5f);
 	close_engine(&e);
 	puts("OK: Perone allocation/init/memory/ABI failures, cleanup, callbacks and output-first defaults");
 }
 
 static void test_bundle(const char *path) {
 	Engine e = {0};
-	assert(!open_bundle(&e, path));
-	const PluginConfig *c = &e.module->config;
+	assert(!open_bundle(&e, path, DEFAULT_SAMPLE_RATE));
+	const PluginConfig *c = &e.config;
 	float in[BLOCK * 2], out[BLOCK * 2];
 	const Event notes[] = {{0, -1, 0, {0x90, 60, 100}, 0}, {4097, -1, 0, {0x80, 60, 0}, 1}};
 	if (c->midi >= 0) {
@@ -154,7 +160,7 @@ int main(int argc, char **argv) {
 	test_disconnected_inputs();
 	test_lifecycle();
 	Engine missing = {0};
-	assert(open_bundle(&missing, "build/nonexistent.so") != 0);
+	assert(open_bundle(&missing, "build/nonexistent.so", DEFAULT_SAMPLE_RATE) != 0);
 	close_engine(&missing);
 	puts("All tests passed.");
 	return 0;

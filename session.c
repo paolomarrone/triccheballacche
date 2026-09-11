@@ -1,4 +1,5 @@
 #include "session.h"
+#include "util.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,11 +9,17 @@ static int fail(Session *s, const char *message) {
 	return -1;
 }
 
+unsigned session_rate(Session *s) {
+	if (!s->sample_rate)
+		s->sample_rate = DEFAULT_SAMPLE_RATE;
+	return s->sample_rate <= 384000 ? s->sample_rate : 0;
+}
+
 static int valid(Session *s, int id, int param, float value) {
 	if (s->sealed || id < 0 || id >= s->nnodes)
 		return fail(s, "sealed session or invalid handle");
 	const Node *n = s->nodes + id;
-	const PluginConfig *config = n->path ? &n->dsp[0].module->config : NULL;
+	const PluginConfig *config = n->path ? &n->dsp[0].config : NULL;
 	if (param < 0 || param >= (config ? config->nparams : n->ncontrols) ||
 	    (config && (config->outputs & (UINT64_C(1) << param))))
 		return fail(s, "unknown or output parameter");
@@ -26,11 +33,11 @@ int session_plugin(Session *s, const char *path, const PluginConfig *config) {
 		return fail(s, "sealed session or node limit reached");
 	Node *n = s->nodes + s->nnodes;
 	*n = (Node){0};
-	if (open_engine(n->dsp, path, config)) {
+	if (open_engine(n->dsp, path, config, session_rate(s))) {
 		close_engine(n->dsp);
 		return fail(s, "cannot open plugin");
 	}
-	n->path = strdup(path);
+	n->path = copy_string(path);
 	if (!n->path) {
 		close_engine(n->dsp);
 		return fail(s, "out of memory");
@@ -43,7 +50,7 @@ int session_set(Session *s, int id, int param, float value) {
 		return -1;
 	Node *n = s->nodes + id;
 	if (n->path)
-		n->dsp[0].module->config.defaults[param] = value;
+		n->dsp[0].config.defaults[param] = value;
 	else
 		n->values[param] = value;
 	return 0;
@@ -61,15 +68,15 @@ int session_track(Session *s, int source, const int *effects, int count, int mas
 	for (int i = 0; i < total; ++i) {
 		int id = ids[i];
 		if (id < 0 || id >= s->nnodes || !s->nodes[id].path || s->nodes[id].attached ||
-		    !!s->nodes[id].dsp[0].module->config.input != (master || i > 0))
+		    !!s->nodes[id].dsp[0].config.input != (master || i > 0))
 			return fail(s, "expected unused source/effect plugin");
 		for (int j = 0; j < i; ++j)
 			if (ids[j] == id)
 				return fail(s, "plugin already in this chain");
 	}
-	int channels = master ? 2 : s->nodes[source].dsp[0].module->config.output, duplicate[MAX_FX];
+	int channels = master ? 2 : s->nodes[source].dsp[0].config.output, duplicate[MAX_FX];
 	for (int i = 0; i < count; ++i) {
-		const PluginConfig *m = &s->nodes[effects[i]].dsp[0].module->config;
+		const PluginConfig *m = &s->nodes[effects[i]].dsp[0].config;
 		if (channels == 2 && m->input == 1 && m->output == 2)
 			return fail(s, "a mono-to-stereo effect requires a mono signal");
 		duplicate[i] = channels == 2 && m->input == 1;
@@ -78,7 +85,7 @@ int session_track(Session *s, int source, const int *effects, int count, int mas
 	for (int i = 0; i < count; ++i)
 		if (duplicate[i]) {
 			Node *n = s->nodes + effects[i];
-			if (open_engine(n->dsp + 1, n->path, &n->dsp[0].module->config)) {
+			if (open_engine(n->dsp + 1, n->path, &n->dsp[0].config, session_rate(s))) {
 				for (int j = 0; j <= i; ++j)
 					close_engine(s->nodes[effects[j]].dsp + 1);
 				return fail(s, "cannot create second mono effect instance");
@@ -134,7 +141,7 @@ int session_note(Session *s, int id, size_t time, size_t end, int pitch, int vel
 	    velocity > 127)
 		return fail(s, "invalid note or sealed session");
 	Node *n = s->nodes + id;
-	if (!n->path || n->dsp[0].module->config.midi < 0 || !n->dsp[0].module->api->midi_msg_in)
+	if (!n->path || n->dsp[0].config.midi < 0)
 		return fail(s, "node has no MIDI input");
 	if (reserve(s, n, 2))
 		return -1;
@@ -156,7 +163,7 @@ static int compare(const void *aa, const void *bb) {
 }
 
 int session_end(Session *s, size_t frames) {
-	if (s->sealed || !frames)
+	if (s->sealed || !frames || !session_rate(s))
 		return fail(s, "empty duration or already sealed");
 	for (int i = 0; i < s->nnodes; ++i) {
 		Node *n = s->nodes + i;
@@ -174,13 +181,13 @@ int session_end(Session *s, size_t frames) {
 			qsort(n->events, n->count, sizeof(Event), compare);
 		if (!n->path)
 			continue;
-		const PluginConfig *config = &n->dsp[0].module->config;
-		for (int c = 0; c < 2 && n->dsp[c].instance; ++c) {
+		const PluginConfig *config = &n->dsp[0].config;
+		for (int c = 0; c < 2 && n->dsp[c].dsp; ++c) {
 			Engine *e = n->dsp + c;
 			for (int j = 0; j < config->nparams; ++j)
 				if (!(config->outputs & (UINT64_C(1) << j)))
-					e->module->api->set_parameter(e->instance, j, config->defaults[j]);
-			e->module->api->reset(e->instance);
+					set_dsp(e->dsp, j, config->defaults[j]);
+			reset_dsp(e->dsp);
 			e->events = n->events;
 			e->count = n->count;
 		}
@@ -201,8 +208,8 @@ static int chain(Session *s, const Track *t, float *audio, int channels, size_t 
 	float tmp[BLOCK * 2], mono[BLOCK];
 	for (int j = 0; j < t->count; ++j) {
 		Node *fx = s->nodes + t->effects[j];
-		const PluginConfig *m = &fx->dsp[0].module->config;
-		if (fx->dsp[1].instance) {
+		const PluginConfig *m = &fx->dsp[0].config;
+		if (fx->dsp[1].dsp) {
 			for (int c = 0; c < 2; ++c) {
 				for (size_t i = 0; i < n; ++i)
 					mono[i] = audio[2 * i + c];
@@ -236,7 +243,7 @@ int session_render(Session *s, float *out, size_t frames) {
 			float audio[BLOCK * 2];
 			Engine *source = s->nodes[t->source].dsp;
 			render(source, audio, NULL, n);
-			int channels = chain(s, t, audio, source->module->config.output, n);
+			int channels = chain(s, t, audio, source->config.output, n);
 			for (size_t i = 0; i < n; ++i) {
 				controls(m, s->time + i);
 				float pan = m->values[1], gain = m->values[0];

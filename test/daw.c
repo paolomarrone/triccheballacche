@@ -1,3 +1,4 @@
+#include "module.h"
 #include "daw.h"
 #include "script.h"
 #include <assert.h>
@@ -40,6 +41,26 @@ static void test_external_metadata(void) {
 	}
 	session_free(&s);
 	puts("OK: external Unicode metadata, scale points, output-first indices and Janet lifetime");
+}
+
+static void test_sample_rate(void) {
+	Session s = {.sample_rate = 48000};
+	Output cfg;
+	assert(!script(&s, &cfg,
+	    "(def p (daw/plugin \"build/fixture.perone\" {:gain 0.25 :mode 3})) "
+	    "(daw/track p) (daw/param p 0.001 :gain 0.75) (daw/end 0.01)"));
+	assert(s.frames == 480 && s.nodes[0].events[0].time == 48);
+	float audio[100];
+	assert(!session_render(&s, audio, 50));
+	for (int i = 0; i < 50; ++i) {
+		assert(fabsf(audio[2 * i] - (i < 48 ? .25f : .75f) * (48000.f / 44100.f)) < 1e-7f);
+		assert(audio[2 * i + 1] == -audio[2 * i]);
+	}
+	session_free(&s);
+	s.sample_rate = 384001;
+	assert(script(&s, &cfg, "(daw/end 1)"));
+	session_free(&s);
+	puts("OK: configurable rate reaches DSP, event conversion and duration; invalid rate rejected");
 }
 
 static void test_pattern_schedule(void) {
@@ -144,17 +165,16 @@ static int mock(Session *s, int kind, float value) {
 	Node *n = s->nodes + s->nnodes;
 	n->path = strdup("test");
 	Engine *e = n->dsp;
-	e->module = calloc(1, sizeof(*e->module));
-	e->instance = malloc(sizeof(float));
-	assert(n->path && e->module && e->instance);
-	*e->module = (Module){.api = api + kind,
-	    .config = {.input = inputs[kind],
-	        .inputs = inputs[kind],
-	        .output = outputs[kind],
-	        .midi = -1,
-	        .nparams = 1,
-	        .defaults = {value}}};
-	e->initialized = 1;
+	e->dsp = calloc(1, sizeof(*e->dsp));
+	assert(n->path && e->dsp);
+	*e->dsp = (DSP){.api = api + kind, .instance = malloc(sizeof(float)), .initialized = 1};
+	assert(e->dsp->instance);
+	e->config = (PluginConfig){.input = inputs[kind],
+	    .inputs = inputs[kind],
+	    .output = outputs[kind],
+	    .midi = -1,
+	    .nparams = 1,
+	    .defaults = {value}};
 	return s->nnodes++;
 }
 
@@ -226,7 +246,7 @@ static void test_master(void) {
 	int fx = session_bundle(&s, "build/effect.perone");
 	assert(fx >= 0 && !session_set(&s, tr, 1, -1));
 	assert(session_track(&s, -1, &fx, 1, 1) >= 0);
-	assert(s.nodes[fx].dsp[0].instance != s.nodes[fx].dsp[1].instance);
+	assert(s.nodes[fx].dsp[0].dsp != s.nodes[fx].dsp[1].dsp);
 	assert(!session_set(&s, fx, 2, .5f));
 	assert(!session_param(&s, fx, 3, 1, .5f));
 	assert(!session_param(&s, fx, 3, 2, 0));
@@ -243,7 +263,7 @@ static void stereo_pipeline(Session *s) {
 	int tr = session_track(s, source, fx, 2, 0), stereo = mock(s, 4, 1);
 	int master = session_track(s, -1, &stereo, 1, 1);
 	assert(tr >= 0 && master >= 0);
-	assert(s->nodes[mono].dsp[1].instance && !s->nodes[fx[1]].dsp[1].instance && !s->nodes[stereo].dsp[1].instance);
+	assert(s->nodes[mono].dsp[1].dsp && !s->nodes[fx[1]].dsp[1].dsp && !s->nodes[stereo].dsp[1].dsp);
 	assert(!session_set(s, mono, 2, .5f));
 	assert(!session_param(s, mono, 5, 1, .5f));
 	assert(!session_param(s, mono, 5, 2, 0));
@@ -298,7 +318,7 @@ static void test_channel_transitions(void) {
 	float out[2];
 	int source = mock(&s, 3, 1), fx[] = {session_bundle(&s, "build/effect.perone"), mock(&s, 5, 1)};
 	assert(session_track(&s, source, fx, 2, 0) < 0); // No implicit stereo fold-down before a mono-to-stereo effect.
-	assert(s.ntracks == 0 && !s.nodes[fx[0]].dsp[1].instance && !s.nodes[source].attached);
+	assert(s.ntracks == 0 && !s.nodes[fx[0]].dsp[1].dsp && !s.nodes[source].attached);
 	assert(session_track(&s, source, fx, 1, 0) >= 0);
 	session_free(&s);
 	source = mock(&s, 3, 1);
@@ -429,6 +449,7 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 }
 
 int main(void) {
+	test_sample_rate();
 	test_external_metadata();
 	test_pattern_schedule();
 	test_initial_parameters();
@@ -448,7 +469,7 @@ int main(void) {
 	Session s = {0};
 	Output cfg;
 	assert(!load_score(&s, &cfg, "test/daw.janet"));
-	assert(s.nnodes == 4 && s.nodes[0].count == 3003 && s.frames == 61 * SAMPLE_RATE);
+	assert(s.nnodes == 4 && s.nodes[0].count == 3003 && s.frames == 61 * DEFAULT_SAMPLE_RATE);
 	float audio[BLOCK * 2];
 	double energy = 0;
 	while (s.time < s.frames) {

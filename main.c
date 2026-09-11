@@ -21,28 +21,28 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Usage: %s plugin.perone [--input | --wav output.wav]\n", argv[0]);
 		return 1;
 	}
-	const Event demo[] = {{0, -1, 0, {0x90, 60, 100}, 0}, {SAMPLE_RATE, -1, 0, {0x80, 60, 0}, 0},
-	    {2 * SAMPLE_RATE, -1, 0, {0x90, 64, 100}, 0}, {3 * SAMPLE_RATE, -1, 0, {0x90, 64, 0}, 0},
-	    {4 * SAMPLE_RATE, -1, 0, {0x90, 67, 100}, 0}, {5 * SAMPLE_RATE, -1, 0, {0xe0, 0, 0x60}, 0},
-	    {6 * SAMPLE_RATE, -1, 0, {0xe0, 0, 0x40}, 0}, {7 * SAMPLE_RATE, -1, 0, {0x80, 67, 0}, 0}};
+	const Event demo[] = {{0, -1, 0, {0x90, 60, 100}, 0}, {DEFAULT_SAMPLE_RATE, -1, 0, {0x80, 60, 0}, 0},
+	    {2 * DEFAULT_SAMPLE_RATE, -1, 0, {0x90, 64, 100}, 0}, {3 * DEFAULT_SAMPLE_RATE, -1, 0, {0x90, 64, 0}, 0},
+	    {4 * DEFAULT_SAMPLE_RATE, -1, 0, {0x90, 67, 100}, 0}, {5 * DEFAULT_SAMPLE_RATE, -1, 0, {0xe0, 0, 0x60}, 0},
+	    {6 * DEFAULT_SAMPLE_RATE, -1, 0, {0xe0, 0, 0x40}, 0}, {7 * DEFAULT_SAMPLE_RATE, -1, 0, {0x80, 67, 0}, 0}};
 	int result = 1, capture = argc == 3;
 	Engine e = {.events = demo, .count = capture ? 0 : sizeof(demo) / sizeof(*demo)};
-	if (open_bundle(&e, argv[1])) {
+	if (open_bundle(&e, argv[1], DEFAULT_SAMPLE_RATE)) {
 		fputs("Plugin initialization failed\n", stderr);
 		goto done;
 	}
-	if (capture && !e.module->config.input) {
+	if (capture && !e.config.input) {
 		fputs("Plugin has no audio input\n", stderr);
 		goto done;
 	}
 	if (argc == 4) {
 		ma_encoder encoder;
 		ma_encoder_config cfg =
-		    ma_encoder_config_init(ma_encoding_format_wav, ma_format_f32, e.module->config.output, SAMPLE_RATE);
+		    ma_encoder_config_init(ma_encoding_format_wav, ma_format_f32, e.config.output, DEFAULT_SAMPLE_RATE);
 		if (ma_encoder_init_file(argv[3], &cfg, &encoder) != MA_SUCCESS)
 			goto done;
 		result = 0;
-		for (size_t left = 8 * SAMPLE_RATE; left;) {
+		for (size_t left = 8 * DEFAULT_SAMPLE_RATE; left;) {
 			float buffer[BLOCK * 2];
 			size_t n = left < BLOCK ? left : BLOCK;
 			ma_uint64 written;
@@ -59,9 +59,9 @@ int main(int argc, char **argv) {
 	ma_device device;
 	ma_device_config cfg = ma_device_config_init(capture ? ma_device_type_duplex : ma_device_type_playback);
 	cfg.playback.format = cfg.capture.format = ma_format_f32;
-	cfg.playback.channels = e.module->config.output;
-	cfg.capture.channels = e.module->config.input;
-	cfg.sampleRate = SAMPLE_RATE;
+	cfg.playback.channels = e.config.output;
+	cfg.capture.channels = e.config.input;
+	cfg.sampleRate = DEFAULT_SAMPLE_RATE;
 	cfg.dataCallback = callback;
 	cfg.pUserData = &e;
 	ma_result err = ma_device_init(NULL, &cfg, &device);

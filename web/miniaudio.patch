@@ -1,0 +1,26 @@
+--- miniaudio.h
++++ miniaudio.h
+@@ -41671,5 +41671,5 @@
+         emscripten_destroy_web_audio_node(pDevice->webaudio.audioWorklet);
+         emscripten_destroy_audio_context(pDevice->webaudio.audioContext);
+-        ma_free(pDevice->webaudio.pStackBuffer, &pDevice->pContext->allocationCallbacks);
++        ma_aligned_free(pDevice->webaudio.pStackBuffer, &pDevice->pContext->allocationCallbacks);
+     }
+     #else
+@@ -42056,5 +42056,5 @@
+         pInitParameters = (ma_audio_worklet_thread_initialized_data*)ma_malloc(sizeof(*pInitParameters), &pDevice->pContext->allocationCallbacks);
+         if (pInitParameters == NULL) {
+-            ma_free(pStackBuffer, &pDevice->pContext->allocationCallbacks);
++            ma_aligned_free(pStackBuffer, &pDevice->pContext->allocationCallbacks);
+             emscripten_destroy_audio_context(pDevice->webaudio.audioContext);
+             return MA_OUT_OF_MEMORY;
+@@ -42078,6 +42078,8 @@
+         /* Initialization is now complete. Descriptors were updated when the worklet was initialized. */
+         if (pDevice->webaudio.initResult != MA_SUCCESS) {
+-            ma_free(pStackBuffer, &pDevice->pContext->allocationCallbacks);
++            ma_aligned_free(pStackBuffer, &pDevice->pContext->allocationCallbacks);
+             emscripten_destroy_audio_context(pDevice->webaudio.audioContext);
+             return pDevice->webaudio.initResult;
+         }
++
++        pDevice->webaudio.pStackBuffer = pStackBuffer;
