@@ -1,5 +1,13 @@
 # Prove di interfaccia
 
+`make test-editor` verifica il frontend WebUI in Chromium e il motore audio nativo:
+apertura di nomi e contenuti Unicode, import relativi da testo non salvato,
+Esegui/Stop, salvataggio atomico, diagnostiche e ripresa dopo errori, chiamate
+concorrenti e chiusura della pagina durante l'ascolto. Usa la fixture Perone locale;
+richiede Chromium e un dispositivo audio, senza plugin di produzione.
+`test/chromium.mjs` condivide avvio, DevTools e pulizia del browser con i test Wasm.
+`make test` copre anche preparazione da buffer e diagnostiche senza browser o dispositivo.
+
 `make gui` apre le GUI native Perone di Tibia e A-SID con `examples/gui.janet`.
 `make test-ui` verifica le UI originali C/C++, i controlli sul DSP e i messaggi;
 richiede un display X11 e i bundle compilati nei repository adiacenti. I dettagli

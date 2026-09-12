@@ -27,6 +27,7 @@ int main(int argc, char **argv) {
 	for (int i = 0; i < session.nnodes; ++i) {
 		if (ui_open(views + i, session.nodes + i))
 			goto done;
+		ui_show(views[i], 1);
 		count += views[i] != NULL;
 	}
 	if (!count) {

@@ -1,5 +1,6 @@
 #include "daw.h"
 #include "script.h"
+#include "util.h"
 #include <float.h>
 #include <math.h>
 #include <stdlib.h>
@@ -122,7 +123,9 @@ static Janet end(int32_t argc, Janet *argv) {
 	return janet_wrap_nil();
 }
 
-int load_score(Session *s, Output *cfg, const char *path) {
+int prepare_score(Session *s, Output *cfg, const char *path, const char *source, char **diagnostics) {
+	if (diagnostics)
+		*diagnostics = NULL;
 	if (s->nnodes || s->sealed || !session_rate(s)) {
 		s->error = "score requires an empty session and a valid sample rate";
 		return 1;
@@ -143,21 +146,37 @@ int load_score(Session *s, Output *cfg, const char *path) {
 		output = NULL;
 		return 1;
 	}
+	JanetBuffer *errors = NULL;
+	if (diagnostics) {
+		errors = janet_buffer(0);
+		janet_setdyn("err", janet_wrap_buffer(errors));
+		janet_table_put(env, janet_ckeywordv("err"), janet_wrap_buffer(errors));
+	}
 	janet_cfuns_prefix(env, "native", api);
 	janet_def(env, "daw/script", janet_cstringv(path), NULL);
 	static const char daw_source[] =
 #include "build/daw.inc"
 	    ;
-	int result = janet_dostring(env, daw_source, "lib/daw.janet", NULL) ||
-	    janet_dostring(env, "(dofile daw/script :env (curenv))", path, NULL);
+	int result = janet_dostring(env, daw_source, "lib/daw.janet", NULL);
+	if (!result) {
+		janet_table_put(env, janet_ckeywordv("source"), janet_cstringv(path));
+		janet_table_put(env, janet_ckeywordv("current-file"), janet_cstringv(path));
+		result = janet_dostring(env, source ? source : "(dofile daw/script :env (curenv))", path, NULL);
+	}
+	if (!result && !s->sealed) {
+		janet_eprintf("Missing (daw/end seconds)\n");
+		result = 1;
+	}
+	if (errors && errors->count)
+		*diagnostics = copy_string((const char *)janet_string(errors->data, errors->count));
 	janet_deinit();
 	current = NULL;
 	output = NULL;
-	if (!result && !s->sealed) {
-		fputs("Missing (daw/end seconds)\n", stderr);
-		result = 1;
-	}
 	if (!result)
 		s->error = NULL;
 	return result;
+}
+
+int load_score(Session *s, Output *cfg, const char *path) {
+	return prepare_score(s, cfg, path, NULL, NULL);
 }

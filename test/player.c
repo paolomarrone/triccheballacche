@@ -66,6 +66,8 @@ static void pump(size_t frames) {
 	for (size_t i = 0; i < frames * 2; ++i)
 		audio[i] = 123;
 	device->onData(device, audio, NULL, (ma_uint32)frames);
+	Player *player = device->pUserData;
+	assert(player_time(player) == (double)player->session->time / player->session->sample_rate);
 	if (expected)
 		for (size_t i = 0; i < frames * 2; ++i) {
 			size_t index = emitted * 2 + i;

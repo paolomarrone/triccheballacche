@@ -11,6 +11,8 @@ JANET_INCLUDES = -I$(JANET)/src/include -I$(JANET)/src/conf
 JANET_LIBS = $(JANET)/build/libjanet.a
 SPORK ?= .deps/spork
 SPORK_REV = 0667f96b74de52747ffe5e19e185563ebf53816b
+WEBUI ?= .deps/webui
+WEBUI_REV = ac4ea8cd7b11daf3d96c65db03e6c02e1e0bd6d2
 PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
@@ -135,6 +137,23 @@ build/ui_test: LDLIBS += -lX11
 test-ui: build/ui_test
 	./build/ui_test
 
+$(WEBUI)/include/webui.h:
+	git clone --depth 1 --branch 2.4.2 https://github.com/webui-dev/webui.git $(WEBUI)
+	git -C $(WEBUI) checkout $(WEBUI_REV)
+
+$(WEBUI)/dist/libwebui-2-static.a: $(WEBUI)/include/webui.h
+	$(MAKE) -C $(WEBUI) CC=gcc
+
+build/editor: posix/editor.c posix/ui.c posix/ui.h perone_ui.h player.c player.h $(SCORE_SOURCES) $(SCORE_HEADERS) posix/loader.c $(NATIVE_HEADERS) build/audio.o $(SCRIPT) build/daw.inc $(WEBUI)/dist/libwebui-2-static.a Makefile | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(WEBUI)/include -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) posix/editor.c posix/ui.c player.c $(SCORE_SOURCES) posix/loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(WEBUI)/dist/libwebui-2-static.a $(LDLIBS) -lX11 -o $@
+
+.PHONY: editor test-editor
+editor: build/editor
+	./build/editor
+
+test-editor: build/editor test
+	node test/editor.mjs
+
 prog: check-plugins build/daw
 	./build/daw examples/prog/polpo.janet build/il_polpo_a_sette_gomiti.wav
 
@@ -143,7 +162,7 @@ test-prog: prog
 	cmp build/polpo-repeat.wav build/il_polpo_a_sette_gomiti.wav
 
 clean:
-	rm -f build/audio.o build/json.o build/perone.inc build/daw.inc build/host build/test build/termux_synth build/termux_test build/daw build/daw-ui build/daw_test build/plugins_test build/player_test build/ui_test
+	rm -f build/audio.o build/json.o build/perone.inc build/daw.inc build/host build/test build/termux_synth build/termux_test build/daw build/daw-ui build/editor build/daw_test build/plugins_test build/player_test build/ui_test
 	rm -rf build/fixture.perone build/effect.perone build/web
 
 # Read-only audit of the bundles built in Brickworks; no plugin compilation here.

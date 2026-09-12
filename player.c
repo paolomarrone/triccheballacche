@@ -24,6 +24,7 @@ static void callback(ma_device *device, void *out, const void *in, ma_uint32 fra
 			status = -1;
 		}
 	}
+	atomic_store(&p->position, s->time);
 	int expected = 0;
 	atomic_compare_exchange_strong(&p->status, &expected, status);
 }
@@ -41,6 +42,7 @@ Player *player_new(Session *s) {
 	}
 	p->session = s;
 	atomic_init(&p->status, 0);
+	atomic_init(&p->position, 0);
 	ma_device_config config = ma_device_config_init(ma_device_type_playback);
 	config.playback.format = ma_format_f32;
 	config.playback.channels = 2;
@@ -73,6 +75,10 @@ int player_start(Player *p) {
 
 int player_status(Player *p) {
 	return atomic_load(&p->status);
+}
+
+double player_time(Player *p) {
+	return (double)atomic_load(&p->position) / p->session->sample_rate;
 }
 
 void player_stop(Player *p) {

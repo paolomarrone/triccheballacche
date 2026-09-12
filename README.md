@@ -327,6 +327,54 @@ Il [WAV storico](examples/prog/il_polpo_a_sette_gomiti.wav) resta incluso e inva
 Il nuovo render non è bit-identico: percussioni e delay ora usano istanze e catene
 indipendenti. `make test-prog` verifica che due nuovi render siano identici.
 
+## Editor desktop
+
+L'editor usa [WebUI](https://github.com/webui-dev/webui) per collegare HTML/CSS/JS
+al motore C nativo. Il browser mostra l'interfaccia; Janet prepara la sessione,
+miniaudio riproduce e i plugin vengono caricati dai bundle nativi `.perone`.
+Non servono Node.js o una build JavaScript per usare l'editor.
+
+```sh
+make editor
+# Oppure:
+make build/editor
+./build/editor examples/prog/polpo.janet
+./build/editor --serve examples/gui.janet
+# --serve stampa l'URL locale da aprire senza lanciare un browser.
+make test-editor
+```
+
+Eseguire dalla radice del repository. Il build opzionale scarica WebUI 2.4.2
+alla revisione fissata nel Makefile in `.deps/webui` e lo compila con GCC;
+`WEBUI` può indicare un altro checkout con `include/` e `dist/`. Servono le
+dipendenze del player nativo e X11, come per `daw-ui`; la prova corrente è Linux.
+I plugin restano compilati separatamente. Il server ascolta solo in locale e
+serve la cartella `editor/`; apertura e salvataggio dei file passano dal backend.
+
+Il campo File accetta percorsi relativi al repository o assoluti. Apri legge la
+partitura; Salva la scrive, preservando il file precedente se la scrittura fallisce.
+I file sono testo UTF-8, fino a 8 MiB. Esegui usa il buffer corrente senza salvarlo
+implicitamente e riparte dall'inizio. Percorso originale e import relativi sono
+conservati anche per una partitura non ancora salvata. Il testo resta modificabile
+durante l'ascolto; le modifiche si applicano alla successiva esecuzione.
+Ctrl+Invio esegue, Ctrl+S salva ed Esc ferma; su macOS vale anche il tasto Command.
+Errori Janet di parsing, compilazione ed esecuzione vengono mostrati nell'editor.
+
+GUI plugin mostra o nasconde le interfacce originali dei bundle della sessione.
+Le istanze vengono create prima della riproduzione; nascondere o chiudere una loro
+finestra conserva DSP e scambio dei controlli. Stop, fine del pezzo o chiusura
+dell'editor liberano player, GUI e sessione in quest'ordine. Il contatore mostra
+il tempo renderizzato, senza compensazione della latenza del dispositivo.
+
+`posix/editor.c` gestisce file, comandi WebUI e ciclo di vita sul thread principale;
+i callback WebUI attendono la risposta tramite un singolo posto protetto da mutex.
+Questa attesa non coinvolge il thread audio. `prepare_score` condivide preparazione
+da file e da buffer con la CLI e restituisce diagnostiche di proprietà del chiamante.
+Il frontend è una textarea con JavaScript senza framework. La preparazione Janet
+è ancora sincrona: il prototipo non interrompe uno script durante la valutazione,
+non sostituisce la musica in corso e non include ancora l'evidenziazione della
+provenienza disponibile nella pagina web di test.
+
 ## GUI native Perone
 
 `make gui` compila il player desktop opzionale e riproduce `examples/gui.janet`,
@@ -364,8 +412,8 @@ callback sul thread grafico. Apre una GUI per nodo quando il bundle contiene la
 libreria; gli effetti mono duplicati su stereo condividono la stessa GUI.
 Il widget viene mostrato e ridimensionato dopo la notifica di creazione del server
 X11, anche quando il plugin usa una connessione separata.
-`posix/ui_main.c` usa il player miniaudio comune. X11 è una dipendenza del solo
-eseguibile `daw-ui`; il DSP continua a usare Perone ABI v2.
+`posix/ui_main.c` usa il player miniaudio comune. X11 è una dipendenza degli
+eseguibili desktop opzionali `daw-ui` ed `editor`; il DSP continua a usare Perone ABI v2.
 
 Il protocollo dei controlli vive nel loader nativo: la GUI richiede modifiche e legge
 valori e messaggi attraverso poche operazioni, senza gestire direttamente atomiche

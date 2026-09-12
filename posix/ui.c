@@ -156,7 +156,6 @@ int ui_open(UI **out, Node *node) {
 		a->set_parameter(ui->instance, i, ui->shown[i]);
 	}
 	watch_dsp(node->dsp[0].dsp, 1);
-	XMapWindow(ui->display, ui->parent);
 	XFlush(ui->display);
 	*out = ui;
 	return 0;
@@ -164,6 +163,16 @@ fail:
 	fprintf(stderr, "[UI] %s: %s\n", node->path, error);
 	ui_close(ui);
 	return -1;
+}
+
+void ui_show(UI *ui, int visible) {
+	if (!ui)
+		return;
+	if (visible)
+		XMapWindow(ui->display, ui->parent);
+	else
+		XUnmapWindow(ui->display, ui->parent);
+	XFlush(ui->display);
 }
 
 int ui_poll(UI *ui) {

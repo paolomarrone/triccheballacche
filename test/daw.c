@@ -24,6 +24,35 @@ static int script(Session *s, Output *cfg, const char *source) {
 	return result;
 }
 
+static void test_buffer_score(void) {
+	Session s = {0};
+	Output cfg;
+	char *diagnostics;
+	const char *path = "test/unsaved.janet";
+	const char *source = "(import ../lib/music)\n"
+	                     "(assert (= (dyn :current-file) \"test/unsaved.janet\"))\n"
+	                     "(def p (daw/plugin \"build/fixture.perone\" {:gain 0.25}))\n"
+	                     "(daw/track p) (gccollect) (daw/end (music/seconds 120 1))";
+	assert(!prepare_score(&s, &cfg, path, source, &diagnostics) && !diagnostics);
+	float audio[2];
+	assert(!session_render(&s, audio, 1) && audio[0] == .25f && audio[1] == -.25f);
+	session_free(&s);
+	const char *bad[] = {
+	    "\n(", "\nunknown-binding", "(daw/plugin \"build/fixture.perone\")\n(error \"音: failure\")", ""};
+	const char *expected[] = {"parse error", "unknown-binding", "音: failure", "Missing (daw/end"};
+	for (int i = 0; i < 4; ++i) {
+		assert(prepare_score(&s, &cfg, path, bad[i], &diagnostics));
+		assert(diagnostics && strstr(diagnostics, expected[i]));
+		if (i < 3)
+			assert(strstr(diagnostics, path));
+		free(diagnostics);
+		session_free(&s);
+	}
+	assert(!prepare_score(&s, &cfg, path, source, &diagnostics) && !diagnostics);
+	session_free(&s);
+	puts("OK: unsaved score, relative imports, source paths, owned diagnostics and reuse after errors");
+}
+
 static void test_external_metadata(void) {
 	Session s = {0};
 	Output cfg;
@@ -449,6 +478,7 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 }
 
 int main(void) {
+	test_buffer_score();
 	test_sample_rate();
 	test_external_metadata();
 	test_pattern_schedule();
