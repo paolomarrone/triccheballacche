@@ -20,11 +20,11 @@ ifeq ($(shell uname -o 2>/dev/null),Android)
 JANET_LIBS += -landroid-spawn
 endif
 TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
-CORE = engine.c loader.c
+NATIVE_SOURCES = engine.c posix/loader.c
 SCORE_SOURCES = daw.c session.c engine.c script.c
 SCORE_HEADERS = daw.h session.h engine.h script.h loader.h util.h
-HEADERS = engine.h loader.h module.h perone.h util.h
-FORMAT_SOURCES = $(filter-out perone.h,$(wildcard *.c *.h test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h examples/termux_synth/src/*.c))
+NATIVE_HEADERS = engine.h loader.h posix/module.h perone.h util.h
+FORMAT_SOURCES = $(filter-out perone.h,$(wildcard *.c *.h posix/*.c posix/*.h test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h examples/termux_synth/src/*.c))
 
 .PHONY: all test test-plugins test-prog test-brickworks check-plugins run keys prog clean format format-check
 all: build/host build/daw
@@ -63,11 +63,11 @@ build/json.o: $(SPORK)/src/json.c $(JANET)/build/libjanet.a | build
 build/%.inc: lib/%.janet | build
 	sed -e 's/[\\"]/\\&/g' -e 's/^/"/' -e 's/$$/\\n"/' $< > $@
 
-build/host: main.c $(CORE) $(HEADERS) $(SCRIPT) audio.h build/audio.o | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) main.c $(CORE) script.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+build/host: posix/main.c $(NATIVE_SOURCES) $(NATIVE_HEADERS) $(SCRIPT) audio.h build/audio.o Makefile | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) posix/main.c $(NATIVE_SOURCES) script.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
 
-build/test: test/loader.c $(CORE) $(HEADERS) $(SCRIPT) | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. $(SCRIPT_FLAGS) test/loader.c $(CORE) script.c $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+build/test: test/loader.c $(NATIVE_SOURCES) $(NATIVE_HEADERS) $(SCRIPT) Makefile | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. $(SCRIPT_FLAGS) test/loader.c $(NATIVE_SOURCES) script.c $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
 
 build/termux_synth: examples/termux_synth/src/termux_synth.c $(MINIAUDIO) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $< $(LDFLAGS) $(LDLIBS) -o $@
@@ -113,13 +113,13 @@ run: build/host
 keys: build/termux_synth
 	./build/termux_synth --keys
 
-build/daw: daw_main.c player.c player.h export.c $(SCORE_SOURCES) $(SCORE_HEADERS) loader.c $(HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) daw_main.c player.c export.c $(SCORE_SOURCES) loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+build/daw: posix/daw_main.c player.c player.h posix/export.c $(SCORE_SOURCES) $(SCORE_HEADERS) posix/loader.c $(NATIVE_HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc Makefile | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) posix/daw_main.c player.c posix/export.c $(SCORE_SOURCES) posix/loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
 
-build/%_test: test/%.c export.c $(SCORE_SOURCES) $(SCORE_HEADERS) loader.c $(HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) $< export.c $(SCORE_SOURCES) loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+build/%_test: test/%.c posix/export.c $(SCORE_SOURCES) $(SCORE_HEADERS) posix/loader.c $(NATIVE_HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc Makefile | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) $< posix/export.c $(SCORE_SOURCES) posix/loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
 
-build/player_test: player.c player.h daw_main.c
+build/player_test: player.c player.h posix/daw_main.c
 
 prog: check-plugins build/daw
 	./build/daw examples/prog/polpo.janet build/il_polpo_a_sette_gomiti.wav
@@ -177,8 +177,8 @@ build/web/miniaudio.h: $(MINIAUDIO) web/miniaudio.patch
 	patch --silent $@.tmp web/miniaudio.patch
 	mv $@.tmp $@
 
-build/web/player.mjs: $(WEB_DEPS) player.c player.h web/player.c web/runtime.js web/audio.js audio.c audio.h build/web/miniaudio.h build/web/player-janet.o build/web/player-json.o Makefile
-	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) $(PLAYER_FLAGS) -Ibuild/web $(WEB_SOURCES) player.c web/player.c audio.c \
+build/web/player.mjs: $(WEB_DEPS) player.c player.h web/player_api.c web/runtime.js web/audio.js audio.c audio.h build/web/miniaudio.h build/web/player-janet.o build/web/player-json.o Makefile
+	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) $(PLAYER_FLAGS) -Ibuild/web $(WEB_SOURCES) player.c web/player_api.c audio.c \
 	    build/web/player-janet.o build/web/player-json.o $(WEB_LINK) --post-js web/runtime.js --js-library web/audio.js \
 	    -sENVIRONMENT=web,worker,worklet -sEXPORTED_FUNCTIONS=$(PLAYER_EXPORTS) \
 	    -sEXPORTED_RUNTIME_METHODS='[$(WEB_METHODS),"emscriptenGetAudioObject"]' -o $@

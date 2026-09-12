@@ -1,4 +1,4 @@
-#include "module.h"
+#include "posix/module.h"
 #include "script.h"
 #include <assert.h>
 #include <math.h>

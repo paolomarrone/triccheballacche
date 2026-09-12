@@ -21,7 +21,7 @@ static int tick(const struct timespec *, struct timespec *);
 #define nanosleep tick
 #include "../player.c"
 #define main cli_main
-#include "../daw_main.c"
+#include "../posix/daw_main.c"
 #undef main
 #undef nanosleep
 #undef ma_device_is_started

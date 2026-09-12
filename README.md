@@ -329,14 +329,17 @@ indipendenti. `make test-prog` verifica che due nuovi render siano identici.
 
 ## Portabilità e test web
 
-Il nucleo (`engine.c`, `session.c`, `daw.c`, `script.c`) non usa direttamente API POSIX.
-Il backend nativo conserva `dlopen` e `realpath` in `loader.c`; l'export POSIX conserva
-file temporanei, seek e sostituzione del WAV in `export.c`. Attesa e terminale restano
-nelle CLI native. `PERONE_PLATFORM` e `PERONE_SUFFIX` selezionano directory e suffisso
+Il codice comune (`engine.c`, `session.c`, `daw.c`, `script.c`, `player.c`) non usa
+direttamente API POSIX né contiene rami condizionali per piattaforma. Il Makefile
+seleziona i sorgenti nativi in `posix/` oppure quelli Wasm in `web/`.
+`posix/loader.c` conserva `dlopen` e `realpath`; `posix/export.c` gestisce il WAV,
+inclusi file temporanei, seek e sostituzione della destinazione. Le CLI in `posix/`
+gestiscono segnali e attesa. `PERONE_PLATFORM` e `PERONE_SUFFIX` selezionano directory e suffisso
 del binario (`.so` sul backend nativo attuale, `.wasm` sul web).
 `TARGET_OS=Darwin` esclude `-ldl`; Windows richiede ancora un backend nativo per loader,
 export e attesa della CLI. Le build native dei plugin devono essere fornite per ciascuna
 piattaforma. Sono verificati qui Linux e Wasm; gli altri sistemi non sono ancora certificati.
+Anche i test nativi in `test/` e la demo `examples/termux_synth/` usano API POSIX.
 
 La CLI può scegliere il sample rate senza modificare la partitura:
 
@@ -446,19 +449,19 @@ processamento viene rifiutata. Le dimensioni iniziali delle memorie dipendono da
 
 `engine.c/h` gestisce istanze e scheduler, senza CLI né Janet.
 `session.c/h` contiene lo stato esplicito della sessione, le catene e il mixer.
-`daw.c` collega Janet alla sessione; `daw_main.c` è la CLI di export e riproduzione.
-`export.c` contiene la scrittura WAV e la pubblicazione del file, specifiche del backend POSIX.
+`daw.c` collega Janet alla sessione; `posix/daw_main.c` è la CLI di export e riproduzione.
+`posix/export.c` contiene la scrittura WAV e la pubblicazione del file.
 `player.c/h` gestisce il dispositivo miniaudio, la callback e lo stato di riproduzione,
 condivisi fra nativo e Wasm. Il player prende in prestito una sessione appena preparata
 e chiusa con `session_end`: il chiamante deve liberare il player prima della sessione,
 che durante la riproduzione è usata soltanto dalla callback audio.
-`web/player.c` adatta lo score web al player e restituisce gli identificatori di
+`web/player_api.c` adatta lo score web al player e restituisce gli identificatori di
 AudioContext e AudioWorklet; la gestione asincrona rimane in `web/player.js`.
-`main.c` è la demo audio nativa. `loader.c` implementa il backend DSP nativo;
+`posix/main.c` è la demo audio nativa. `posix/loader.c` implementa il backend DSP POSIX;
 `web/loader.c` e `web/perone.js` quello Wasm. Il motore chiama lo stesso piccolo
 insieme di operazioni per apertura, chiusura, parametri, reset, MIDI e processamento.
 Il contratto completo è in `loader.h`: `Engine` contiene configurazione e un puntatore
-opaco `DSP`, oltre allo scheduler. `module.h` è privato al loader nativo e alle fixture
+opaco `DSP`, oltre allo scheduler. `posix/module.h` è privato al loader POSIX e alle fixture
 che ne costruiscono istanze; memoria DSP, handle di libreria e API Perone non entrano
 nel motore comune. L'apertura fallita libera le risorse del backend e non modifica l'engine.
 `script.c` prepara Janet e trasferisce configurazioni numeriche al motore C.
