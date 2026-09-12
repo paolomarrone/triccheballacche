@@ -79,6 +79,21 @@ WAV stereo PCM16 normalizzato a 0,94, con sei secondi per la coda finale.
 `opening` e `piece` costruiscono l'arrangiamento come pattern immutabili; ogni
 sezione unisce note e automazioni con tempi relativi. Le durate delle sezioni
 determinano l'inizio delle successive e la posizione dell'accordo finale.
+
+[Denti di vetro](examples/denti.janet) è una miniatura IDM originale di circa 63 secondi:
+carillon inarmonici, accordi morbidi, basso su 13 passi e break a 168–186 BPM,
+con raffiche di 5, 7, 9 e 13 colpi, tagli improvvisi e un finto finale. Due A-SID
+filtrano rispettivamente il synth acido e le percussioni metalliche: cutoff,
+quantità e velocità LFO seguono automazioni indipendenti. Le otto sezioni usano
+pattern ordinari; i cambi di tempo avvengono prima della concatenazione.
+Servono i quattro bundle locali di Polpo (`synth_mono`, `drums`, `shape`, `echo`)
+e `../asid/plugin/perone/build/asid.perone`, configurabile con `ASID_PERONE`.
+
+```sh
+./build/editor examples/denti.janet  # Attivare GUI per le due interfacce A-SID.
+./build/daw examples/denti.janet build/denti.wav 48000
+```
+
 [patterns.janet](examples/patterns.janet) mostra in pochi passaggi ripetizione,
 inversione, trasposizione e dilatazione dello stesso motivo, con una curva del filtro.
 
