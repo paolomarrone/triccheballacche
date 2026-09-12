@@ -1,13 +1,13 @@
-import {activeLines} from "./trace.js";
+import {timeline} from "./timeline.js";
 
 const byId = id => document.getElementById(id);
 const path = byId("path"), code = byId("code"), views = byId("views"), errors = byId("errors");
 const numbers = byId("numbers"), marks = byId("marks");
 let ready = false, busy = false, playing = false, saved = "", savedPath = "", queue = Promise.resolve();
-let trace, tracedSource, tracedPath, seconds = 0, displayedSource, lineCount = 1, painted = "";
+let revision = 0, frames = [], partial = false, tracedSource, tracedPath, seconds = 0, displayedSource, lineCount = 1, painted = "";
 
 function tracking() {
-    return trace && code.value === tracedSource && path.value === tracedPath;
+    return revision && code.value === tracedSource && path.value === tracedPath;
 }
 
 function paint() {
@@ -19,7 +19,7 @@ function paint() {
     const style = getComputedStyle(code), height = parseFloat(style.lineHeight);
     const first = Math.max(0, Math.floor((code.scrollTop - parseFloat(style.paddingTop)) / height));
     const last = Math.min(lineCount, Math.ceil((code.scrollTop + code.clientHeight) / height));
-    const lines = playing && tracking() ? activeLines(trace, tracedPath, seconds) : new Set();
+    const lines = playing && tracking() ? new Set(frames.filter(frame => frame[0] === tracedPath).map(frame => frame[1])) : new Set();
     const key = `${first}:${last}:${[...lines].join(",")}`;
     if (key !== painted) {
         const labels = document.createDocumentFragment(), highlights = document.createDocumentFragment();
@@ -55,7 +55,7 @@ function update() {
     code.readOnly = busy;
     byId("modified").textContent = dirty() ? "●" : "";
     byId("state").textContent = !ready ? "Collegamento…" : busy ? "Attendere…" : !playing ? "Fermo" :
-        tracking() ? "In ascolto" : "In ascolto · tracking sospeso: riesegui le modifiche";
+        tracking() ? `In ascolto${partial ? " · origini parziali" : ""}` : "In ascolto · tracking sospeso: riesegui le modifiche";
     const before = code.value.slice(0, code.selectionStart).split("\n");
     byId("position").textContent = `${before.length}:${before.at(-1).length + 1}`;
     document.title = `${dirty() ? "* " : ""}${savedPath || "triccheballacche"}`;
@@ -68,15 +68,19 @@ function showError(error) {
 }
 
 // Serialize browser calls; all Janet, player and plugin-window operations run on the native main thread.
-function request(op, file = "", source = "", showViews = views.checked) {
+function request(op, ...args) {
     const result = queue.then(async () => {
-        const response = JSON.parse(await webui.call("command", op, file, source, showViews));
+        const response = JSON.parse(await webui.call("command", op, ...args));
         if (typeof response.playing === "boolean") playing = response.playing;
         if (Number.isFinite(response.time)) {
             seconds = response.time;
             byId("time").textContent = `${seconds.toFixed(2)} s`;
         }
-        if (!playing) trace = undefined;
+        if (op === "status") {
+            frames = response.revision === revision ? response.frames || [] : [];
+            partial = response.truncated;
+        }
+        projection.position(seconds, playing);
         update();
         if (response.error) throw Error(response.error);
         return response;
@@ -93,13 +97,14 @@ async function action(op) {
         return;
     }
     busy = true;
-    if (op === "run") trace = undefined;
+    if (op === "run") frames = [];
     showError("");
     update();
     try {
-        const result = await request(op, path.value, ["save", "run"].includes(op) ? code.value : "");
+        const result = await request(op, path.value, ["save", "run"].includes(op) ? code.value : "", views.checked);
         if (op === "run") {
-            trace = result.trace;
+            revision = result.score.revision;
+            projection.score(result.score);
             tracedSource = code.value;
             tracedPath = result.path;
         }
@@ -115,6 +120,18 @@ async function action(op) {
         update();
     }
 }
+
+const projection = timeline(request, origins => {
+    if (!tracking()) return;
+    const frame = origins.find(([file]) => file === tracedPath);
+    if (!frame) return;
+    const rows = code.value.split("\n"), line = Math.max(0, frame[1] - 1);
+    const offset = rows.slice(0, line).reduce((length, row) => length + row.length + 1, 0);
+    code.focus(); code.setSelectionRange(offset, offset + (rows[line]?.length || 0));
+    code.scrollTop = Math.max(0, line * parseFloat(getComputedStyle(code).lineHeight) - code.clientHeight / 2);
+    update();
+}, showError);
+new ResizeObserver(paint).observe(code);
 
 for (const op of ["open", "save", "run", "stop"]) byId(op).addEventListener("click", () => action(op));
 views.addEventListener("change", () => action("views"));
@@ -143,7 +160,7 @@ window.onbeforeunload = event => {
 
 async function poll() {
     if (ready && !busy) {
-        try { await request("status"); }
+        try { await request("status", "", "", false); }
         catch (error) { showError(error); }
     }
     setTimeout(poll, 50);
@@ -153,14 +170,14 @@ async function start() {
     try {
         // The bridge connects asynchronously; calls reject until its socket is ready.
         for (let attempt = 0; ; ++attempt) {
-            try { await request("status"); break; }
+            try { await request("status", "", "", false); break; }
             catch (error) {
                 if (attempt === 30) throw error;
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
         }
         ready = true;
-        const result = await request("open");
+        const result = await request("open", "", "", false);
         path.value = savedPath = result.path;
         code.value = saved = result.text;
     } catch (error) {

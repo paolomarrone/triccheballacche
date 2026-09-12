@@ -24,3 +24,15 @@ footer { color: var(--muted); font-size: 12px; }
 #time { margin-left: auto; font-variant-numeric: tabular-nums; }
 #position { min-width: 5em; text-align: right; font-variant-numeric: tabular-nums; }
 :focus-visible { outline: 2px solid #559bd1; outline-offset: -2px; }
+
+#split { flex: 0 0 5px; margin: -3px 0; cursor: row-resize; touch-action: none; }
+#split:hover, #split:focus-visible { background: var(--border); }
+#timeline { display: flex; flex-direction: column; flex: 0 1 240px; min-height: 100px; border: 1px solid var(--border); }
+#timeline-tools { display: flex; align-items: center; gap: 4px; padding: 3px; border-bottom: 1px solid var(--border); }
+#timeline-tools button { padding: 0 7px; }
+#timeline-tools label { white-space: nowrap; }
+#view-start { width: 7em; min-width: 3em; font: inherit; padding: 1px 4px; }
+#note-info { margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 12px; }
+#roll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; }
+#notes { display: block; position: sticky; top: 0; touch-action: none; }
+#lanes-space { pointer-events: none; }

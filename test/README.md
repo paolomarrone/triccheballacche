@@ -4,11 +4,16 @@
 apertura di nomi e contenuti Unicode, import relativi da testo non salvato,
 Esegui/Stop, tracking dei produttori e degli import, allineamento di righe e bande
 durante lo scorrimento, sospensione dopo modifiche, salvataggio atomico, diagnostiche e ripresa dopo errori, chiamate
-concorrenti e chiusura della pagina durante l'ascolto. Usa la fixture Perone locale;
+concorrenti e chiusura della pagina durante l'ascolto. Copre anche note e catene della
+timeline, densità, selezione dell'origine, permanenza dopo Stop/errori, scorrimento delle
+corsie, follow, tempi grandi, fine sconosciuta e risposte obsolete. Le richieste e il
+canvas mantengono dimensioni limitate al cambiare dell'intervallo. Usa la fixture Perone locale;
 richiede Chromium e un dispositivo audio, senza plugin di produzione.
 `test/chromium.mjs` condivide avvio, DevTools e pulizia del browser con i test Wasm.
-`make test` copre anche preparazione da buffer, diagnostiche e rapporto nativo senza
+`make test` copre anche preparazione da buffer, diagnostiche e proiezione nativa senza
 browser o dispositivo; confronta il PCM con e senza tracciamento a 44,1 e 48 kHz.
+`score_view.c` verifica separatamente copia degli eventi, pairing di note sovrapposte,
+query indicizzate e riepiloghi confrontati con una scansione completa, anche a tempi grandi.
 
 `make gui` apre le GUI native Perone di Tibia e A-SID con `examples/gui.janet`.
 `make test-ui` verifica le UI originali C/C++, i controlli sul DSP e i messaggi;
@@ -40,7 +45,8 @@ I runtime ordinari, nativi e web, includono il piccolo ponte `trace.c`, registra
 esplicitamente da `script_env`. `lib/trace.janet` attiva il tracciamento soltanto
 quando viene chiamato `trace/install`: il solo import lascia intatte le funzioni
 musicali e `array/push`. La pagina usa lo stesso player delle altre prove web.
-`editor/trace.js` condivide con l'editor desktop la selezione delle righe attive.
+`trace-host.mjs` seleziona le righe attive dal rapporto completo della prova web.
+L'editor desktop usa invece l'indice nativo e richiede soltanto i frame attivi.
 `json/encode`, già fornito da Spork, permette di esportare il rapporto prima della
 chiusura di Janet. Le librerie musicali e le partiture rimangono invariate.
 
@@ -87,7 +93,8 @@ una seconda sequenza con gli stessi tempi e gli identificatori delle posizioni.
 Le trasformazioni temporali usano le funzioni originali anche per questa sequenza;
 le funzioni utente passate a `map` e `curve` vengono eseguite una volta sola.
 
-`daw/schedule` esporta i tempi assoluti e le origini; le chiamate dirette a `daw/note`
+`daw/schedule` esporta i tempi assoluti, le origini e l'ordine originale degli eventi
+nel nodo (letto tramite `native/event-count`); le chiamate dirette a `daw/note`
 e `daw/param` sono intercettate allo stesso modo. Il rapporto vive separatamente
 dagli eventi audio e dai plugin. Niente introspezione durante il rendering.
 Le tabelle del prototipo vengono conservate fino alla fine della preparazione.

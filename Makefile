@@ -24,8 +24,8 @@ JANET_LIBS += -landroid-spawn
 endif
 TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
 NATIVE_SOURCES = engine.c posix/loader.c
-SCORE_SOURCES = daw.c session.c engine.c $(SCRIPT_SOURCES)
-SCORE_HEADERS = daw.h session.h engine.h script.h loader.h util.h
+SCORE_SOURCES = daw.c score_view.c session.c engine.c $(SCRIPT_SOURCES)
+SCORE_HEADERS = daw.h score_view.h session.h engine.h script.h loader.h util.h
 NATIVE_HEADERS = engine.h loader.h posix/module.h perone.h util.h
 FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h examples/termux_synth/src/*.c))
 
@@ -101,11 +101,12 @@ $(TEST_EFFECT)/product.json: test/perone/effect.json
 	mkdir -p $(dir $@)
 	cp $< $@
 
-test: build/test build/termux_test build/daw_test build/player_test $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/product.json
+test: build/test build/termux_test build/daw_test build/player_test build/score_view_test $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/product.json
 	./build/test
 	./build/termux_test
 	./build/daw_test
 	./build/player_test
+	./build/score_view_test
 
 test-plugins: check-plugins build/plugins_test
 	./build/plugins_test

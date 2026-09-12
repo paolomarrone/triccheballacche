@@ -65,13 +65,22 @@ try {
         await call("Emulation.setDeviceMetricsOverride", {width: 900, height: 520, deviceScaleFactor: 1, mobile: false});
         await evaluate(`(() => {
             const call = webui.call.bind(webui);
-            window.reports = [];
+            window.reports = []; window.ranges = []; window.origins = [];
             window.statusHasTrace = false;
             webui.call = async (...args) => {
                 const response = await call(...args), result = JSON.parse(response);
+                if (args[1] === "run" && window.openEnd && result.score) result.score.end = null;
                 if (args[1] === "run") reports.push(result);
+                if (args[1] === "range" && result.lanes) {
+                    ranges.push(result);
+                    if (window.holdRange) {
+                        window.rangeHeld = true;
+                        while (window.holdRange) await new Promise(resolve => setTimeout(resolve, 10));
+                    }
+                }
+                if (args[1] === "status" && result.frames) origins.push(...result.frames);
                 if (args[1] === "status" && result.trace) statusHasTrace = true;
-                return response;
+                return JSON.stringify(result);
             };
         })()`);
         assert.equal(await evaluate('document.querySelector("#code").value'), source);
@@ -82,7 +91,7 @@ try {
             const number = document.querySelector('#numbers span').getBoundingClientRect();
             return number.left >= gutter.left && number.right <= gutter.right;
         })()`), "Row numbers must remain inside the gutter");
-        assert(await evaluate('document.querySelector("#sheet").clientHeight > innerHeight * 0.85'), "Keep the editor dense");
+        assert(await evaluate('(document.querySelector("#sheet").clientHeight + document.querySelector("#timeline").clientHeight) > innerHeight * 0.82'), "Keep the editor dense");
         const changed = source.replace("0.01", "0.02");
         await set("code", changed);
         await click("run");
@@ -90,9 +99,12 @@ try {
         await waitFor('parseFloat(document.querySelector("#time").textContent) > 0.05');
         await waitFor(`document.querySelector('#marks [data-line="${producer}"]')`);
         assert(await evaluate(`!!document.querySelector('#marks [data-line="${caller}"]')`));
-        const report = await evaluate('reports.at(-1).trace');
-        assert.equal(report.events.length, 3);
-        assert(report.locations.flat().some(frame => frame.file === `${directory}/helper.janet` && frame.line === 3));
+        const report = await evaluate('reports.at(-1).score');
+        assert.equal(report.tracks.length, 1);
+        assert(await evaluate(`origins.some(frame => frame[0] === ${JSON.stringify(directory + '/helper.janet')} && frame[1] === 3)`));
+        await waitFor('Number(document.querySelector("#notes").dataset.notes) === 2');
+        const notes = await evaluate('ranges.at(-1).lanes[0].notes');
+        assert.deepEqual(notes.map(note => note.slice(1)), [[0, 2, 60, 100], [0.25, 2.5, 64, 80]]);
         await set("code", "# new draft\n" + changed);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert((await evaluate('document.querySelector("#state").textContent')).includes("tracking sospeso"));
@@ -127,6 +139,27 @@ try {
         await click("stop");
         await waitFor('document.querySelector("#state").textContent === "Fermo"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
+        assert.equal(await evaluate('Number(document.querySelector("#notes").dataset.notes)'), 2, "Stop retains the prepared projection");
+        const notePoint = await evaluate(`(() => {
+            const canvas = document.querySelector('#notes'), rect = canvas.getBoundingClientRect();
+            const row = Math.max(58, Math.ceil((canvas.clientHeight - 24) / 7));
+            return [rect.left + Math.min(230, Math.round(canvas.clientWidth * 0.3)) + 18,
+                rect.top + 24 + row - 8 - 8.5 * (row - 16) / 13];
+        })()`);
+        const clickNote = async () => {
+            await call("Input.dispatchMouseEvent", {type: "mousePressed", x: notePoint[0], y: notePoint[1], button: "left", clickCount: 1});
+            await call("Input.dispatchMouseEvent", {type: "mouseReleased", x: notePoint[0], y: notePoint[1], button: "left", clickCount: 1});
+        };
+        await clickNote();
+        await waitFor('document.querySelector("#note-info").title.length > 0');
+        assert((await evaluate('document.querySelector("#note-info").textContent')).includes("MIDI 64"));
+        assert((await evaluate('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd)')).includes("array/push"));
+        await set("code", "# different draft\n" + changed);
+        await evaluate('document.querySelector("#code").setSelectionRange(0, 0)');
+        await clickNote();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        assert.equal(await evaluate('document.querySelector("#code").selectionEnd'), 0, "Old origins must not select code in a changed draft");
+        await set("code", changed);
         await click("save");
         await waitFor('!document.querySelector("#modified").textContent');
         assert.equal(await readFile(path, "utf8"), changed);
@@ -140,7 +173,9 @@ try {
         await set("code", "# draft\nunknown-binding");
         await click("run");
         await waitFor('document.querySelector("#errors").textContent.includes("unknown-binding")');
-        assert.equal(await evaluate('reports.at(-1).trace'), null);
+        assert.equal(await evaluate('reports.at(-1).score'), undefined);
+        assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), report.revision);
+        assert.equal(await evaluate('Number(document.querySelector("#notes").dataset.notes)'), 2);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert((await evaluate('document.querySelector("#errors").textContent')).includes(path));
         assert.equal(await evaluate('document.querySelector("#stop").disabled'), true);
@@ -149,7 +184,7 @@ try {
         await waitFor('!document.querySelector("#stop").disabled');
         await waitFor('document.querySelector("#state").textContent === "Fermo"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
-        assert.equal(await evaluate('statusHasTrace'), false, "Transfer the report only once per run");
+        assert.equal(await evaluate('statusHasTrace'), false, "Never transfer the complete source report");
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
         await set("path", `${directory}/absent.janet`);
         await click("open");
@@ -161,6 +196,65 @@ try {
         const responses = await evaluate(`Promise.all(Array.from({length: 8}, () =>
             webui.call("command", "status", "", "", false).then(JSON.parse)))`);
         assert(responses.every(response => !response.error || response.error.includes("occupato")));
+        const dense = `(def lead (daw/plugin "build/fixture.perone" {:gain 0.001}))
+(def fx (daw/plugin "build/effect.perone"))
+(daw/track lead {:effects [fx]})
+(for i 0 9 (daw/track (daw/plugin "build/fixture.perone" {:gain 0.001})))
+(daw/master)
+(for i 0 1200 (daw/note lead (* i 0.005) 0.03 (+ 60 (% i 12)) 80))
+(daw/note lead 0 8 48 90)
+(daw/end 12)`;
+        await evaluate("window.openEnd = true");
+        await set("code", dense);
+        await click("run");
+        await waitFor('document.querySelector("#notes").dataset.dense === "true"');
+        const denseReport = await evaluate('reports.at(-1).score');
+        assert.equal(denseReport.end, null, "Exercise navigation and follow with an unknown end");
+        assert.equal(denseReport.tracks.length, 11);
+        assert.equal(denseReport.tracks[0].length, 3, "Retain the actual effect chain");
+        assert.equal(denseReport.tracks.at(-1)[0], -1, "Retain the master lane");
+        const denseRange = await evaluate('ranges.at(-1)');
+        assert.equal(denseRange.lanes[0].count, 1201);
+        assert(denseRange.lanes[0].density.length <= 512);
+        assert(denseRange.lanes.length <= 8);
+        assert(JSON.stringify(denseRange).length < 30000, "Response cost follows the viewport budget");
+        for (let i = 0; i < 3; ++i) await click("zoom-in");
+        await waitFor('document.querySelector("#notes").dataset.dense === "false" && Number(document.querySelector("#notes").dataset.notes) > 0');
+        await waitFor('Number(document.querySelector("#view-start").value) > 0');
+        await click("stop");
+        const changeStart = async value => {
+            await set("view-start", value);
+            await evaluate('document.querySelector("#view-start").dispatchEvent(new Event("change"))');
+        };
+        const canvasSize = await evaluate('[document.querySelector("#notes").width, document.querySelector("#notes").height]');
+        await changeStart(1e9);
+        await waitFor('ranges.at(-1).from === 1e9 && document.querySelector("#notes").dataset.notes === "0"');
+        assert.deepEqual(await evaluate('[document.querySelector("#notes").width, document.querySelector("#notes").height]'), canvasSize, "Large times must not allocate a song-sized canvas");
+        await evaluate('window.holdRange = true; window.rangeHeld = false');
+        await changeStart(100);
+        await waitFor('window.rangeHeld');
+        await changeStart(0);
+        await evaluate('window.holdRange = false');
+        await waitFor('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        await evaluate('document.querySelector("#roll").scrollTop = 100000');
+        await waitFor('ranges.at(-1).first > 0');
+        assert.equal(await evaluate('document.querySelector("#notes").dataset.notes'), "0");
+        await evaluate('document.querySelector("#roll").scrollTop = 0');
+        await waitFor('ranges.at(-1).first === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        const rpc = async args => {
+            for (let i = 0; i < 30; ++i) {
+                const result = await evaluate(`webui.call("command", ...${JSON.stringify(args)}).then(JSON.parse)`);
+                if (!result.error?.includes("occupato")) return result;
+                await new Promise(resolve => setTimeout(resolve, 20));
+            }
+            throw Error("RPC remained busy");
+        };
+        const stale = await rpc(["range", report.revision, "0", "1", 0, 1, 100]);
+        assert(stale.stale && !stale.lanes);
+        const invalid = await rpc(["range", denseReport.revision, "0", "1", 0, 1000, 100]);
+        assert(invalid.error && !invalid.lanes);
+        await evaluate("window.openEnd = false");
+        await set("code", changed);
         await click("run");
         await waitFor('!document.querySelector("#stop").disabled');
         assert.deepEqual(diagnostics, []);
@@ -170,7 +264,7 @@ try {
     const [code, signal] = await exited;
     assert.equal(signal, null, error);
     assert.equal(code, 0, error);
-    console.log("OK: dense WebUI editor, native source tracking, producers/imports, edits, scroll, Unicode files, unsaved playback, atomic save, diagnostics, recovery and close during audio");
+    console.log("OK: dense WebUI editor, bounded timeline/density, follow, stale requests, source selection, native tracking, producers/imports, edits, scroll, Unicode files, unsaved playback, atomic save, diagnostics, recovery and close during audio");
 } finally {
     clearTimeout(deadline);
     if (app.exitCode === null && app.signalCode === null) {

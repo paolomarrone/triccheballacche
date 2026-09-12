@@ -102,11 +102,16 @@
       (fn [start bpm pattern]
         (def source (origin))
         (def trace (provenance pattern source))
+        (def orders @{})
+        (each [_ _ command] (pattern :events)
+          (def node (command 1))
+          (unless (orders node) (put orders node (native/event-count node))))
         (def result (schedule start bpm pattern))
         (eachp [i [a b command]] (pattern :events)
           (array/push emitted
             [(+ start (* a (/ 60 bpm))) (+ start (* b (/ 60 bpm)))
-             (((trace :events) i) 2) (command 0) (command 1)]))
+             (((trace :events) i) 2) (command 0) (command 1) (orders (command 1))])
+          (update orders (command 1) + (if (= (command 0) :note) 2 1)))
         result)))
 
   # schedule was compiled before these replacements, so scheduled notes are not recorded twice.
@@ -114,15 +119,17 @@
     (fn [note]
       (fn [node time duration pitch &opt velocity]
         (def source (origin))
+        (def order (native/event-count node))
         (def result (if (nil? velocity) (note node time duration pitch) (note node time duration pitch velocity)))
-        (array/push emitted [time (+ time duration) [source] :note node])
+        (array/push emitted [time (+ time duration) [source] :note node order])
         result)))
   (replace 'daw/param
     (fn [param]
       (fn [node time key value]
         (def source (origin))
+        (def order (native/event-count node))
         (def result (param node time key value))
-        (array/push emitted [time time [source] :param node])
+        (array/push emitted [time time [source] :param node order])
         result)))
 
   (fn []

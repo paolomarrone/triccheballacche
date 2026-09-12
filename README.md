@@ -390,16 +390,53 @@ Il riferimento è il tempo renderizzato, quindi l'allineamento all'ascolto è ap
 Se testo o percorso differiscono dall'ultima esecuzione, il tracking si sospende;
 rieseguire applica le modifiche, ripristinare esattamente il buffer lo riattiva.
 Stop, fine del pezzo ed errori cancellano le evidenziazioni. Le origini nei file
-importati restano nel rapporto; la vista mostra quelle del file aperto.
+importati vengono conservate; nell’editor si illuminano quelle del file aperto.
+
+La sezione orizzontale sotto il codice proietta le note effettivamente programmate,
+con una corsia per traccia, strumento, catena di effetti e master esplicito. La larghezza
+di una nota indica la durata MIDI, l'altezza il pitch e l'opacità la velocity; le code
+sonore dei plugin possono proseguire oltre il rettangolo. Il cursore usa lo stesso
+orologio del tracking. Un clic mostra pitch, velocity e tempi e seleziona un'origine
+nel file aperto, se il buffer corrisponde ancora all'esecuzione. Le altre origini sono
+nel tooltip del dettaglio; non vengono aperti o sostituiti file automaticamente.
+
+La timeline è una vista dell'ultima esecuzione partita correttamente: rimane dopo
+Stop, fine del pezzo, modifica del buffer o preparazione fallita. Il divisore la
+ridimensiona. Le frecce e il campo in secondi spostano la finestra; +/− regolano lo
+zoom. Si può anche trascinare orizzontalmente, usare Maiusc+rotella per spostarsi
+e Ctrl/Command+rotella per lo zoom. La rotella normale scorre le tracce. «Segui»
+accompagna la riproduzione e si disattiva quando ci si sposta manualmente. Il canvas
+accetta anche frecce sinistra/destra e +/−; il divisore accetta frecce su/giù.
+
+La scala è indipendente dalla durata del pezzo: nessun canvas largo quanto l'intera
+partitura, nessuna necessità di conoscere la fine per navigare. Si richiedono al
+backend soltanto intervallo e corsie visibili, al massimo otto. Fino a 512 note per
+corsia si vedono gli eventi individuali; oltre, una vista di densità mostra conteggi
+e intervalli di pitch per al massimo 512 celle temporali. Include anche le note
+iniziate prima della finestra e ancora attive. Lo zoom torna automaticamente alle
+note individuali. Non è un editor MIDI e non visualizza ancora le curve dei parametri.
 
 `posix/editor.c` gestisce file, comandi WebUI e ciclo di vita sul thread principale;
 i callback WebUI attendono la risposta tramite un singolo posto protetto da mutex.
 Questa attesa non coinvolge il thread audio. `prepare_score` condivide preparazione
-da file e da buffer con la CLI e restituisce diagnostiche e, su richiesta, un rapporto
-JSON di provenienza di proprietà del chiamante. Il rapporto viene trasferito una
-sola volta per esecuzione; durante l'ascolto si legge solo lo stato del player.
-Janet è già chiuso e il thread audio non esegue introspezione. Il tracciamento resta
-sperimentale, con gli stessi limiti su tail call e origini ambigue della prova web.
+da file e da buffer con la CLI e restituisce diagnostiche e, su richiesta, una
+`ScoreView` di proprietà del chiamante. `score_view.c` copia eventi e grafo della
+sessione e indicizza gli intervalli in un array; non dipende da Janet, DSP o WebUI.
+Le origini sono annotazioni facoltative, associate per nodo e ordine dell'evento:
+non vengono usate per ricostruire note o accoppiare note-on/off.
+
+Janet è già chiuso durante l'ascolto. Il browser riceve una volta i metadati del grafo,
+poi intervalli richiesti e righe attive, senza trasferire il rapporto completo né
+scandire tutta la partitura a ogni aggiornamento. Le richieste di una vecchia vista
+o esecuzione vengono scartate. Il tracking ha un budget di 8192 eventi attivi e 256
+frame distinti per risposta; il superamento è indicato come «origini parziali» e non
+tocca l'audio. Restano i limiti sperimentali su tail call e origini ambigue della prova web.
+
+Questo rende la **vista** indipendente da una durata finale, ma lo scheduler attuale
+prepara ancora l'intera sessione in memoria, richiede `daw/end` e accetta al massimo
+3600 secondi. La riproduzione virtualmente infinita richiederà la generazione e lo
+smaltimento degli eventi a finestre nel motore; non è introdotta da questa proiezione.
+
 Il frontend mantiene una textarea con JavaScript senza framework e disegna solo i
 numeri e le bande visibili. La colorazione della sintassi resta assente: il supporto
 Janet pronto trovato per [CodeMirror 6](https://github.com/ianthehenry/codemirror-lang-janet)
@@ -493,7 +530,7 @@ La pagina usa i runtime ordinari prodotti da `make web`.
 Perone wasm32 della prova Polpo descritta sotto. Il tracciamento rimane sperimentale:
 le chiamate in coda possono perdere frame e pattern uguali possono avere origini ambigue.
 
-Il codice comune (`engine.c`, `session.c`, `daw.c`, `script.c`, `trace.c`, `player.c`) non usa
+Il codice comune (`engine.c`, `session.c`, `score_view.c`, `daw.c`, `script.c`, `trace.c`, `player.c`) non usa
 direttamente API POSIX né contiene rami condizionali per piattaforma. Il Makefile
 seleziona i sorgenti nativi in `posix/` oppure quelli Wasm in `web/`.
 `posix/loader.c` conserva `dlopen` e `realpath`; `posix/export.c` gestisce il WAV,
@@ -630,7 +667,9 @@ che ne costruiscono istanze; memoria DSP, handle di libreria e API Perone non en
 nel motore comune. L'apertura fallita libera le risorse del backend e non modifica l'engine.
 `script.c` prepara Janet e trasferisce configurazioni numeriche al motore C.
 `trace.c` registra il ponte per il tracciamento opzionale; `lib/trace.janet` conserva
-la provenienza fuori dai valori musicali e produce il rapporto per l'editor.
+la provenienza fuori dai valori musicali. `score_view.c` conserva la proiezione nativa
+degli eventi, con provenienza facoltativa; `editor/timeline.js` ne richiede e disegna
+soltanto la finestra visibile. La prova web conserva il rapporto JSON di tracing.
 `lib/perone.janet` legge i bundle, interpreta bus, default e parametri;
 `lib/daw.janet` espone l'API delle partiture e conserva i metadati completi.
 `lib/music.janet` fornisce le funzioni musicali; le partiture in `examples/` scelgono

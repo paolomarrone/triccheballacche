@@ -41,9 +41,9 @@ static void test_buffer_score(void) {
 	    "\n(", "\nunknown-binding", "(daw/plugin \"build/fixture.perone\")\n(error \"音: failure\")", ""};
 	const char *expected[] = {"parse error", "unknown-binding", "音: failure", "Missing (daw/end"};
 	for (int i = 0; i < 4; ++i) {
-		char *trace;
-		assert(prepare_score(&s, &cfg, path, bad[i], &diagnostics, &trace));
-		assert(!trace);
+		ScoreView view;
+		assert(prepare_score(&s, &cfg, path, bad[i], &diagnostics, &view));
+		assert(!view.nnodes);
 		assert(diagnostics && strstr(diagnostics, expected[i]));
 		if (i < 3)
 			assert(strstr(diagnostics, path));
@@ -59,21 +59,23 @@ static void test_source_trace(void) {
 	for (unsigned rate = 44100; rate <= 48000; rate += 3900) {
 		Session plain = {.sample_rate = rate}, traced = {.sample_rate = rate};
 		Output cfg;
-		char *trace, *diagnostics;
+		char *diagnostics;
+		ScoreView view;
 		assert(!load_score(&plain, &cfg, "test/trace-score.janet"));
-		assert(!prepare_score(&traced, &cfg, "test/trace-score.janet", NULL, &diagnostics, &trace));
-		assert(trace && !diagnostics && plain.frames == traced.frames);
-		JanetTable *env = script_env();
-		assert(env);
-		janet_def(env, "report", janet_cstringv(trace), NULL);
-		assert(!janet_dostring(env,
-		    "(def trace (json/decode report))"
-		    "(assert (= (length (trace \"events\")) 17))"
-		    "(assert (some (fn [stack] (some |(= ($ \"file\") \"test/trace-helper.janet\") stack))"
-		    "  (trace \"locations\")))",
-		    "trace-check", NULL));
-		janet_deinit();
-		free(trace);
+		assert(!prepare_score(&traced, &cfg, "test/trace-score.janet", NULL, &diagnostics, &view));
+		assert(!diagnostics && plain.frames == traced.frames);
+		size_t events = 0;
+		int imported = 0;
+		for (int i = 0; i < view.nnodes; ++i) {
+			events += view.nodes[i].count;
+			for (size_t j = 0; j < view.nodes[i].count; ++j)
+				assert(view.nodes[i].events[j].norigins);
+		}
+		for (size_t i = 0; i < view.norigins; ++i)
+			for (size_t j = 0; j < view.origins[i].count; ++j)
+				imported |= !strcmp(view.origins[i].frames[j].file, "test/trace-helper.janet");
+		assert(events == 17 && imported && view.ntracks == 1);
+		score_view_free(&view);
 		while (plain.time < plain.frames) {
 			float a[128], b[128];
 			size_t n = plain.frames - plain.time;
@@ -85,7 +87,7 @@ static void test_source_trace(void) {
 		session_free(&plain);
 		session_free(&traced);
 	}
-	puts("OK: native source trace, imported producers, owned JSON and identical PCM at 44.1/48 kHz");
+	puts("OK: native source trace, imported producers, owned projection and identical PCM at 44.1/48 kHz");
 }
 
 static void test_external_metadata(void) {

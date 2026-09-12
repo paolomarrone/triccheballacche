@@ -9,6 +9,7 @@
 // Only the synchronous Janet adapter has a current context; the C engine does not.
 static Session *current;
 static Output *output;
+static ScoreView *projection;
 
 static int checked(int result) {
 	if (result < 0)
@@ -109,6 +110,91 @@ static Janet parameter(int32_t argc, Janet *argv) {
 	return janet_wrap_nil();
 }
 
+static Janet event_count(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 1);
+	return janet_wrap_number(current->nodes[handle(argv[0])].count);
+}
+
+// Copy optional script annotations while Janet is alive. Event identity and timing come from Session.
+static Janet project(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 2);
+	ScoreView *view = projection;
+	if (!view || view->nnodes || !current->sealed)
+		janet_panic("Score view requires a sealed session and an empty destination");
+	if (score_view_init(view, current))
+		janet_panic("Cannot allocate score view");
+	for (int i = 0; i < view->nnodes; ++i) {
+		Janet product = janet_get(argv[1], janet_wrap_integer(i));
+		if (janet_checktype(product, JANET_NIL))
+			continue;
+		Janet name = janet_get(product, janet_ckeywordv("name"));
+		if (janet_checktype(name, JANET_STRING)) {
+			char *copy = copy_string(janet_getcstring(&name, 0));
+			if (!copy)
+				janet_panic("Cannot copy plugin name");
+			free(view->nodes[i].name);
+			view->nodes[i].name = copy;
+		}
+	}
+	Janet locations = janet_get(argv[0], janet_ckeywordv("locations"));
+	JanetView origins = janet_getindexed(&locations, 0);
+	view->origins = calloc(origins.len, sizeof(ScoreOrigin));
+	if (origins.len && !view->origins)
+		janet_panic("Cannot copy source origins");
+	view->norigins = origins.len;
+	for (int i = 0; i < origins.len; ++i) {
+		JanetView frames = janet_getindexed(origins.items + i, 0);
+		ScoreOrigin *origin = view->origins + i;
+		origin->frames = calloc(frames.len, sizeof(ScoreFrame));
+		if (frames.len && !origin->frames)
+			janet_panic("Cannot copy source frames");
+		origin->count = frames.len;
+		for (int j = 0; j < frames.len; ++j) {
+			Janet f = frames.items[j], file = janet_get(f, janet_ckeywordv("file"));
+			Janet line = janet_get(f, janet_ckeywordv("line"));
+			Janet column = option(f, "column", janet_wrap_integer(1));
+			int row = janet_getinteger(&line, 0), col = janet_getinteger(&column, 0);
+			origin->frames[j] =
+			    (ScoreFrame){.file = copy_string(janet_getcstring(&file, 0)), .line = row, .column = col};
+			if (!origin->frames[j].file)
+				janet_panic("Cannot copy source path");
+		}
+	}
+	Janet events = janet_get(argv[0], janet_ckeywordv("events"));
+	JanetView emitted = janet_getindexed(&events, 0);
+	for (int i = 0; i < emitted.len; ++i) {
+		Janet ids = janet_getindex(emitted.items[i], 2);
+		size_t count = janet_getindexed(&ids, 0).len;
+		if (count > SIZE_MAX - view->nreferences)
+			janet_panic("Too many source references");
+		view->nreferences += count;
+	}
+	view->references = calloc(view->nreferences, sizeof(size_t));
+	if (view->nreferences && !view->references)
+		janet_panic("Cannot copy source references");
+	size_t offset = 0;
+	for (int i = 0; i < emitted.len; ++i) {
+		Janet record = emitted.items[i], ids = janet_getindex(record, 2);
+		JanetView refs = janet_getindexed(&ids, 0);
+		int id = handle(janet_getindex(record, 4));
+		double order = number(janet_getindex(record, 5), 0, view->nodes[id].raw_count);
+		if (order >= view->nodes[id].raw_count || order != floor(order))
+			janet_panic("Invalid source event order");
+		ScoreEvent *event = view->nodes[id].events + (size_t)order;
+		event->first_origin = offset;
+		event->norigins = refs.len;
+		for (int j = 0; j < refs.len; ++j) {
+			int origin = janet_getinteger(refs.items + j, 0);
+			if (origin < 0 || (size_t)origin >= view->norigins)
+				janet_panic("Invalid source origin");
+			view->references[offset++] = origin;
+		}
+	}
+	if (score_view_index(view))
+		janet_panic("Cannot index score view");
+	return janet_wrap_nil();
+}
+
 static Janet end(int32_t argc, Janet *argv) {
 	janet_arity(argc, 1, 2);
 	Janet opts = argc == 2 ? argv[1] : janet_wrap_nil();
@@ -123,11 +209,11 @@ static Janet end(int32_t argc, Janet *argv) {
 	return janet_wrap_nil();
 }
 
-int prepare_score(Session *s, Output *cfg, const char *path, const char *source, char **diagnostics, char **trace) {
+int prepare_score(Session *s, Output *cfg, const char *path, const char *source, char **diagnostics, ScoreView *view) {
 	if (diagnostics)
 		*diagnostics = NULL;
-	if (trace)
-		*trace = NULL;
+	if (view)
+		*view = (ScoreView){0};
 	if (s->nnodes || s->sealed || !session_rate(s)) {
 		s->error = "score requires an empty session and a valid sample rate";
 		return 1;
@@ -136,16 +222,19 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 	    {"track", track, "(native/track source &opt {:effects [...] :gain 1 :pan 0}) -> mixer handle"},
 	    {"master", master, "(native/master &opt {:effects [...] :gain 1}) -> mixer handle"},
 	    {"note", note, "(daw/note plugin seconds duration pitch &opt velocity)"},
+	    {"event-count", event_count, "(native/event-count node) -> scheduled event count"}, {"project", project, NULL},
 	    {"param", parameter, "(native/param node seconds index value)"},
 	    {"end", end, "(daw/end seconds &opt {:format :float :normalize 0}) Seal the score for CLI export."},
 	    {NULL, NULL, NULL}};
 	current = s;
 	output = cfg;
+	projection = view;
 	*cfg = (Output){0};
 	JanetTable *env = script_env();
 	if (!env) {
 		current = NULL;
 		output = NULL;
+		projection = NULL;
 		return 1;
 	}
 	JanetBuffer *errors = NULL;
@@ -160,7 +249,7 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 #include "build/daw.inc"
 	    ;
 	int result = janet_dostring(env, daw_source, "lib/daw.janet", NULL);
-	if (!result && trace)
+	if (!result && view)
 		result = janet_dostring(env,
 		    "(import ./lib/trace :as host-trace)"
 		    "(def host/trace-report (host-trace/install (curenv) \"<prepare-score>\"))",
@@ -174,19 +263,16 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 		janet_eprintf("Missing (daw/end seconds)\n");
 		result = 1;
 	}
-	if (!result && trace) {
-		Janet report;
-		result = janet_dostring(env, "(string (json/encode (host/trace-report)))", "<prepare-score>", &report);
-		if (!result && !(*trace = copy_string((const char *)janet_unwrap_string(report)))) {
-			janet_eprintf("Cannot copy source trace\n");
-			result = 1;
-		}
-	}
+	if (!result && view)
+		result = janet_dostring(env, "(native/project (host/trace-report) daw/products)", "<prepare-score>", NULL);
+	if (result && view)
+		score_view_free(view);
 	if (errors && errors->count)
 		*diagnostics = copy_string((const char *)janet_string(errors->data, errors->count));
 	janet_deinit();
 	current = NULL;
 	output = NULL;
+	projection = NULL;
 	if (!result)
 		s->error = NULL;
 	return result;

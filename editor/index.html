@@ -23,6 +23,20 @@
             <textarea id="code" aria-label="Partitura Janet" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" disabled></textarea>
         </div>
     </div>
+    <div id="split" role="separator" aria-label="Altezza della timeline" aria-orientation="horizontal" tabindex="0"></div>
+    <section id="timeline" aria-label="Proiezione della partitura">
+        <div id="timeline-tools">
+            <button id="pan-left" title="Indietro nella vista" aria-label="Indietro nella vista">‹</button>
+            <input id="view-start" type="number" min="0" step="any" value="0" aria-label="Inizio della vista in secondi" title="Inizio della vista in secondi">
+            <span>s</span>
+            <button id="pan-right" title="Avanti nella vista" aria-label="Avanti nella vista">›</button>
+            <button id="zoom-out" title="Allontana" aria-label="Allontana">−</button>
+            <button id="zoom-in" title="Avvicina" aria-label="Avvicina">+</button>
+            <label><input id="follow" type="checkbox" checked> Segui</label>
+            <output id="note-info"></output>
+        </div>
+        <div id="roll"><canvas id="notes" tabindex="0" aria-label="Note della partitura"></canvas><div id="lanes-space" aria-hidden="true"></div></div>
+    </section>
     <pre id="errors" role="alert" hidden></pre>
 </main>
 <footer>
