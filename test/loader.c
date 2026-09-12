@@ -2,9 +2,134 @@
 #include "script.h"
 #include <assert.h>
 #include <math.h>
+#include <limits.h>
+#include <pthread.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static void *produce(void *arg) {
+	Messages *q = arg;
+	for (unsigned i = 0; i < 100000; ++i)
+		while (message_push(q, sizeof(i), &i))
+			sched_yield();
+	return NULL;
+}
+
+static void test_messages(void) {
+	Messages q = {.limit = sizeof(unsigned)};
+	q.data = malloc(MESSAGE_SLOTS * q.limit);
+	assert(q.data);
+	unsigned value;
+	size_t size;
+	assert(!message_pop(&q, &size, &value));
+	assert(message_push(&q, q.limit + 1, &value));
+	for (unsigned i = 0; i < MESSAGE_SLOTS; ++i)
+		assert(!message_push(&q, sizeof(i), &i));
+	assert(message_push(&q, 0, NULL));
+	for (unsigned i = 0; i < MESSAGE_SLOTS; ++i) {
+		assert(message_pop(&q, &size, &value));
+		assert(size == sizeof(value) && value == i);
+	}
+	assert(!message_push(&q, 0, NULL));
+	assert(message_pop(&q, &size, &value) && size == 0);
+	// Cross both the ring boundary and unsigned counter wrap with a concurrent producer.
+	atomic_store(&q.read, UINT_MAX - 20);
+	atomic_store(&q.write, UINT_MAX - 20);
+	pthread_t thread;
+	assert(!pthread_create(&thread, NULL, produce, &q));
+	for (unsigned i = 0; i < 100000; ++i) {
+		while (!message_pop(&q, &size, &value))
+			sched_yield();
+		assert(size == sizeof(value) && value == i);
+	}
+	assert(!pthread_join(thread, NULL));
+	free(q.data);
+	puts("OK: message bounds, full/empty queues, zero-length messages, FIFO and concurrent counter wrap");
+}
+
+typedef struct {
+	float values[2], at_message[2];
+	unsigned indices[8], messages[2], parameters, count;
+	atomic_int *gate;
+} Controls;
+
+static void control_parameter(void *p, size_t index, float value) {
+	Controls *c = p;
+	c->indices[c->parameters++] = index;
+	c->values[index] = value;
+	if (c->gate) {
+		atomic_store(c->gate, 1);
+		while (atomic_load(c->gate) == 1)
+			sched_yield();
+	}
+}
+
+static void control_message(void *p, size_t size, const void *data) {
+	Controls *c = p;
+	assert(size == sizeof(unsigned) && c->count < 2);
+	memcpy(c->messages + c->count, data, size);
+	c->at_message[c->count++] = c->values[0];
+}
+
+static void *apply_control(void *arg) {
+	sync_dsp(arg, NULL);
+	return NULL;
+}
+
+static void test_controls(void) {
+	const perone_api api = {.set_parameter = control_parameter, .msg_in = control_message};
+	Controls left = {0}, right = {0};
+	unsigned data[MESSAGE_SLOTS], first = 7, second = 8;
+	DSP a = {.api = &api,
+	    .instance = &left,
+	    .config = {.nparams = 2},
+	    .to_dsp = {.limit = sizeof(unsigned), .data = (unsigned char *)data}};
+	DSP b = {.api = &api, .instance = &right};
+	watch_dsp(&a, 1);
+	// Messages are FIFO, but all pending parameter values precede them, regardless of submission order.
+	assert(!send_dsp(&a, sizeof(first), &first));
+	edit_dsp(&a, 1, 30);
+	edit_dsp(&a, 0, 1);
+	edit_dsp(&a, 0, 2);
+	assert(!send_dsp(&a, sizeof(second), &second));
+	edit_dsp(&a, 0, 3);
+	float value;
+	assert(!left.parameters && !left.count && !read_dsp(&a, 0, &value));
+	sync_dsp(&a, &b);
+	assert(read_dsp(&a, 0, &value) && value == 3);
+	for (int i = 0; i < 2; ++i) {
+		Controls *c = i ? &right : &left;
+		assert(c->parameters == 2 && c->indices[0] == 0 && c->indices[1] == 1);
+		assert(c->values[0] == 3 && c->values[1] == 30 && c->count == 2);
+		assert(c->messages[0] == first && c->messages[1] == second);
+		assert(c->at_message[0] == 3 && c->at_message[1] == 3);
+	}
+	// Pause the audio thread inside the setter: no stale acknowledgement, and a newer edit survives.
+	atomic_int gate = 0;
+	left.gate = &gate;
+	atomic_store(&a.requested[0], UINT_MAX);
+	atomic_store(&a.applied[0], UINT_MAX);
+	edit_dsp(&a, 0, 4);
+	pthread_t thread;
+	assert(!pthread_create(&thread, NULL, apply_control, &a));
+	while (!atomic_load(&gate))
+		sched_yield();
+	assert(!read_dsp(&a, 0, &value));
+	edit_dsp(&a, 0, 5);
+	atomic_store(&gate, 2);
+	assert(!pthread_join(thread, NULL));
+	assert(left.values[0] == 4 && !read_dsp(&a, 0, &value));
+	left.gate = NULL;
+	sync_dsp(&a, &b);
+	assert(read_dsp(&a, 0, &value) && value == 5 && right.values[0] == 5);
+	unsigned applied = left.parameters;
+	sync_dsp(&a, &b);
+	assert(left.parameters == applied);
+	watch_dsp(&a, 0);
+	puts("OK: latest parameter values, message order, stereo edits, concurrent acknowledgement and counter wrap");
+}
 
 static void mock_process(void *p, const float **in, float **out, size_t n) {
 	for (size_t i = 0; i < n; ++i)
@@ -155,6 +280,8 @@ int main(int argc, char **argv) {
 			test_bundle(argv[i]);
 		return 0;
 	}
+	test_messages();
+	test_controls();
 	test_scheduler();
 	test_stereo_scheduler();
 	test_disconnected_inputs();

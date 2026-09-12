@@ -46,9 +46,12 @@
   (def name (product :bundleName))
   (assert (and (string? name) (peg/match '(sequence (some (choice (range "az" "AZ" "09") "_" "-")) -1) name))
     "invalid bundleName")
-  (assert (not (get-in product [:transport :sync])) "transport sync is not supported by this host")
+  (assert (or (not (get-in product [:transport :sync])) (get-in product [:transport :syncOptional]))
+    "required transport sync is not supported by this host")
   (each key [:uiToDspSize :dspToUiSize]
-    (assert (= 0 (or (get-in product [:messaging key]) 0)) "messaging is not supported by this host"))
+    (def size (or (get-in product [:messaging key]) 0))
+    (assert (and (number? size) (= size (math/floor size)) (<= 0 size host/max-message))
+      "unsupported plugin message size"))
   (var input 0)
   (var output 0)
   (var midi -1)
@@ -82,12 +85,16 @@
         (unless out (+= slots channels)))))
   (assert (and (> output 0) (<= slots host/max-inputs)) "unsupported audio layout")
   (def parameters (perone/parameters (product :parameters)))
+  (def binary (string path "/" host/platform "/" name))
   {:product product
    :parameters parameters
-   :binary (string path "/" host/platform "/" name host/binary-suffix)
+   :binary (string binary host/binary-suffix)
+   :ui-binary (when (product :ui) (string binary "-ui" host/binary-suffix))
    :layout {:input-channels input
             :output-channels output
             :midi-bus midi
             :input-offset offset
-            :input-slots slots}
+            :input-slots slots
+            :dsp-to-ui-size (or (get-in product [:messaging :dspToUiSize]) 0)
+            :ui-to-dsp-size (or (get-in product [:messaging :uiToDspSize]) 0)}
    :defaults (map |(if (= ($ :direction) :input) ($ :default) nil) parameters)})

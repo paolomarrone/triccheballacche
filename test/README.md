@@ -1,4 +1,14 @@
-# Prototipo di provenienza Janet
+# Prove di interfaccia
+
+`make gui` apre le GUI native Perone di Tibia e A-SID con `examples/gui.janet`.
+`make test-ui` verifica le UI originali C/C++, i controlli sul DSP e i messaggi;
+richiede un display X11 e i bundle compilati nei repository adiacenti. I dettagli
+e i percorsi sono nel [README principale](../README.md#gui-native-perone).
+Le prove del protocollo di controllo e delle code concorrenti sono in `loader.c`,
+eseguite da `make test` anche senza display: ultimo valore dei parametri, ordine dei
+messaggi, copie stereo, conferme durante un setter sospeso e riporto dei contatori.
+
+## Prototipo di provenienza Janet
 
 `live.html` permette di modificare Polpo, eseguirlo e vedere le righe associate agli
 eventi mentre si ascolta. Ogni esecuzione riparte dall'inizio. La copia del sorgente

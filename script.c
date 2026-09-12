@@ -23,6 +23,7 @@ JanetTable *script_env(void) {
 	janet_def(env, "host/platform", janet_cstringv(PERONE_PLATFORM), NULL);
 	janet_def(env, "host/max-params", janet_wrap_integer(MAX_PARAMS), NULL);
 	janet_def(env, "host/max-inputs", janet_wrap_integer(MAX_INPUTS), NULL);
+	janet_def(env, "host/max-message", janet_wrap_number(dsp_max_message), NULL);
 	if (janet_dostring(env, perone_source, "lib/perone.janet", NULL)) {
 		janet_deinit();
 		return NULL;
@@ -45,6 +46,8 @@ void script_config(Janet layout, Janet defaults, PluginConfig *config) {
 	    .midi = layout_integer(layout, "midi-bus"),
 	    .input_offset = layout_integer(layout, "input-offset"),
 	    .inputs = layout_integer(layout, "input-slots"),
+	    .to_ui = layout_integer(layout, "dsp-to-ui-size"),
+	    .to_dsp = layout_integer(layout, "ui-to-dsp-size"),
 	    .nparams = params.len};
 	for (int i = 0; i < params.len; ++i) {
 		if (janet_checktype(params.items[i], JANET_NIL))

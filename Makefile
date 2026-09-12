@@ -25,7 +25,7 @@ NATIVE_SOURCES = engine.c posix/loader.c
 SCORE_SOURCES = daw.c session.c engine.c $(SCRIPT_SOURCES)
 SCORE_HEADERS = daw.h session.h engine.h script.h loader.h util.h
 NATIVE_HEADERS = engine.h loader.h posix/module.h perone.h util.h
-FORMAT_SOURCES = $(filter-out perone.h,$(wildcard *.c *.h posix/*.c posix/*.h test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h examples/termux_synth/src/*.c))
+FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h examples/termux_synth/src/*.c))
 
 .PHONY: all test test-plugins test-prog test-brickworks check-plugins run keys prog clean format format-check
 all: build/host build/daw
@@ -122,6 +122,19 @@ build/%_test: test/%.c posix/export.c $(SCORE_SOURCES) $(SCORE_HEADERS) posix/lo
 
 build/player_test: player.c player.h posix/daw_main.c
 
+# Optional desktop host: X11 and UI libraries are not dependencies of the ordinary player.
+build/daw-ui: posix/ui_main.c posix/ui.c posix/ui.h perone_ui.h player.c player.h $(SCORE_SOURCES) $(SCORE_HEADERS) posix/loader.c $(NATIVE_HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc Makefile | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) posix/ui_main.c posix/ui.c player.c $(SCORE_SOURCES) posix/loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -lX11 -o $@
+
+.PHONY: gui test-ui
+gui: build/daw-ui
+	./build/daw-ui examples/gui.janet
+
+build/ui_test: posix/ui.c posix/ui.h perone_ui.h
+build/ui_test: LDLIBS += -lX11
+test-ui: build/ui_test
+	./build/ui_test
+
 prog: check-plugins build/daw
 	./build/daw examples/prog/polpo.janet build/il_polpo_a_sette_gomiti.wav
 
@@ -130,7 +143,7 @@ test-prog: prog
 	cmp build/polpo-repeat.wav build/il_polpo_a_sette_gomiti.wav
 
 clean:
-	rm -f build/audio.o build/json.o build/perone.inc build/daw.inc build/host build/test build/termux_synth build/termux_test build/daw build/daw_test build/plugins_test build/player_test
+	rm -f build/audio.o build/json.o build/perone.inc build/daw.inc build/host build/test build/termux_synth build/termux_test build/daw build/daw-ui build/daw_test build/plugins_test build/player_test build/ui_test
 	rm -rf build/fixture.perone build/effect.perone build/web
 
 # Read-only audit of the bundles built in Brickworks; no plugin compilation here.

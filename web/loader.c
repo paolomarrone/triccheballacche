@@ -1,6 +1,13 @@
 #include "loader.h"
 #include <emscripten.h>
 
+const size_t dsp_max_message = 0;
+
+void sync_dsp(DSP *dsp, DSP *paired) {
+	(void)dsp;
+	(void)paired;
+}
+
 // clang-format off
 EM_JS(int, wasm_open,
     (const char *path, unsigned rate, int inputs, int output, int midi, int nparams, const float *defaults,

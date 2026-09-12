@@ -103,7 +103,7 @@ build/             binari dell'host e render
 Il codice C usa tab da 4 colonne, Janet due spazi. `.editorconfig` e `.clang-format`
 fissano spaziature e indentazione; le funzioni sono separate da una riga vuota.
 `make format` uniforma i sorgenti C locali, `make format-check` ne verifica lo stile
-con clang-format 21. Dipendenze, file generati e la copia upstream di `perone.h`
+con clang-format 21. Dipendenze, file generati e le copie upstream `perone.h` e `perone_ui.h`
 sono esclusi. Il formatter serve solo per questi due comandi.
 
 ## API: plugin e tracce sono distinti
@@ -327,6 +327,78 @@ Il [WAV storico](examples/prog/il_polpo_a_sette_gomiti.wav) resta incluso e inva
 Il nuovo render non è bit-identico: percussioni e delay ora usano istanze e catene
 indipendenti. `make test-prog` verifica che due nuovi render siano identici.
 
+## GUI native Perone
+
+`make gui` compila il player desktop opzionale e riproduce `examples/gui.janet`,
+aprendo le GUI originali di Tibia e A-SID. Serve Linux/X11, anche tramite XWayland,
+con le librerie di sviluppo X11 per compilare l'host. I plugin devono essere già
+compilati separatamente, incluse le librerie `*-ui.so`:
+
+```sh
+make gui
+# Oppure, per una partitura diversa:
+make build/daw-ui
+./build/daw-ui examples/gui.janet
+make test-ui
+```
+
+L'esempio dura 65 secondi: un synth Brickworks passa attraverso l'effetto di test
+Tibia e il filtro A-SID. Lo score automatizza gain, cutoff e tremolo di Tibia e
+cutoff, quantità e velocità LFO di A-SID, con cicli di 8, 16 e 32 secondi e 32 punti
+al secondo. I controlli si muovono automaticamente già dall'inizio. Le modifiche
+manuali vengono sovrascritte dal punto successivo dell'automazione: per provare
+liberamente un controllo, rimuovere la relativa curva dalla partitura.
+I parametri di uscita aggiornano la GUI e il pulsante reset di Tibia
+scambia messaggi con il DSP. Chiudere una finestra o premere Ctrl-C termina la prova.
+La partitura resta esportabile con la CLI ordinaria.
+
+I bundle usati sono `plugins/synth_mono/build/plugin.perone`,
+`../tibia/out/perone/c/build/tibia-test.perone` e
+`../asid/plugin/perone/build/asid.perone`. `TIBIA_PERONE` e `ASID_PERONE` possono
+scegliere altri percorsi; per esempio, la variante C++ di Tibia è in
+`../tibia/out/perone/cxx/build/tibia-test.perone`.
+
+`perone_ui.h` è il contratto UI ABI v1 copiato da Tibia. `posix/ui.c` legge i
+metadati tramite Janet, carica la libreria UI separata e gestisce finestre, idle e
+callback sul thread grafico. Apre una GUI per nodo quando il bundle contiene la
+libreria; gli effetti mono duplicati su stereo condividono la stessa GUI.
+Il widget viene mostrato e ridimensionato dopo la notifica di creazione del server
+X11, anche quando il plugin usa una connessione separata.
+`posix/ui_main.c` usa il player miniaudio comune. X11 è una dipendenza del solo
+eseguibile `daw-ui`; il DSP continua a usare Perone ABI v2.
+
+Il protocollo dei controlli vive nel loader nativo: la GUI richiede modifiche e legge
+valori e messaggi attraverso poche operazioni, senza gestire direttamente atomiche
+o code. Le modifiche dei parametri vengono accorpate all'ultimo valore e applicate
+dal thread audio in ordine di indice prima del blocco successivo, insieme alle
+eventuali copie L/R. Seguono i messaggi UI→DSP, in ordine FIFO: non esiste un ordine
+unico tra parametri e messaggi. Un messaggio non può quindi fare da separatore tra
+due modifiche dello stesso parametro. Gli eventi già programmati nello score
+possono poi sovrascrivere i valori della GUI, anche al medesimo campione.
+
+Il thread audio pubblica i valori e conferma ogni richiesta soltanto dopo averla
+applicata; una richiesta più recente rimane in attesa. La GUI legge i valori senza
+chiamare il DSP e senza rimandare al controllo un valore precedente alla modifica.
+Per un effetto duplicato, valori di uscita e messaggi visualizzati provengono
+dall'istanza sinistra. I tre callback di inizio, modifica e fine gesto applicano
+tutti il valore ricevuto; i gesti non vengono ancora registrati nella partitura.
+La GUI arrotonda i parametri interi e limita i valori al range del JSON; indici
+invalidi, parametri di uscita e valori non finiti sono errori. Negli script, invece,
+i valori fuori range o non interi vengono rifiutati per segnalare l'errore nello score.
+
+I messaggi usano due code con un produttore e un consumatore, 16 posti ciascuna,
+allocate prima della riproduzione secondo i limiti del JSON, fino a 4096 byte per
+messaggio. Il riempimento della coda o un messaggio fuori limite interrompe la prova
+con un errore. Senza una GUI i messaggi in uscita vengono scartati. Il web mantiene
+il limite a zero: le GUI native `.so` non si eseguono nel browser; questi bundle
+attualmente non includono un modulo UI web.
+
+`make test-ui` richiede un display X11 e i bundle già compilati di Tibia C/C++ e
+A-SID. Verifica embedding, gesti reali del mouse, audio, sincronizzazione L/R,
+feedback delle automazioni, messaggi, creazione differita del widget, ridimensionamento e chiusura. `make test`
+verifica anche l'ordine dei controlli, le conferme concorrenti e le code tra thread,
+senza richiedere X11 o plugin esterni.
+
 ## Portabilità e test web
 
 `test/live.html` è un [prototipo di evidenziazione del codice durante l'ascolto](test/README.md).
@@ -473,7 +545,7 @@ AudioContext e AudioWorklet; la gestione asincrona rimane in `web/player.js`.
 `web/loader.c` e `web/perone.js` quello Wasm. Il motore chiama lo stesso piccolo
 insieme di operazioni per apertura, chiusura, parametri, reset, MIDI e processamento.
 Il contratto completo è in `loader.h`: `Engine` contiene configurazione e un puntatore
-opaco `DSP`, oltre allo scheduler. `posix/module.h` è privato al loader POSIX e alle fixture
+opaco `DSP`, oltre allo scheduler. `posix/module.h` è privato al loader/UI POSIX e alle fixture
 che ne costruiscono istanze; memoria DSP, handle di libreria e API Perone non entrano
 nel motore comune. L'apertura fallita libera le risorse del backend e non modifica l'engine.
 `script.c` prepara Janet e trasferisce configurazioni numeriche al motore C.
@@ -490,7 +562,7 @@ inclusi gli override, separati dai default originali esposti da `daw/info`.
 La sessione usa quella configurazione per preparare entrambe le istanze degli
 effetti mono su stereo; i mixer conservano soltanto i propri valori di gain e pan.
 `daw/end` chiude la preparazione: da quel momento i parametri cambiano attraverso
-gli eventi già programmati.
+gli eventi già programmati e, nel player desktop, i controlli delle GUI.
 
 Gli eventi crescono durante la preparazione e vengono ordinati una volta sola.
 Janet viene chiuso prima del rendering; il motore non alloca memoria mentre processa
@@ -504,8 +576,10 @@ non può essere cambiato durante la sessione. Le sidechain
 opzionali rimangono scollegate: il DSP riceve `NULL` nelle loro posizioni originali.
 Sono supportati fino a 8 canali di ingresso complessivi, inclusi quelli scollegati.
 CV, sidechain obbligatorie e bus principali aggiuntivi vengono rifiutati prima
-che il DSP venga caricato. Transport sincronizzato e messaggistica non sono ancora
-supportati dall'host e vengono rifiutati se richiesti nel JSON. Il salvataggio dello
+che il DSP venga caricato. Il transport sincronizzato obbligatorio viene rifiutato;
+se dichiarato opzionale, il plugin usa il proprio comportamento senza transport.
+Il backend nativo gestisce i messaggi della GUI entro i limiti descritti sopra;
+il backend web rifiuta ancora bundle che dichiarano messaggistica. Il salvataggio dello
 stato personalizzato non è esposto dall'API delle partiture.
 
 Il contratto è Perone ABI v2, copiato senza modifiche in `perone.h`.

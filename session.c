@@ -236,6 +236,8 @@ int session_render(Session *s, float *out, size_t frames) {
 		return fail(s, "render outside session");
 	while (frames) {
 		size_t n = frames < BLOCK ? frames : BLOCK;
+		for (int i = 0; i < s->nnodes; ++i)
+			sync_dsp(s->nodes[i].dsp[0].dsp, s->nodes[i].dsp[1].dsp);
 		memset(out, 0, 2 * n * sizeof(float));
 		for (int tr = 0; tr < s->ntracks; ++tr) {
 			Track *t = s->tracks + tr;
