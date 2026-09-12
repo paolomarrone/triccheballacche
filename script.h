@@ -4,6 +4,7 @@
 #include "janet.h"
 // Synchronous setup only. script_env starts Janet; its caller must close it.
 JanetTable *script_env(void);
+void script_trace(JanetTable *env);
 void script_config(Janet layout, Janet defaults, PluginConfig *config);
 // These helpers start and close Janet themselves; call without an active VM.
 int read_bundle(const char *path, char **binary, PluginConfig *config);

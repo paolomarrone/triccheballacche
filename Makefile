@@ -14,14 +14,15 @@ SPORK_REV = 0667f96b74de52747ffe5e19e185563ebf53816b
 PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
-SCRIPT = script.c script.h build/perone.inc build/json.o
+SCRIPT_SOURCES = script.c trace.c
+SCRIPT = $(SCRIPT_SOURCES) script.h build/perone.inc build/json.o
 SCRIPT_LIBS = build/json.o $(JANET_LIBS)
 ifeq ($(shell uname -o 2>/dev/null),Android)
 JANET_LIBS += -landroid-spawn
 endif
 TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
 NATIVE_SOURCES = engine.c posix/loader.c
-SCORE_SOURCES = daw.c session.c engine.c script.c
+SCORE_SOURCES = daw.c session.c engine.c $(SCRIPT_SOURCES)
 SCORE_HEADERS = daw.h session.h engine.h script.h loader.h util.h
 NATIVE_HEADERS = engine.h loader.h posix/module.h perone.h util.h
 FORMAT_SOURCES = $(filter-out perone.h,$(wildcard *.c *.h posix/*.c posix/*.h test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h examples/termux_synth/src/*.c))
@@ -64,10 +65,10 @@ build/%.inc: lib/%.janet | build
 	sed -e 's/[\\"]/\\&/g' -e 's/^/"/' -e 's/$$/\\n"/' $< > $@
 
 build/host: posix/main.c $(NATIVE_SOURCES) $(NATIVE_HEADERS) $(SCRIPT) audio.h build/audio.o Makefile | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) posix/main.c $(NATIVE_SOURCES) script.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) posix/main.c $(NATIVE_SOURCES) $(SCRIPT_SOURCES) build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
 
 build/test: test/loader.c $(NATIVE_SOURCES) $(NATIVE_HEADERS) $(SCRIPT) Makefile | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. $(SCRIPT_FLAGS) test/loader.c $(NATIVE_SOURCES) script.c $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. $(SCRIPT_FLAGS) test/loader.c $(NATIVE_SOURCES) $(SCRIPT_SOURCES) $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
 
 build/termux_synth: examples/termux_synth/src/termux_synth.c $(MINIAUDIO) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $< $(LDFLAGS) $(LDLIBS) -o $@
@@ -206,3 +207,11 @@ test-browser: test-web
 .PHONY: test-polpo-web
 test-polpo-web: web
 	node test/browser.mjs test/polpo.html
+
+# Optional experiment: automatic Janet source tracing, with production bundles for the live page.
+.PHONY: test-trace test-live
+test-trace: test-web
+	node test/trace.mjs
+
+test-live: test-trace
+	node test/browser.mjs test/live.html

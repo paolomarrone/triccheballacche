@@ -12,10 +12,13 @@ static const char perone_source[] =
 JanetTable *script_env(void) {
 	janet_init();
 	JanetTable *env = janet_core_env(NULL), *json = janet_table(0);
+	script_trace(env);
 	janet_json(json);
-	Janet decode;
+	Janet decode, encode;
 	janet_resolve(json, janet_csymbol("decode"), &decode);
+	janet_resolve(json, janet_csymbol("encode"), &encode);
 	janet_def(env, "json/decode", decode, NULL);
+	janet_def(env, "json/encode", encode, NULL);
 	janet_def(env, "host/binary-suffix", janet_cstringv(PERONE_SUFFIX), NULL);
 	janet_def(env, "host/platform", janet_cstringv(PERONE_PLATFORM), NULL);
 	janet_def(env, "host/max-params", janet_wrap_integer(MAX_PARAMS), NULL);

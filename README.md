@@ -329,7 +329,19 @@ indipendenti. `make test-prog` verifica che due nuovi render siano identici.
 
 ## Portabilità e test web
 
-Il codice comune (`engine.c`, `session.c`, `daw.c`, `script.c`, `player.c`) non usa
+`test/live.html` è un [prototipo di evidenziazione del codice durante l'ascolto](test/README.md).
+Esegue Polpo senza marcatori: il prototipo osserva la costruzione delle liste di eventi
+e le funzioni dei pattern durante la preparazione Janet, conservando anche le posizioni
+dentro le funzioni che generano note e controlli. Offre un editor
+essenziale, Esegui/Stop e una copia del codice attualmente in ascolto.
+Il ponte C in `trace.c` viene registrato normalmente da `script_env`; il modulo
+`lib/trace.janet` attiva l'osservazione su richiesta, prima di compilare lo score.
+La pagina usa i runtime ordinari prodotti da `make web`.
+`make test-live` verifica il prototipo in Chromium; richiede gli stessi quattro bundle
+Perone wasm32 della prova Polpo descritta sotto. Il tracciamento rimane sperimentale:
+le chiamate in coda possono perdere frame e pattern uguali possono avere origini ambigue.
+
+Il codice comune (`engine.c`, `session.c`, `daw.c`, `script.c`, `trace.c`, `player.c`) non usa
 direttamente API POSIX né contiene rami condizionali per piattaforma. Il Makefile
 seleziona i sorgenti nativi in `posix/` oppure quelli Wasm in `web/`.
 `posix/loader.c` conserva `dlopen` e `realpath`; `posix/export.c` gestisce il WAV,
@@ -465,6 +477,8 @@ opaco `DSP`, oltre allo scheduler. `posix/module.h` è privato al loader POSIX e
 che ne costruiscono istanze; memoria DSP, handle di libreria e API Perone non entrano
 nel motore comune. L'apertura fallita libera le risorse del backend e non modifica l'engine.
 `script.c` prepara Janet e trasferisce configurazioni numeriche al motore C.
+`trace.c` registra il ponte per il tracciamento opzionale; `lib/trace.janet` conserva
+la provenienza fuori dai valori musicali e produce il rapporto per l'editor.
 `lib/perone.janet` legge i bundle, interpreta bus, default e parametri;
 `lib/daw.janet` espone l'API delle partiture e conserva i metadati completi.
 `lib/music.janet` fornisce le funzioni musicali; le partiture in `examples/` scelgono
