@@ -342,9 +342,9 @@ Il [WAV storico](examples/prog/il_polpo_a_sette_gomiti.wav) resta incluso e inva
 Il nuovo render non è bit-identico: percussioni e delay ora usano istanze e catene
 indipendenti. `make test-prog` verifica che due nuovi render siano identici.
 
-## Editor desktop
+## Editor desktop e web
 
-L'editor usa [WebUI](https://github.com/webui-dev/webui) per collegare HTML/CSS/JS
+Sul desktop l'editor usa [WebUI](https://github.com/webui-dev/webui) per collegare HTML/CSS/JS
 al motore C nativo. Il browser mostra l'interfaccia; Janet prepara la sessione,
 miniaudio riproduce e i plugin vengono caricati dai bundle nativi `.perone`.
 Non servono Node.js o una build JavaScript per usare l'editor.
@@ -366,7 +366,42 @@ dipendenze del player nativo e X11, come per `daw-ui`; la prova corrente è Linu
 I plugin restano compilati separatamente. Il server ascolta solo in locale e
 serve la cartella `editor/`; apertura e salvataggio dei file passano dal backend.
 
-Il campo del percorso accetta nomi relativi al repository o assoluti. Apri legge la
+La stessa interfaccia funziona anche nel browser con Janet, motore e plugin Wasm,
+senza WebUI o un processo nativo. Dopo aver compilato separatamente i bundle wasm32:
+
+```sh
+make web-editor
+node test/server.mjs
+# Aprire http://localhost:8000/editor/index.html
+make test-editor-web
+```
+
+`make web-editor` genera anche `build/web/project.json`: un catalogo e una copia dei
+file `.janet`, `.json` e `.wasm` nelle directory indicate da `WEB_CONTENT` (default:
+`lib examples plugins`). Il browser li precarica prima di abilitare l'editor; Janet
+risolve gli import e legge i metadati come nel native. Non si analizza il sorgente per
+indovinare le dipendenze e non c'è una lista di plugin per ciascun pezzo. Rigenerare
+il catalogo dopo modifiche ai file o nuove compilazioni. I file copiati non più elencati
+restano inutilizzati nella directory di build fino alla sua pulizia.
+
+Per includere anche i bundle esterni di A-SID e Tibia, conservando i percorsi usati
+dalle partiture:
+
+```sh
+make web-editor WEB_CONTENT="lib examples plugins ../asid/plugin/perone/build ../tibia/out/perone/c/build"
+# /editor/index.html?score=examples/denti.janet
+```
+
+`?score=...` sceglie il file iniziale (default Polpo); `?project=...` sceglie un altro
+catalogo, relativo all'URL della pagina. Il catalogo usa record `{path, url}`, con URL
+relativi al catalogo. I percorsi appartengono al filesystem virtuale del runtime:
+non danno accesso al disco del visitatore. Sul web **Apri** legge questo progetto e
+**Scarica** salva una copia locale e aggiorna il filesystem della sessione, senza
+scrivere sul server; ricaricare la pagina ripristina i file pubblicati nel catalogo.
+Il controllo delle GUI native è nascosto. Servono un browser con AudioWorklet e gli
+header COOP/COEP, già forniti dal server di test; i dettagli sono nella sezione web.
+
+Sul desktop, il campo del percorso accetta nomi relativi al repository o assoluti. Apri legge la
 partitura; Salva la scrive, preservando il file precedente se la scrittura fallisce.
 I file sono testo UTF-8, fino a 8 MiB. Esegui usa il buffer corrente senza salvarlo
 implicitamente e riparte dall'inizio. Percorso originale e import relativi sono
@@ -383,7 +418,7 @@ il tempo renderizzato, senza compensazione della latenza del dispositivo.
 
 Le righe associate agli eventi in ascolto si illuminano direttamente nell'editor,
 anche dentro le funzioni che generano note e automazioni. Non servono marcatori:
-si usa lo stesso `lib/trace.janet` della prova web. I numeri di riga e le bande seguono
+si usa `lib/trace.janet` in entrambi i backend. I numeri di riga e le bande seguono
 lo scorrimento, senza spostare cursore o selezione. Le note restano evidenziate per
 la durata programmata, con un impulso minimo di 80 ms per note brevi e controlli.
 Il riferimento è il tempo renderizzato, quindi l'allineamento all'ascolto è approssimativo.
@@ -422,6 +457,10 @@ Questa attesa non coinvolge il thread audio. `prepare_score` condivide preparazi
 da file e da buffer con la CLI e restituisce diagnostiche e, su richiesta, una
 `ScoreView` di proprietà del chiamante. `score_view.c` copia eventi e grafo della
 sessione e indicizza gli intervalli in un array; non dipende da Janet, DSP o WebUI.
+`score_view_json.c` implementa una sola volta metadati, intervalli, densità, origini
+e controllo delle revisioni; `json_write.c` contiene soltanto la scrittura JSON.
+Entrambi sono compilati per native e Wasm, senza codice di piattaforma. Le query e la
+serializzazione restano fuori dal thread audio.
 Le origini sono annotazioni facoltative, associate per nodo e ordine dell'evento:
 non vengono usate per ricostruire note o accoppiare note-on/off.
 
@@ -430,12 +469,25 @@ poi intervalli richiesti e righe attive, senza trasferire il rapporto completo n
 scandire tutta la partitura a ogni aggiornamento. Le richieste di una vecchia vista
 o esecuzione vengono scartate. Il tracking ha un budget di 8192 eventi attivi e 256
 frame distinti per risposta; il superamento è indicato come «origini parziali» e non
-tocca l'audio. Restano i limiti sperimentali su tail call e origini ambigue della prova web.
+tocca l'audio. Restano i limiti sperimentali su tail call e origini ambigue del tracciamento.
 
 Questo rende la **vista** indipendente da una durata finale, ma lo scheduler attuale
 prepara ancora l'intera sessione in memoria, richiede `daw/end` e accetta al massimo
 3600 secondi. La riproduzione virtualmente infinita richiederà la generazione e lo
 smaltimento degli eventi a finestre nel motore; non è introdotta da questa proiezione.
+
+`editor/index.html`, `main.js` e `timeline.js` sono condivisi. Il controller riceve
+l'adattatore e non conosce WebUI, Wasm o il filesystem. `editor/native.js` traduce le
+risposte WebUI; `web/editor.js` gestisce precaricamento, download e ciclo di vita del
+player web. `editor/native.html` carica WebUI prima di DOMContentLoaded, come richiesto
+dalla versione 2.4, poi riusa il corpo di `index.html` e lo stesso controller. Non
+esiste una seconda implementazione dell'interfaccia.
+
+Il backend web usa `score_prepare` per il buffer non salvato e trasferisce la
+proiezione al browser soltanto dopo l'avvio audio. Chiudere il player libera DSP,
+sessione e AudioContext; la proiezione ha un proprietario separato e resta disponibile
+per la timeline. Una preparazione fallita libera soltanto le risorse nuove. Il tempo
+proviene da `player_time` su entrambe le piattaforme.
 
 Il frontend mantiene una textarea con JavaScript senza framework e disegna solo i
 numeri e le bande visibili. La colorazione della sintassi resta assente: il supporto
@@ -518,19 +570,14 @@ senza richiedere X11 o plugin esterni.
 
 ## Portabilità e test web
 
-`test/live.html` è un [prototipo di evidenziazione del codice durante l'ascolto](test/README.md).
-Esegue Polpo senza marcatori: il prototipo osserva la costruzione delle liste di eventi
-e le funzioni dei pattern durante la preparazione Janet, conservando anche le posizioni
-dentro le funzioni che generano note e controlli. Offre un editor
-essenziale, Esegui/Stop e una copia del codice attualmente in ascolto.
-Il ponte C in `trace.c` viene registrato normalmente da `script_env`; il modulo
-`lib/trace.janet` attiva l'osservazione su richiesta, prima di compilare lo score.
-La pagina usa i runtime ordinari prodotti da `make web`.
-`make test-live` verifica il prototipo in Chromium; richiede gli stessi quattro bundle
-Perone wasm32 della prova Polpo descritta sotto. Il tracciamento rimane sperimentale:
-le chiamate in coda possono perdere frame e pattern uguali possono avere origini ambigue.
+L'editor condiviso in `editor/index.html` sostituisce il precedente prototipo web
+separato. `make test-editor-web` verifica in Chromium riproduzione, timeline, tracking,
+buffer modificati, errori, ripresa e download; richiede i quattro bundle wasm32 di
+Polpo descritti sotto. `make test-trace` verifica la semantica del tracciamento con le
+fixture e il confronto PCM. I [dettagli dei test](test/README.md) descrivono anche il
+confronto delle query della proiezione fra native e Wasm.
 
-Il codice comune (`engine.c`, `session.c`, `score_view.c`, `daw.c`, `script.c`, `trace.c`, `player.c`) non usa
+Il codice comune (`engine.c`, `session.c`, `score_view.c`, `score_view_json.c`, `json_write.c`, `daw.c`, `script.c`, `trace.c`, `player.c`) non usa
 direttamente API POSIX né contiene rami condizionali per piattaforma. Il Makefile
 seleziona i sorgenti nativi in `posix/` oppure quelli Wasm in `web/`.
 `posix/loader.c` conserva `dlopen` e `realpath`; `posix/export.c` gestisce il WAV,
@@ -597,7 +644,7 @@ senza questi header non basta. La riproduzione è verificata in Chromium; Firefo
 Safari restano da verificare. La build usa `MA_ENABLE_AUDIO_WORKLETS`, `AUDIO_WORKLET`,
 `WASM_WORKERS`, `ASYNCIFY` e `-pthread` per le primitive di sincronizzazione di miniaudio.
 
-`web/player.js` espone `createPlayerHost`, `preparePlayer(host, path, sampleRate)` e
+`web/player.js` espone `createPlayerHost`, `preparePlayer(host, path, sampleRate, source?)` e
 `closePlayer(host)` per cancellare una preparazione o ritentarne la pulizia se fallisce.
 I file vengono precaricati con `addFile`, come nel runtime offline. Janet prepara la
 sessione prima dell'avvio; i moduli compilati e i parametri iniziali vengono poi passati
@@ -610,7 +657,12 @@ La callback comune in `player.c` richiama `session_render`: il player produce i 
 richiesta senza conservare il PCM dell'intero pezzo. `web/worklet.js` gestisce soltanto
 preparazione e rilascio dei plugin; il processore audio è quello di miniaudio.
 
-Il player restituito espone `start()`, `status` (0 in corso, 1 terminato, -1 errore) e
+Passare `source` prepara il buffer e la sua proiezione, lasciando intatto il file nel
+filesystem virtuale. Il player espone `takeView()`, che trasferisce la proiezione una
+sola volta; chi la prende deve liberarla con `view_free`. Senza trasferimento viene
+liberata insieme allo score, anche in caso di avvio fallito.
+
+Il player restituito espone `start()`, `time`, `status` (0 in corso, 1 terminato, -1 errore) e
 `close()`, da attendere prima di riusare l'host. Un host gestisce un player alla volta;
 `close()` silenzia la callback, attende la sospensione, chiede il rilascio dei DSP e
 chiude il contesto prima di liberare la memoria C condivisa. Le risposte del worklet
@@ -669,7 +721,7 @@ nel motore comune. L'apertura fallita libera le risorse del backend e non modifi
 `trace.c` registra il ponte per il tracciamento opzionale; `lib/trace.janet` conserva
 la provenienza fuori dai valori musicali. `score_view.c` conserva la proiezione nativa
 degli eventi, con provenienza facoltativa; `editor/timeline.js` ne richiede e disegna
-soltanto la finestra visibile. La prova web conserva il rapporto JSON di tracing.
+soltanto la finestra visibile. Le fixture del tracciamento conservano il rapporto JSON completo come oracolo dei test.
 `lib/perone.janet` legge i bundle, interpreta bus, default e parametri;
 `lib/daw.janet` espone l'API delle partiture e conserva i metadati completi.
 `lib/music.janet` fornisce le funzioni musicali; le partiture in `examples/` scelgono

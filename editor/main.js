@@ -3,7 +3,7 @@ import {timeline} from "./timeline.js";
 const byId = id => document.getElementById(id);
 const path = byId("path"), code = byId("code"), views = byId("views"), errors = byId("errors");
 const numbers = byId("numbers"), marks = byId("marks");
-let ready = false, busy = false, playing = false, saved = "", savedPath = "", queue = Promise.resolve();
+let backend, ready = false, busy = false, playing = false, saved = "", savedPath = "", queue = Promise.resolve();
 let revision = 0, frames = [], partial = false, tracedSource, tracedPath, seconds = 0, displayedSource, lineCount = 1, painted = "";
 
 function tracking() {
@@ -67,10 +67,10 @@ function showError(error) {
     errors.hidden = !errors.textContent;
 }
 
-// Serialize browser calls; all Janet, player and plugin-window operations run on the native main thread.
+// Serialize editor operations across either backend, including viewport requests and polling.
 function request(op, ...args) {
     const result = queue.then(async () => {
-        const response = JSON.parse(await webui.call("command", op, ...args));
+        const response = await backend.command(op, ...args);
         if (typeof response.playing === "boolean") playing = response.playing;
         if (Number.isFinite(response.time)) {
             seconds = response.time;
@@ -138,6 +138,7 @@ views.addEventListener("change", () => action("views"));
 for (const event of ["input", "click", "keyup", "select"]) code.addEventListener(event, update);
 code.addEventListener("scroll", paint);
 window.addEventListener("resize", paint);
+window.addEventListener("pagehide", () => { backend?.close?.().catch(showError); });
 path.addEventListener("input", update);
 document.addEventListener("keydown", event => {
     let op;
@@ -150,13 +151,13 @@ document.addEventListener("keydown", event => {
     }
 });
 
-// Replace WebUI 2.4's eager disconnect: cancelling a close must keep the backend alive.
-window.onbeforeunload = event => {
+// Cancelling a close must preserve the unsaved buffer and its backend.
+function beforeUnload(event) {
     if (dirty()) {
         event.preventDefault();
         event.returnValue = "";
     }
-};
+}
 
 async function poll() {
     if (ready && !busy) {
@@ -166,16 +167,14 @@ async function poll() {
     setTimeout(poll, 50);
 }
 
-async function start() {
+export async function startEditor(adapter) {
+    backend = adapter;
+    byId("plugin-views").hidden = !backend.views;
+    byId("save").textContent = backend.saveLabel;
+    byId("save").title = backend.saveTitle;
     try {
-        // The bridge connects asynchronously; calls reject until its socket is ready.
-        for (let attempt = 0; ; ++attempt) {
-            try { await request("status", "", "", false); break; }
-            catch (error) {
-                if (attempt === 30) throw error;
-                await new Promise(resolve => setTimeout(resolve, 100));
-            }
-        }
+        await backend.connect();
+        window.onbeforeunload = beforeUnload;
         ready = true;
         const result = await request("open", "", "", false);
         path.value = savedPath = result.path;
@@ -186,5 +185,3 @@ async function start() {
     update();
     poll();
 }
-
-start();

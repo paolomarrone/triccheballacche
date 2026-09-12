@@ -23,30 +23,41 @@ Le prove del protocollo di controllo e delle code concorrenti sono in `loader.c`
 eseguite da `make test` anche senza display: ultimo valore dei parametri, ordine dei
 messaggi, copie stereo, conferme durante un setter sospeso e riporto dei contatori.
 
-## Prototipo di provenienza Janet
+## Editor web e provenienza Janet
 
-`live.html` permette di modificare Polpo, eseguirlo e vedere le righe associate agli
-eventi mentre si ascolta. Ogni esecuzione riparte dall'inizio. La copia del sorgente
-in ascolto resta separata dal testo modificabile; le modifiche si applicano alla
-prossima esecuzione. Il volume è ridotto dopo l'uscita del player.
+La pagina `editor/index.html` usa lo stesso controller e la stessa timeline del
+desktop. Il backend Wasm esegue Janet e audio nel browser; non serve un eseguibile
+nativo per usare la pagina.
 
 ```sh
 make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
-make web
+make web-editor
 node test/server.mjs
-# Aprire http://localhost:8000/test/live.html
-
-make test-trace # Fixture e confronto PCM, senza plugin di produzione.
-make test-live  # Include Polpo completo in Chromium e verifica delle evidenziazioni.
+# Aprire http://localhost:8000/editor/index.html
+make test-editor-web
+make test-trace
 ```
+
+`test/editor-web.mjs` verifica Polpo in Chromium, audio, righe attive, snapshot dopo
+Stop e fallimenti, navigazione a tempi grandi, ripresa, apertura dal filesystem della
+sessione e download Unicode senza modificare il file sul server. Accetta un altro
+score come argomento, purché le sue risorse siano nel catalogo. `WEB_CONTENT` in
+`make web-editor` seleziona le directory da pubblicare; per esempio si può aggiungere
+`../asid/plugin/perone/build` e provare `node test/editor-web.mjs examples/denti.janet`.
+
+`make test-web` include `view-json.mjs`: confronta tutte le risposte della proiezione
+C nativa e Wasm a 44,1/48 kHz, con densità, note che attraversano la finestra, origini
+importate, revisioni obsolete e argomenti invalidi. Lo score audio viene liberato
+prima delle query: la proiezione deve restare valida. I test del player verificano
+anche il trasferimento della vista attraverso l'avvio e la chiusura dell'AudioContext.
 
 Se Emscripten non è nel PATH, passare `EMCC=/percorso/assoluto/emcc` a make.
 I runtime ordinari, nativi e web, includono il piccolo ponte `trace.c`, registrato
 esplicitamente da `script_env`. `lib/trace.janet` attiva il tracciamento soltanto
 quando viene chiamato `trace/install`: il solo import lascia intatte le funzioni
-musicali e `array/push`. La pagina usa lo stesso player delle altre prove web.
-`trace-host.mjs` seleziona le righe attive dal rapporto completo della prova web.
-L'editor desktop usa invece l'indice nativo e richiede soltanto i frame attivi.
+musicali e `array/push`. L’editor usa lo stesso player delle altre prove web.
+`trace-host.mjs` seleziona le righe dal rapporto completo per verificare il tracciatore.
+Entrambi gli editor usano l’indice C e richiedono soltanto i frame attivi.
 `json/encode`, già fornito da Spork, permette di esportare il rapporto prima della
 chiusura di Janet. Le librerie musicali e le partiture rimangono invariate.
 
@@ -149,6 +160,6 @@ trasformazioni, pause, chiamate dirette, produttori interni e importati, alias d
 `array/push`, origini ambigue e tail call. Verifica anche che l'import sia inerte,
 che l'installazione sia unica e che dopo errori si possano preparare score normali
 e tracciati sullo stesso host. Scrive un rapporto in `build/trace-fixture.json`.
-`test-live` osserva nel DOM l'evidenziazione delle cinque sezioni di Polpo, dei
-produttori di note/percussioni/parametri e dei chiamanti in riff/accordi. Verifica
-che modificare il testo durante la riproduzione non sposti il sorgente in ascolto.
+`test-editor-web` osserva nel DOM il tracking di Polpo e il comportamento della
+proiezione condivisa: modificare il testo sospende le evidenziazioni, Stop conserva
+le note, un errore non sostituisce l'ultima esecuzione e la successiva può ripartire.

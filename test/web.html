@@ -13,7 +13,7 @@ const button = document.querySelector("#run"), status = document.querySelector("
 try {
     if (!crossOriginIsolated) throw Error("Avviare il server con node test/server.mjs (servono COOP/COEP).");
     const host = await createPlayerHost({printErr: () => {}}), reference = await createHost();
-    for (const path of ["lib/pattern.janet", "test/schedule.janet", "test/playback.janet",
+    for (const path of ["lib/pattern.janet", "lib/trace.janet", "test/schedule.janet", "test/playback.janet",
         "build/fixture.perone/product.json", "build/effect.perone/product.json",
         "build/fixture.perone/wasm32/fixture.wasm", "build/effect.perone/wasm32/fixture.wasm"]) {
         const response = await fetch("../" + path);

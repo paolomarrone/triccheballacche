@@ -5,7 +5,7 @@ import {resolve, extname, sep} from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const types = {".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
-    ".wasm": "application/wasm", ".json": "application/json"};
+    ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json"};
 
 export function serve(port = 8000) {
     return createServer(async (request, response) => {
@@ -25,5 +25,5 @@ export function serve(port = 8000) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     serve();
-    console.log("http://localhost:8000/test/web.html");
+    console.log("http://localhost:8000/editor/index.html");
 }

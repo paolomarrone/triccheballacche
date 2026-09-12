@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>triccheballacche</title>
+<link rel="stylesheet" href="style.css">
+<script src="/webui.js"></script>
+<script type="module">
+// WebUI 2.4 must load before DOMContentLoaded. Reuse the same editor document and controller.
+try {
+    const response = await fetch("index.html");
+    if (!response.ok) throw Error("Impossibile caricare l’editor");
+    const page = new DOMParser().parseFromString(await response.text(), "text/html");
+    document.body.replaceChildren(...page.body.childNodes);
+    const {startEditor} = await import("./main.js");
+    await startEditor(await import("./native.js"));
+} catch (error) { document.body.textContent = String(error); }
+</script>

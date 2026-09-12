@@ -24,8 +24,8 @@ JANET_LIBS += -landroid-spawn
 endif
 TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
 NATIVE_SOURCES = engine.c posix/loader.c
-SCORE_SOURCES = daw.c score_view.c session.c engine.c $(SCRIPT_SOURCES)
-SCORE_HEADERS = daw.h score_view.h session.h engine.h script.h loader.h util.h
+SCORE_SOURCES = daw.c score_view.c score_view_json.c json_write.c session.c engine.c $(SCRIPT_SOURCES)
+SCORE_HEADERS = daw.h score_view.h score_view_json.h json_write.h session.h engine.h script.h loader.h util.h
 NATIVE_HEADERS = engine.h loader.h posix/module.h perone.h util.h
 FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h examples/termux_synth/src/*.c))
 
@@ -179,10 +179,16 @@ WEB_FLAGS = -I. $(JANET_INCLUDES) -DJANET_SINGLE_THREADED -DPERONE_PLATFORM='"wa
 WEB_SOURCES = $(SCORE_SOURCES) web/host.c web/loader.c
 WEB_DEPS = $(WEB_SOURCES) $(SCORE_HEADERS) web/host.h build/daw.inc build/perone.inc
 WEB_LINK = -lm --no-entry -sMODULARIZE -sEXPORT_ES6 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=2097152
-WEB_METHODS = "FS","ccall","HEAPU8","HEAPU32","HEAPF32"
-WEB_EXPORTS = '["_score_new","_score_free","_score_frames","_score_buffer","_score_render","_score_normalize"]'
+WEB_METHODS = "FS","UTF8ToString","ccall","HEAPU8","HEAPU32","HEAPF32"
+VIEW_EXPORTS = "_score_prepare","_score_take_view","_view_free","_score_view_json","_free"
+WEB_EXPORTS = '[$(VIEW_EXPORTS),"_score_new","_score_free","_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sAUDIO_WORKLET -sWASM_WORKERS -sASYNCIFY -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
-PLAYER_EXPORTS = '["_score_new","_score_free","_score_player","_player_free","_player_start","_player_stop","_player_status","_player_context","_player_node"]'
+PLAYER_EXPORTS = '[$(VIEW_EXPORTS),"_player_time","_score_new","_score_free","_score_player","_player_free","_player_start","_player_stop","_player_status","_player_context","_player_node"]'
+WEB_CONTENT ?= lib examples plugins
+.PHONY: web-editor
+web-editor: web
+	node web/catalog.mjs build/web/project.json $(WEB_CONTENT)
+
 .PHONY: web
 web: build/web/daw.mjs build/web/player.mjs
 
@@ -228,9 +234,10 @@ $(TEST_EFFECT)/wasm32/fixture.wasm: test/perone/plugin.c perone.h
 	$(EMCC) $(WEB_FIXTURE_FLAGS) -DPERONE_TEST_EFFECT $< -o $@
 
 .PHONY: test-web
-test-web: web build/daw $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/product.json $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/wasm32/fixture.wasm $(TEST_EFFECT)/wasm32/fixture.wasm
+test-web: web build/daw build/view_json_test $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/product.json $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/wasm32/fixture.wasm $(TEST_EFFECT)/wasm32/fixture.wasm
 	node test/request.mjs
 	node test/web.mjs
+	node test/view-json.mjs
 
 .PHONY: test-browser
 test-browser: test-web
@@ -241,10 +248,10 @@ test-browser: test-web
 test-polpo-web: web
 	node test/browser.mjs test/polpo.html
 
-# Optional experiment: automatic Janet source tracing, with production bundles for the live page.
-.PHONY: test-trace test-live
+# Trace semantics and the shared editor; the editor test uses prebuilt production Wasm bundles.
+.PHONY: test-trace test-editor-web
 test-trace: test-web
 	node test/trace.mjs
 
-test-live: test-trace
-	node test/browser.mjs test/live.html
+test-editor-web: web-editor
+	node test/editor-web.mjs

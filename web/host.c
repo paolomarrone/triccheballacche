@@ -2,24 +2,50 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+void view_free(ScoreView *view) {
+	if (view) {
+		score_view_free(view);
+		free(view);
+	}
+}
+
+ScoreView *score_take_view(Score *score) {
+	ScoreView *view = score->view;
+	score->view = NULL;
+	return view;
+}
+
 void score_free(Score *score) {
 	if (score) {
 		session_free(&score->session);
+		view_free(score->view);
 		free(score);
 	}
 }
 
-Score *score_new(const char *path, unsigned sample_rate) {
+static Score *prepare(const char *path, const char *source, unsigned sample_rate, int project) {
 	Score *score = calloc(1, sizeof(*score));
 	if (!score)
 		return NULL;
 	score->session.sample_rate = sample_rate;
-	if (load_score(&score->session, &score->output, path)) {
+	if (project && !(score->view = calloc(1, sizeof(ScoreView)))) {
+		score_free(score);
+		return NULL;
+	}
+	if (prepare_score(&score->session, &score->output, path, source, NULL, score->view)) {
 		fprintf(stderr, "Score failed: %s\n", score->session.error ? score->session.error : "Janet error");
 		score_free(score);
 		return NULL;
 	}
 	return score;
+}
+
+Score *score_new(const char *path, unsigned sample_rate) {
+	return prepare(path, NULL, sample_rate, 0);
+}
+
+Score *score_prepare(const char *path, const char *source, unsigned sample_rate) {
+	return prepare(path, source, sample_rate, 1);
 }
 
 size_t score_frames(Score *score) {

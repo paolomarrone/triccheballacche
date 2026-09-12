@@ -108,6 +108,24 @@ export async function testPlayerLifecycle(host) {
         player = await open();
         await player.close();
         clean(8);
+
+        // The editor transfers its view only after audio starts, then retains it across player teardown.
+        player = await preparePlayer(host, "test/schedule.janet", 48000,
+            host.FS.readFile("test/schedule.janet", {encoding: "utf8"}));
+        await player.start();
+        const view = player.takeView();
+        check(view && !player.takeView(), "Projection ownership must transfer exactly once");
+        check(player.time >= 0, "Player must publish its rendered time");
+        try {
+            await player.close();
+            clean(9);
+            const pointer = host.ccall("score_view_json", "number",
+                ["number", "number", "string", "number", "number", "number", "number", "number", "number"],
+                [view, 1, "score", 0, 0, 0, 0, 0, 0]);
+            check(pointer, "Cannot query the retained projection");
+            try { check(JSON.parse(host.UTF8ToString(pointer)).score.tracks.length > 0, "View was lost with its player"); }
+            finally { host._free(pointer); }
+        } finally { host._view_free(view); }
     } finally {
         fault = null;
         try { await closePlayer(host); } finally {

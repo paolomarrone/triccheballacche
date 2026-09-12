@@ -36,3 +36,4 @@ footer { color: var(--muted); font-size: 12px; }
 #roll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; }
 #notes { display: block; position: sticky; top: 0; touch-action: none; }
 #lanes-space { pointer-events: none; }
+#plugin-views[hidden] { display: none; }

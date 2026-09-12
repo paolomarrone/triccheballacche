@@ -4,8 +4,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>triccheballacche</title>
 <link rel="stylesheet" href="style.css">
-<script src="/webui.js"></script>
-<script type="module" src="main.js"></script>
+<script type="module" src="start.js"></script>
 <nav aria-label="Partitura e riproduzione">
     <button id="run" title="Esegui dall’inizio · Ctrl+Invio" aria-label="Esegui" disabled>▶</button>
     <button id="stop" title="Stop · Esc" aria-label="Stop" disabled>■</button>
@@ -13,7 +12,7 @@
     <span id="modified" title="Modifiche non salvate" aria-label="Modifiche non salvate"></span>
     <button id="open" title="Apri partitura" disabled>Apri</button>
     <button id="save" title="Salva · Ctrl+S" disabled>Salva</button>
-    <label title="Mostra le GUI dei plugin"><input id="views" type="checkbox" disabled> GUI</label>
+    <label id="plugin-views" title="Mostra le GUI dei plugin" hidden><input id="views" type="checkbox" disabled> GUI</label>
 </nav>
 <main>
     <div id="sheet">

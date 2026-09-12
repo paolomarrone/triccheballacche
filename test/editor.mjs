@@ -68,7 +68,8 @@ try {
             window.reports = []; window.ranges = []; window.origins = [];
             window.statusHasTrace = false;
             webui.call = async (...args) => {
-                const response = await call(...args), result = JSON.parse(response);
+                const response = await call(...args), raw = JSON.parse(response);
+                const result = {...raw, ...raw.view, error: raw.error || raw.view?.error || ""};
                 if (args[1] === "run" && window.openEnd && result.score) result.score.end = null;
                 if (args[1] === "run") reports.push(result);
                 if (args[1] === "range" && result.lanes) {
@@ -80,7 +81,7 @@ try {
                 }
                 if (args[1] === "status" && result.frames) origins.push(...result.frames);
                 if (args[1] === "status" && result.trace) statusHasTrace = true;
-                return JSON.stringify(result);
+                return JSON.stringify({...result, view: null});
             };
         })()`);
         assert.equal(await evaluate('document.querySelector("#code").value'), source);

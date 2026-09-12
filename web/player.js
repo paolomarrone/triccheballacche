@@ -13,7 +13,7 @@ export function closePlayer(host) {
     return active.get(host)?.() || Promise.resolve();
 }
 
-export async function preparePlayer(host, path, sampleRate) {
+export async function preparePlayer(host, path, sampleRate, source) {
     if (active.has(host)) throw Error("Close the current player before preparing another score");
     let score = 0, player = 0, context, setup, error, closing, prepared, stopping = false, released = false;
     const preparation = new Promise(resolve => { prepared = resolve; });
@@ -47,7 +47,8 @@ export async function preparePlayer(host, path, sampleRate) {
     };
     active.set(host, close);
     try {
-        score = host.ccall("score_new", "number", ["string", "number"], [path, sampleRate]);
+        score = source === undefined ? host.ccall("score_new", "number", ["string", "number"], [path, sampleRate]) :
+            host.ccall("score_prepare", "number", ["string", "string", "number"], [path, source, sampleRate]);
         if (!score) throw Error("Score preparation failed; see Janet diagnostics");
         player = await host.ccall("score_player", "number", ["number"], [score], {async: true});
         if (!player) throw Error("Miniaudio initialization failed; see diagnostics");
@@ -65,6 +66,15 @@ export async function preparePlayer(host, path, sampleRate) {
         prepared();
         return {
             context, node,
+            // Transfer only the immutable projection; closing this player still owns all audio resources.
+            takeView() {
+                if (stopping) throw Error("Player closing or closed");
+                return host._score_take_view(score);
+            },
+            get time() {
+                if (stopping) throw Error("Player closing or closed");
+                return host._player_time(player);
+            },
             get status() {
                 if (stopping) throw Error("Player closing or closed");
                 if (error) throw error;

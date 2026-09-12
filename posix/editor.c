@@ -2,10 +2,11 @@
 #include "player.h"
 #include "ui.h"
 #include "util.h"
+#include "json_write.h"
+#include "score_view_json.h"
 #include "webui.h"
 #include <errno.h>
 #include <math.h>
-#include <stdarg.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -120,141 +121,6 @@ static const char *save_text(const char *path, const char *text) {
 	return result ? "Impossibile salvare il file; il precedente è conservato" : NULL;
 }
 
-typedef struct {
-	char *data;
-	size_t length, capacity;
-	int failed;
-} Text;
-
-static void append(Text *text, const char *format, ...) {
-	if (text->failed)
-		return;
-	va_list args, copy;
-	va_start(args, format);
-	va_copy(copy, args);
-	int n = vsnprintf(NULL, 0, format, copy);
-	va_end(copy);
-	if (n < 0 || (size_t)n > SIZE_MAX - text->length - 1) {
-		text->failed = 1;
-	} else if (text->length + n + 1 > text->capacity) {
-		size_t capacity = text->length + n + 1;
-		if (capacity < text->capacity * 2)
-			capacity = text->capacity * 2;
-		if (capacity < 1024)
-			capacity = 1024;
-		char *data = realloc(text->data, capacity);
-		if (!data)
-			text->failed = 1;
-		else {
-			text->data = data;
-			text->capacity = capacity;
-		}
-	}
-	if (!text->failed) {
-		vsnprintf(text->data + text->length, text->capacity - text->length, format, args);
-		text->length += n;
-	}
-	va_end(args);
-}
-
-static void quote(Text *text, const char *value) {
-	append(text, "\"");
-	const char *p = value ? value : "";
-	while (*p) {
-		const char *start = p;
-		while ((unsigned char)*p >= 32 && *p != '"' && *p != '\\')
-			++p;
-		if (p != start)
-			append(text, "%.*s", (int)(p - start), start);
-		if (*p) {
-			if ((unsigned char)*p < 32)
-				append(text, "\\u%04x", (unsigned char)*p);
-			else
-				append(text, "\\%c", *p);
-			++p;
-		}
-	}
-	append(text, "\"");
-}
-
-static void metadata(Text *json, const Editor *editor) {
-	const ScoreView *view = &editor->score;
-	append(json, ",\"score\":{\"revision\":%u,\"end\":%.17g,\"nodes\":[", editor->revision, view->end);
-	for (int i = 0; i < view->nnodes; ++i) {
-		const ScoreNode *node = view->nodes + i;
-		ScoreSummary summary = node->count ? node->events[node->count / 2].summary : (ScoreSummary){0};
-		append(json, "%s{\"name\":", i ? "," : "");
-		quote(json, node->name);
-		append(json, ",\"low\":%d,\"high\":%d}", summary.low, summary.high);
-	}
-	append(json, "],\"tracks\":[");
-	for (int i = 0; i < view->ntracks; ++i) {
-		const Track *track = view->tracks + i;
-		append(json, "%s[%d,%d", i ? "," : "", track->source, track->mixer);
-		for (int j = 0; j < track->count; ++j)
-			append(json, ",%d", track->effects[j]);
-		append(json, "]");
-	}
-	append(json, "]}");
-}
-
-enum { MAX_FRAMES = 256, MAX_ACTIVE_EVENTS = 8192, MAX_LANES = 8, MAX_NOTES = 512, MAX_BINS = 512 };
-
-typedef struct {
-	const ScoreView *view;
-	const ScoreFrame *frames[MAX_FRAMES];
-	size_t count, visited;
-	int truncated;
-} Frames;
-
-static int collect_frames(const ScoreEvent *event, void *context) {
-	Frames *out = context;
-	if (++out->visited > MAX_ACTIVE_EVENTS) {
-		out->truncated = 1;
-		return 0;
-	}
-	for (size_t i = 0; i < event->norigins; ++i) {
-		const ScoreOrigin *origin = out->view->origins + out->view->references[event->first_origin + i];
-		for (size_t j = 0; j < origin->count; ++j) {
-			const ScoreFrame *frame = origin->frames + j;
-			size_t k = 0;
-			for (; k < out->count; ++k)
-				if (out->frames[k]->line == frame->line && out->frames[k]->column == frame->column &&
-				    !strcmp(out->frames[k]->file, frame->file))
-					break;
-			if (k < out->count)
-				continue;
-			if (out->count == MAX_FRAMES) {
-				out->truncated = 1;
-				return 0;
-			}
-			out->frames[out->count++] = frame;
-		}
-	}
-	return 1;
-}
-
-static void write_frames(Text *json, const Frames *frames) {
-	append(json, ",\"frames\":[");
-	for (size_t i = 0; i < frames->count; ++i) {
-		append(json, "%s[", i ? "," : "");
-		quote(json, frames->frames[i]->file);
-		append(json, ",%d,%d]", frames->frames[i]->line, frames->frames[i]->column);
-	}
-	append(json, "],\"truncated\":%s", frames->truncated ? "true" : "false");
-}
-
-typedef struct {
-	const ScoreEvent *events[MAX_NOTES];
-	size_t count;
-} Notes;
-
-static int collect_notes(const ScoreEvent *event, void *context) {
-	Notes *notes = context;
-	notes->events[notes->count++] = event;
-	return notes->count < MAX_NOTES;
-}
-
 static double decimal(webui_event_t *request, int index) {
 	const char *value = webui_get_string_at(request, index);
 	char *end;
@@ -262,81 +128,33 @@ static double decimal(webui_event_t *request, int index) {
 	return end == value || *end ? NAN : result;
 }
 
-static const char *range(Text *json, const Editor *editor, webui_event_t *request) {
-	double from = decimal(request, 2), to = decimal(request, 3);
-	long long first = webui_get_int_at(request, 4), count = webui_get_int_at(request, 5);
-	long long bins = webui_get_int_at(request, 6);
-	if (!isfinite(from) || !isfinite(to) || from < 0 || from >= to || first < 0 || first > editor->score.ntracks ||
-	    count < 1 || count > MAX_LANES || bins < 1 || bins > MAX_BINS) {
-		return "Intervallo della vista non valido";
-	}
-	append(json, ",\"from\":%.17g,\"to\":%.17g,\"first\":%lld,\"lanes\":[", from, to, first);
-	for (int i = first; i < first + count && i < editor->score.ntracks; ++i) {
-		int node = editor->score.tracks[i].source;
-		ScoreSummary summary = score_view_summary(&editor->score, node, from, to);
-		append(json, "%s{\"count\":%zu,", i != first ? "," : "", summary.count);
-		if (summary.count <= MAX_NOTES) {
-			Notes notes = {0};
-			score_view_visit(&editor->score, node, from, to, 1, collect_notes, &notes);
-			append(json, "\"notes\":[");
-			for (size_t j = 0; j < notes.count; ++j) {
-				const ScoreEvent *n = notes.events[j];
-				append(
-				    json, "%s[%zu,%.17g,%.17g,%d,%d]", j ? "," : "", n->order, n->start, n->end, n->pitch, n->velocity);
-			}
-			append(json, "]}");
-		} else {
-			append(json, "\"density\":[");
-			for (int j = 0; j < bins; ++j) {
-				double a = from + (to - from) * j / bins, b = from + (to - from) * (j + 1) / bins;
-				ScoreSummary bin = score_view_summary(&editor->score, node, a, b);
-				append(json, "%s[%zu,%d,%d]", j ? "," : "", bin.count, bin.low, bin.high);
-			}
-			append(json, "]}");
-		}
-	}
-	append(json, "]");
-	return NULL;
-}
-
 static void reply(
     webui_event_t *event, Editor *editor, const char *error, const char *text, const char *path, int score) {
 	const char *op = webui_get_string_at(event, 0);
-	int query = !strcmp(op, "range") || !strcmp(op, "note");
 	double time = editor->player ? player_time(editor->player) : editor->time;
-	Text json = {0};
-	append(&json, "{\"text\":");
-	quote(&json, text);
-	append(&json, ",\"path\":");
-	quote(&json, path);
-	append(&json, ",\"playing\":%s,\"time\":%.17g,\"revision\":%u", editor->player ? "true" : "false", time,
-	    editor->revision);
-	if (score)
-		metadata(&json, editor);
-	if (query && webui_get_int_at(event, 1) != editor->revision) {
-		append(&json, ",\"stale\":true");
-	} else if (!strcmp(op, "range")) {
-		error = range(&json, editor, event);
-	} else if (!strcmp(op, "note")) {
-		long long node = webui_get_int_at(event, 2), order = webui_get_int_at(event, 3);
-		const ScoreEvent *note = node >= 0 && node < editor->score.nnodes && order >= 0
-		    ? score_view_find(&editor->score, node, order)
-		    : NULL;
-		Frames frames = {.view = &editor->score};
-		if (note && note->pitch >= 0)
-			collect_frames(note, &frames);
-		write_frames(&json, &frames);
-	} else if (!strcmp(op, "status")) {
-		Frames frames = {.view = &editor->score};
-		for (int i = 0; editor->player && !frames.truncated && i < editor->score.nnodes; ++i)
-			score_view_visit(&editor->score, i, time, nextafter(time, INFINITY), 0, collect_frames, &frames);
-		write_frames(&json, &frames);
-	}
-	append(&json, ",\"error\":");
-	quote(&json, error);
-	append(&json, "}");
+	char *view = NULL;
+	int query = !strcmp(op, "range") || !strcmp(op, "note");
+	if (query)
+		view = score_view_json(&editor->score, editor->revision, op, decimal(event, 1), decimal(event, 2),
+		    decimal(event, 3), decimal(event, 4), decimal(event, 5), decimal(event, 6));
+	else if (score || !strcmp(op, "status"))
+		view = score_view_json(
+		    &editor->score, editor->revision, score ? "score" : "status", time, !!editor->player, 0, 0, 0, 0);
+	if (!view && (query || score || !strcmp(op, "status")))
+		error = "Memoria insufficiente";
+	Json json = {0};
+	json_print(&json, "{\"text\":");
+	json_string(&json, text);
+	json_print(&json, ",\"path\":");
+	json_string(&json, path);
+	json_print(&json,
+	    ",\"playing\":%s,\"time\":%.17g,\"revision\":%u,\"view\":%s,\"error\":", editor->player ? "true" : "false",
+	    time, editor->revision, view ? view : "null");
+	json_string(&json, error);
+	json_print(&json, "}");
 	webui_return_string(event, json.failed ? "{\"error\":\"Memoria insufficiente\"}" : json.data);
 	free(json.data);
+	free(view);
 }
 
 static void command(Editor *editor, webui_event_t *event) {
@@ -445,12 +263,12 @@ int main(int argc, char **argv) {
 	webui_set_size(window, 1000, 760);
 	signal(SIGINT, stop);
 	signal(SIGTERM, stop);
-	int shown = webui_show_browser(window, "index.html", serve ? NoBrowser : AnyBrowser);
+	int shown = webui_show_browser(window, "native.html", serve ? NoBrowser : AnyBrowser);
 	if (!serve && !shown) {
 		fputs("Cannot open the editor browser. Try --serve and open its URL.\n", stderr);
 		stopped = 1;
 	}
-	printf("Editor: %s/index.html\n", webui_get_url(window));
+	printf("Editor: %s/native.html\n", webui_get_url(window));
 	fflush(stdout);
 	int connected = shown;
 	while (!stopped) {
