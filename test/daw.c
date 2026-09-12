@@ -33,7 +33,7 @@ static void test_buffer_score(void) {
 	                     "(assert (= (dyn :current-file) \"test/unsaved.janet\"))\n"
 	                     "(def p (daw/plugin \"build/fixture.perone\" {:gain 0.25}))\n"
 	                     "(daw/track p) (gccollect) (daw/end (music/seconds 120 1))";
-	assert(!prepare_score(&s, &cfg, path, source, &diagnostics) && !diagnostics);
+	assert(!prepare_score(&s, &cfg, path, source, &diagnostics, NULL) && !diagnostics);
 	float audio[2];
 	assert(!session_render(&s, audio, 1) && audio[0] == .25f && audio[1] == -.25f);
 	session_free(&s);
@@ -41,16 +41,51 @@ static void test_buffer_score(void) {
 	    "\n(", "\nunknown-binding", "(daw/plugin \"build/fixture.perone\")\n(error \"音: failure\")", ""};
 	const char *expected[] = {"parse error", "unknown-binding", "音: failure", "Missing (daw/end"};
 	for (int i = 0; i < 4; ++i) {
-		assert(prepare_score(&s, &cfg, path, bad[i], &diagnostics));
+		char *trace;
+		assert(prepare_score(&s, &cfg, path, bad[i], &diagnostics, &trace));
+		assert(!trace);
 		assert(diagnostics && strstr(diagnostics, expected[i]));
 		if (i < 3)
 			assert(strstr(diagnostics, path));
 		free(diagnostics);
 		session_free(&s);
 	}
-	assert(!prepare_score(&s, &cfg, path, source, &diagnostics) && !diagnostics);
+	assert(!prepare_score(&s, &cfg, path, source, &diagnostics, NULL) && !diagnostics);
 	session_free(&s);
 	puts("OK: unsaved score, relative imports, source paths, owned diagnostics and reuse after errors");
+}
+
+static void test_source_trace(void) {
+	for (unsigned rate = 44100; rate <= 48000; rate += 3900) {
+		Session plain = {.sample_rate = rate}, traced = {.sample_rate = rate};
+		Output cfg;
+		char *trace, *diagnostics;
+		assert(!load_score(&plain, &cfg, "test/trace-score.janet"));
+		assert(!prepare_score(&traced, &cfg, "test/trace-score.janet", NULL, &diagnostics, &trace));
+		assert(trace && !diagnostics && plain.frames == traced.frames);
+		JanetTable *env = script_env();
+		assert(env);
+		janet_def(env, "report", janet_cstringv(trace), NULL);
+		assert(!janet_dostring(env,
+		    "(def trace (json/decode report))"
+		    "(assert (= (length (trace \"events\")) 17))"
+		    "(assert (some (fn [stack] (some |(= ($ \"file\") \"test/trace-helper.janet\") stack))"
+		    "  (trace \"locations\")))",
+		    "trace-check", NULL));
+		janet_deinit();
+		free(trace);
+		while (plain.time < plain.frames) {
+			float a[128], b[128];
+			size_t n = plain.frames - plain.time;
+			if (n > 64)
+				n = 64;
+			assert(!session_render(&plain, a, n) && !session_render(&traced, b, n));
+			assert(!memcmp(a, b, 2 * n * sizeof(float)));
+		}
+		session_free(&plain);
+		session_free(&traced);
+	}
+	puts("OK: native source trace, imported producers, owned JSON and identical PCM at 44.1/48 kHz");
 }
 
 static void test_external_metadata(void) {
@@ -479,6 +514,7 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 
 int main(void) {
 	test_buffer_score();
+	test_source_trace();
 	test_sample_rate();
 	test_external_metadata();
 	test_pattern_schedule();

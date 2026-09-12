@@ -135,12 +135,15 @@ static char *quote(const char *text) {
 	return json;
 }
 
-static void reply(webui_event_t *event, Editor *editor, const char *error, const char *text, const char *path) {
+static void reply(
+    webui_event_t *event, Editor *editor, const char *error, const char *text, const char *path, const char *trace) {
 	char *e = quote(error ? error : ""), *t = quote(text ? text : ""), *p = quote(path);
-	char *json = e && t && p ? malloc(strlen(e) + strlen(t) + strlen(p) + 160) : NULL;
+	if (!trace)
+		trace = "null";
+	char *json = e && t && p ? malloc(strlen(e) + strlen(t) + strlen(p) + strlen(trace) + 180) : NULL;
 	if (json) {
-		sprintf(json, "{\"error\":%s,\"text\":%s,\"path\":%s,\"playing\":%s,\"time\":%.6f}", e, t, p,
-		    editor->player ? "true" : "false", editor->player ? player_time(editor->player) : editor->time);
+		sprintf(json, "{\"error\":%s,\"text\":%s,\"path\":%s,\"playing\":%s,\"time\":%.6f,\"trace\":%s}", e, t, p,
+		    editor->player ? "true" : "false", editor->player ? player_time(editor->player) : editor->time, trace);
 		webui_return_string(event, json);
 	} else {
 		webui_return_string(event, "{\"error\":\"Memoria insufficiente\"}");
@@ -154,7 +157,7 @@ static void reply(webui_event_t *event, Editor *editor, const char *error, const
 static void command(Editor *editor, webui_event_t *event) {
 	const char *op = webui_get_string_at(event, 0), *path = webui_get_string_at(event, 1);
 	const char *source = webui_get_string_at(event, 2), *error = NULL;
-	char *text = NULL, *diagnostics = NULL;
+	char *text = NULL, *diagnostics = NULL, *trace = NULL;
 	if (!*path)
 		path = editor->entry;
 	if (webui_get_size_at(event, 2) > MAX_SOURCE) {
@@ -170,7 +173,7 @@ static void command(Editor *editor, webui_event_t *event) {
 		editor->time = 0;
 		editor->session.sample_rate = 48000;
 		Output output;
-		if (prepare_score(&editor->session, &output, path, source, &diagnostics)) {
+		if (prepare_score(&editor->session, &output, path, source, &diagnostics, &trace)) {
 			error = diagnostics ? diagnostics : editor->session.error ? editor->session.error : "Preparazione fallita";
 		} else {
 			for (int i = 0; i < editor->session.nnodes; ++i) {
@@ -195,7 +198,8 @@ static void command(Editor *editor, webui_event_t *event) {
 	} else {
 		error = "Comando sconosciuto";
 	}
-	reply(event, editor, error, text, path);
+	reply(event, editor, error, text, path, error ? NULL : trace);
+	free(trace);
 	free(diagnostics);
 	free(text);
 }

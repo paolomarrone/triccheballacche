@@ -123,9 +123,11 @@ static Janet end(int32_t argc, Janet *argv) {
 	return janet_wrap_nil();
 }
 
-int prepare_score(Session *s, Output *cfg, const char *path, const char *source, char **diagnostics) {
+int prepare_score(Session *s, Output *cfg, const char *path, const char *source, char **diagnostics, char **trace) {
 	if (diagnostics)
 		*diagnostics = NULL;
+	if (trace)
+		*trace = NULL;
 	if (s->nnodes || s->sealed || !session_rate(s)) {
 		s->error = "score requires an empty session and a valid sample rate";
 		return 1;
@@ -158,6 +160,11 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 #include "build/daw.inc"
 	    ;
 	int result = janet_dostring(env, daw_source, "lib/daw.janet", NULL);
+	if (!result && trace)
+		result = janet_dostring(env,
+		    "(import ./lib/trace :as host-trace)"
+		    "(def host/trace-report (host-trace/install (curenv) \"<prepare-score>\"))",
+		    "<prepare-score>", NULL);
 	if (!result) {
 		janet_table_put(env, janet_ckeywordv("source"), janet_cstringv(path));
 		janet_table_put(env, janet_ckeywordv("current-file"), janet_cstringv(path));
@@ -166,6 +173,14 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 	if (!result && !s->sealed) {
 		janet_eprintf("Missing (daw/end seconds)\n");
 		result = 1;
+	}
+	if (!result && trace) {
+		Janet report;
+		result = janet_dostring(env, "(string (json/encode (host/trace-report)))", "<prepare-score>", &report);
+		if (!result && !(*trace = copy_string((const char *)janet_unwrap_string(report)))) {
+			janet_eprintf("Cannot copy source trace\n");
+			result = 1;
+		}
 	}
 	if (errors && errors->count)
 		*diagnostics = copy_string((const char *)janet_string(errors->data, errors->count));
@@ -178,5 +193,5 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 }
 
 int load_score(Session *s, Output *cfg, const char *path) {
-	return prepare_score(s, cfg, path, NULL, NULL);
+	return prepare_score(s, cfg, path, NULL, NULL, NULL);
 }

@@ -2,11 +2,13 @@
 
 `make test-editor` verifica il frontend WebUI in Chromium e il motore audio nativo:
 apertura di nomi e contenuti Unicode, import relativi da testo non salvato,
-Esegui/Stop, salvataggio atomico, diagnostiche e ripresa dopo errori, chiamate
+Esegui/Stop, tracking dei produttori e degli import, allineamento di righe e bande
+durante lo scorrimento, sospensione dopo modifiche, salvataggio atomico, diagnostiche e ripresa dopo errori, chiamate
 concorrenti e chiusura della pagina durante l'ascolto. Usa la fixture Perone locale;
 richiede Chromium e un dispositivo audio, senza plugin di produzione.
 `test/chromium.mjs` condivide avvio, DevTools e pulizia del browser con i test Wasm.
-`make test` copre anche preparazione da buffer e diagnostiche senza browser o dispositivo.
+`make test` copre anche preparazione da buffer, diagnostiche e rapporto nativo senza
+browser o dispositivo; confronta il PCM con e senza tracciamento a 44,1 e 48 kHz.
 
 `make gui` apre le GUI native Perone di Tibia e A-SID con `examples/gui.janet`.
 `make test-ui` verifica le UI originali C/C++, i controlli sul DSP e i messaggi;
@@ -38,6 +40,7 @@ I runtime ordinari, nativi e web, includono il piccolo ponte `trace.c`, registra
 esplicitamente da `script_env`. `lib/trace.janet` attiva il tracciamento soltanto
 quando viene chiamato `trace/install`: il solo import lascia intatte le funzioni
 musicali e `array/push`. La pagina usa lo stesso player delle altre prove web.
+`editor/trace.js` condivide con l'editor desktop la selezione delle righe attive.
 `json/encode`, già fornito da Spork, permette di esportare il rapporto prima della
 chiusura di Janet. Le librerie musicali e le partiture rimangono invariate.
 

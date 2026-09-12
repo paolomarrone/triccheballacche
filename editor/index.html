@@ -6,28 +6,28 @@
 <link rel="stylesheet" href="style.css">
 <script src="/webui.js"></script>
 <script type="module" src="main.js"></script>
-<header>
-    <h1>triccheballacche</h1>
-    <span id="state" role="status">Collegamento…</span>
-    <output id="time">0.00 s</output>
-</header>
 <nav aria-label="Partitura e riproduzione">
-    <label for="path">File</label>
-    <input id="path" type="text" spellcheck="false" placeholder="examples/gui.janet" disabled>
-    <button id="open" disabled>Apri</button>
-    <button id="save" disabled>Salva</button>
-    <button id="run" disabled>Esegui</button>
-    <button id="stop" disabled>Stop</button>
-    <label><input id="views" type="checkbox" disabled> GUI plugin</label>
+    <button id="run" title="Esegui dall’inizio · Ctrl+Invio" aria-label="Esegui" disabled>▶</button>
+    <button id="stop" title="Stop · Esc" aria-label="Stop" disabled>■</button>
+    <input id="path" type="text" aria-label="Percorso della partitura" spellcheck="false" placeholder="examples/gui.janet" disabled>
+    <span id="modified" title="Modifiche non salvate" aria-label="Modifiche non salvate"></span>
+    <button id="open" title="Apri partitura" disabled>Apri</button>
+    <button id="save" title="Salva · Ctrl+S" disabled>Salva</button>
+    <label title="Mostra le GUI dei plugin"><input id="views" type="checkbox" disabled> GUI</label>
 </nav>
 <main>
-    <label for="code">Partitura Janet <span id="modified"></span></label>
-    <textarea id="code" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" disabled></textarea>
+    <div id="sheet">
+        <div id="gutter" aria-hidden="true"><pre id="numbers"></pre></div>
+        <div id="input">
+            <div id="marks" aria-hidden="true"></div>
+            <textarea id="code" aria-label="Partitura Janet" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" disabled></textarea>
+        </div>
+    </div>
     <pre id="errors" role="alert" hidden></pre>
 </main>
 <footer>
-    <span>Ctrl+Invio esegue · Ctrl+S salva · Esc ferma</span>
-    <span id="position">Riga 1, colonna 1</span>
+    <span id="state" role="status">Collegamento…</span>
+    <output id="time" title="Tempo renderizzato">0.00 s</output>
+    <span id="position" title="Riga:colonna">1:1</span>
 </footer>
-<p id="hint">Esegui riparte dall’inizio usando il testo attuale. Le modifiche durante l’ascolto valgono alla prossima esecuzione.</p>
 </html>

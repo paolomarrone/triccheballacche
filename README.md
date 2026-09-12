@@ -351,7 +351,7 @@ dipendenze del player nativo e X11, come per `daw-ui`; la prova corrente è Linu
 I plugin restano compilati separatamente. Il server ascolta solo in locale e
 serve la cartella `editor/`; apertura e salvataggio dei file passano dal backend.
 
-Il campo File accetta percorsi relativi al repository o assoluti. Apri legge la
+Il campo del percorso accetta nomi relativi al repository o assoluti. Apri legge la
 partitura; Salva la scrive, preservando il file precedente se la scrittura fallisce.
 I file sono testo UTF-8, fino a 8 MiB. Esegui usa il buffer corrente senza salvarlo
 implicitamente e riparte dall'inizio. Percorso originale e import relativi sono
@@ -360,20 +360,37 @@ durante l'ascolto; le modifiche si applicano alla successiva esecuzione.
 Ctrl+Invio esegue, Ctrl+S salva ed Esc ferma; su macOS vale anche il tasto Command.
 Errori Janet di parsing, compilazione ed esecuzione vengono mostrati nell'editor.
 
-GUI plugin mostra o nasconde le interfacce originali dei bundle della sessione.
+GUI mostra o nasconde le interfacce originali dei bundle della sessione.
 Le istanze vengono create prima della riproduzione; nascondere o chiudere una loro
 finestra conserva DSP e scambio dei controlli. Stop, fine del pezzo o chiusura
 dell'editor liberano player, GUI e sessione in quest'ordine. Il contatore mostra
 il tempo renderizzato, senza compensazione della latenza del dispositivo.
 
+Le righe associate agli eventi in ascolto si illuminano direttamente nell'editor,
+anche dentro le funzioni che generano note e automazioni. Non servono marcatori:
+si usa lo stesso `lib/trace.janet` della prova web. I numeri di riga e le bande seguono
+lo scorrimento, senza spostare cursore o selezione. Le note restano evidenziate per
+la durata programmata, con un impulso minimo di 80 ms per note brevi e controlli.
+Il riferimento è il tempo renderizzato, quindi l'allineamento all'ascolto è approssimativo.
+Se testo o percorso differiscono dall'ultima esecuzione, il tracking si sospende;
+rieseguire applica le modifiche, ripristinare esattamente il buffer lo riattiva.
+Stop, fine del pezzo ed errori cancellano le evidenziazioni. Le origini nei file
+importati restano nel rapporto; la vista mostra quelle del file aperto.
+
 `posix/editor.c` gestisce file, comandi WebUI e ciclo di vita sul thread principale;
 i callback WebUI attendono la risposta tramite un singolo posto protetto da mutex.
 Questa attesa non coinvolge il thread audio. `prepare_score` condivide preparazione
-da file e da buffer con la CLI e restituisce diagnostiche di proprietà del chiamante.
-Il frontend è una textarea con JavaScript senza framework. La preparazione Janet
-è ancora sincrona: il prototipo non interrompe uno script durante la valutazione,
-non sostituisce la musica in corso e non include ancora l'evidenziazione della
-provenienza disponibile nella pagina web di test.
+da file e da buffer con la CLI e restituisce diagnostiche e, su richiesta, un rapporto
+JSON di provenienza di proprietà del chiamante. Il rapporto viene trasferito una
+sola volta per esecuzione; durante l'ascolto si legge solo lo stato del player.
+Janet è già chiuso e il thread audio non esegue introspezione. Il tracciamento resta
+sperimentale, con gli stessi limiti su tail call e origini ambigue della prova web.
+Il frontend mantiene una textarea con JavaScript senza framework e disegna solo i
+numeri e le bande visibili. La colorazione della sintassi resta assente: il supporto
+Janet pronto trovato per [CodeMirror 6](https://github.com/ianthehenry/codemirror-lang-janet)
+richiede dipendenze che per ora non introduciamo. La preparazione Janet è ancora
+sincrona: il prototipo non interrompe uno script durante la valutazione e non
+sostituisce la musica in corso.
 
 ## GUI native Perone
 

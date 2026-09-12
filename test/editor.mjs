@@ -8,11 +8,24 @@ const directory = await mkdtemp("build/editor-test-");
 const path = `${directory}/partitura "音".janet`;
 const source = `# Unicode, "quotes", backslash \\ and <html> stay plain text.
 (import ./helper)
-(def p (daw/plugin "build/fixture.perone" {:gain 0.01}))
-(daw/track p)
+(import ../../lib/pattern :as p)
+(def synth (daw/plugin "build/fixture.perone" {:gain 0.01}))
+(daw/track synth)
+(defn phrase []
+  (def items @[])
+  (helper/notes items synth)
+  (array/push items [0.25 2.5 [:note synth 64 80]])
+  (p/events helper/duration items))
+(daw/schedule 0 60 (phrase))
+(daw/param synth 0.1 :gain 0.02)
 (daw/end helper/duration)
-`;
-await writeFile(`${directory}/helper.janet`, "(def duration 2)\n");
+` + "# " + "long line ".repeat(50) + "\n# blank\n".repeat(35);
+const line = text => source.split("\n").findIndex(row => row.includes(text)) + 1;
+const producer = line("array/push"), caller = line("helper/notes");
+await writeFile(`${directory}/helper.janet`, `(def duration 3)
+(defn notes [items node]
+  (array/push items [0 2 [:note node 60 100]]))
+`);
 await writeFile(path, source);
 await chmod(path, 0o640);
 const app = spawn("./build/editor", ["--serve", path]);
@@ -49,13 +62,62 @@ try {
         };
         await call("Page.navigate", {url});
         await waitFor('document.querySelector("#run")?.disabled === false');
+        await call("Emulation.setDeviceMetricsOverride", {width: 900, height: 520, deviceScaleFactor: 1, mobile: false});
+        await evaluate(`(() => {
+            const call = webui.call.bind(webui);
+            window.reports = [];
+            window.statusHasTrace = false;
+            webui.call = async (...args) => {
+                const response = await call(...args), result = JSON.parse(response);
+                if (args[1] === "run") reports.push(result);
+                if (args[1] === "status" && result.trace) statusHasTrace = true;
+                return response;
+            };
+        })()`);
         assert.equal(await evaluate('document.querySelector("#code").value'), source);
         assert.equal(await evaluate('document.querySelector("#path").value'), path);
+        assert(await evaluate('document.querySelector("#numbers").childElementCount < 30'), "Draw only visible row numbers");
+        assert(await evaluate(`(() => {
+            const gutter = document.querySelector('#gutter').getBoundingClientRect();
+            const number = document.querySelector('#numbers span').getBoundingClientRect();
+            return number.left >= gutter.left && number.right <= gutter.right;
+        })()`), "Row numbers must remain inside the gutter");
+        assert(await evaluate('document.querySelector("#sheet").clientHeight > innerHeight * 0.85'), "Keep the editor dense");
         const changed = source.replace("0.01", "0.02");
         await set("code", changed);
         await click("run");
         await waitFor('!document.querySelector("#stop").disabled');
         await waitFor('parseFloat(document.querySelector("#time").textContent) > 0.05');
+        await waitFor(`document.querySelector('#marks [data-line="${producer}"]')`);
+        assert(await evaluate(`!!document.querySelector('#marks [data-line="${caller}"]')`));
+        const report = await evaluate('reports.at(-1).trace');
+        assert.equal(report.events.length, 3);
+        assert(report.locations.flat().some(frame => frame.file === `${directory}/helper.janet` && frame.line === 3));
+        await set("code", "# new draft\n" + changed);
+        assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
+        assert((await evaluate('document.querySelector("#state").textContent')).includes("tracking sospeso"));
+        await set("code", changed);
+        await waitFor(`document.querySelector('#marks [data-line="${producer}"]')`);
+        await set("path", `${directory}/another.janet`);
+        assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
+        await set("path", path);
+        await waitFor(`document.querySelector('#marks [data-line="${producer}"]')`);
+        // Gutter and marks follow the textarea's scroll without changing its text or selection.
+        await evaluate(`(() => {
+            const code = document.querySelector("#code");
+            code.focus(); code.setSelectionRange(4, 8);
+            code.scrollTop = 60; code.scrollLeft = 100;
+            code.dispatchEvent(new Event("scroll"));
+        })()`);
+        const geometry = await evaluate(`(() => {
+            const code = document.querySelector("#code"), style = getComputedStyle(code);
+            return [document.querySelector('#marks [data-line="${producer}"]').getBoundingClientRect().top,
+                document.querySelector('#numbers [data-line="${producer}"]').getBoundingClientRect().top,
+                code.getBoundingClientRect().top + parseFloat(style.paddingTop) + ${producer - 1} * parseFloat(style.lineHeight) - code.scrollTop];
+        })()`);
+        assert(Math.max(...geometry) - Math.min(...geometry) < 1, "Highlights must stay aligned when scrolling");
+        assert.deepEqual(await evaluate('[document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd]'), [4, 8]);
+        await evaluate('document.querySelector("#code").scrollTop = document.querySelector("#code").scrollLeft = 0');
         assert.equal(await readFile(path, "utf8"), source, "Run must not save the draft");
         await click("views");
         await click("views");
@@ -64,6 +126,7 @@ try {
         await writeFile("build/editor.png", Buffer.from(screenshot.data, "base64"));
         await click("stop");
         await waitFor('document.querySelector("#state").textContent === "Fermo"');
+        assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         await click("save");
         await waitFor('!document.querySelector("#modified").textContent');
         assert.equal(await readFile(path, "utf8"), changed);
@@ -77,12 +140,16 @@ try {
         await set("code", "# draft\nunknown-binding");
         await click("run");
         await waitFor('document.querySelector("#errors").textContent.includes("unknown-binding")');
+        assert.equal(await evaluate('reports.at(-1).trace'), null);
+        assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert((await evaluate('document.querySelector("#errors").textContent')).includes(path));
         assert.equal(await evaluate('document.querySelector("#stop").disabled'), true);
         await set("code", changed);
         await click("run");
         await waitFor('!document.querySelector("#stop").disabled');
         await waitFor('document.querySelector("#state").textContent === "Fermo"');
+        assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
+        assert.equal(await evaluate('statusHasTrace'), false, "Transfer the report only once per run");
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
         await set("path", `${directory}/absent.janet`);
         await click("open");
@@ -103,7 +170,7 @@ try {
     const [code, signal] = await exited;
     assert.equal(signal, null, error);
     assert.equal(code, 0, error);
-    console.log("OK: WebUI editor, Unicode files, unsaved playback, atomic save, diagnostics, recovery, serialized calls and close during audio");
+    console.log("OK: dense WebUI editor, native source tracking, producers/imports, edits, scroll, Unicode files, unsaved playback, atomic save, diagnostics, recovery and close during audio");
 } finally {
     clearTimeout(deadline);
     if (app.exitCode === null && app.signalCode === null) {
