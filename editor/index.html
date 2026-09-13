@@ -16,39 +16,26 @@
 </nav>
 <main>
     <div id="workspace">
-    <div id="sheet">
-        <div id="gutter" aria-hidden="true"><pre id="numbers"></pre></div>
-        <div id="input">
-            <div id="marks" aria-hidden="true"></div>
-            <textarea id="code" aria-label="Janet score" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" disabled></textarea>
+        <div id="sheet">
+            <div id="gutter" aria-hidden="true"><pre id="numbers"></pre></div>
+            <div id="input">
+                <div id="marks" aria-hidden="true"></div>
+                <textarea id="code" aria-label="Janet score" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" disabled></textarea>
+            </div>
         </div>
+        <div id="split" role="separator" aria-label="Timeline height" aria-orientation="horizontal" tabindex="0"></div>
+        <section id="timeline" aria-label="Score projection">
+            <div id="timeline-tools">
+                <label><input id="follow" type="checkbox" checked> Follow</label>
+                <output id="note-info"></output>
+            </div>
+            <div id="roll"><canvas id="notes" tabindex="0" aria-label="Score notes"></canvas><div id="track-headers"><div id="track-list"></div></div><div id="lanes-space" aria-hidden="true"></div></div>
+        </section>
+        <pre id="errors" role="alert" hidden></pre>
     </div>
     <aside id="plugins" aria-label="Plugin UI" hidden>
-        <div id="plugin-tools">
-            <select id="plugin-node" aria-label="Module"></select>
-            <select id="plugin-kind" aria-label="UI type">
-                <option value="auto">Plugin</option>
-                <option value="generic">Parameters</option>
-            </select>
-        </div>
-        <div id="plugin-ui"></div>
+        <div id="plugin-list"></div>
     </aside>
-    </div>
-    <div id="split" role="separator" aria-label="Timeline height" aria-orientation="horizontal" tabindex="0"></div>
-    <section id="timeline" aria-label="Score projection">
-        <div id="timeline-tools">
-            <button id="pan-left" title="Pan left" aria-label="Pan left">‹</button>
-            <input id="view-start" type="number" min="0" step="any" value="0" aria-label="View start in seconds" title="View start in seconds">
-            <span>s</span>
-            <button id="pan-right" title="Pan right" aria-label="Pan right">›</button>
-            <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
-            <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
-            <label><input id="follow" type="checkbox" checked> Follow</label>
-            <output id="note-info"></output>
-        </div>
-        <div id="roll"><canvas id="notes" tabindex="0" aria-label="Score notes"></canvas><div id="lanes-space" aria-hidden="true"></div></div>
-    </section>
-    <pre id="errors" role="alert" hidden></pre>
 </main>
 <footer>
     <span id="state" role="status">Connecting…</span>

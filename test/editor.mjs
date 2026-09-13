@@ -143,7 +143,7 @@ try {
         assert.equal(await evaluate('Number(document.querySelector("#notes").dataset.notes)'), 2, "Stop retains the prepared projection");
         const notePoint = await evaluate(`(() => {
             const canvas = document.querySelector('#notes'), rect = canvas.getBoundingClientRect();
-            const row = Math.max(58, Math.ceil((canvas.clientHeight - 24) / 7));
+            const row = document.querySelector("#track-list button").getBoundingClientRect().height;
             return [rect.left + Math.min(230, Math.round(canvas.clientWidth * 0.3)) + 18,
                 rect.top + 24 + row - 8 - 8.5 * (row - 16) / 13];
         })()`);
@@ -219,17 +219,51 @@ try {
         assert(denseRange.lanes[0].density.length <= 512);
         assert(denseRange.lanes.length <= 8);
         assert(JSON.stringify(denseRange).length < 30000, "Response cost follows the viewport budget");
-        for (let i = 0; i < 3; ++i) await click("zoom-in");
+        for (let i = 0; i < 3; ++i) await evaluate('document.querySelector("#notes").dispatchEvent(new KeyboardEvent("keydown", {key: "+"}))');
         await waitFor('document.querySelector("#notes").dataset.dense === "false" && Number(document.querySelector("#notes").dataset.notes) > 0');
-        await waitFor('Number(document.querySelector("#view-start").value) > 0');
+        await waitFor('Number(document.querySelector("#notes").dataset.from) > 0');
         await click("stop");
         const changeStart = async value => {
-            await set("view-start", value);
-            await evaluate('document.querySelector("#view-start").dispatchEvent(new Event("change"))');
+            await evaluate(`(() => {
+                const canvas = document.querySelector("#notes"), rect = canvas.getBoundingClientRect();
+                canvas.dispatchEvent(new KeyboardEvent("keydown", {key: "Home"}));
+                canvas.dispatchEvent(new WheelEvent("wheel", {bubbles: true, cancelable: true, shiftKey: true,
+                    clientX: rect.left + 300, deltaY: (${value} - Number(canvas.dataset.from)) / Number(canvas.dataset.scale)}));
+            })()`);
         };
+        await changeStart(0);
+        await waitFor('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        assert.equal(await evaluate('document.querySelector("#timeline-tools").querySelectorAll("button,input[type=number]").length'), 0);
+        const beforeZoom = await evaluate('[Number(document.querySelector("#notes").dataset.scale), document.querySelector("#track-list button").clientHeight]');
+        await evaluate(`(() => {
+            const c = document.querySelector("#notes"), r = c.getBoundingClientRect();
+            c.dispatchEvent(new WheelEvent("wheel", {bubbles: true, cancelable: true, ctrlKey: true, deltaY: -100, clientX: r.left + 300, clientY: r.top + 40}));
+        })()`);
+        const afterZoom = await evaluate('[Number(document.querySelector("#notes").dataset.scale), ...Array.from(document.querySelectorAll("#track-list button"), b => b.clientHeight)]');
+        assert.equal(afterZoom[0], beforeZoom[0], "Ctrl+wheel preserves the time scale");
+        assert(afterZoom.slice(1).every(h => h > beforeZoom[1] && h === afterZoom[1]), "Ctrl+wheel expands every track equally");
+        await evaluate(`(() => {
+            const c = document.querySelector("#notes"), r = c.getBoundingClientRect();
+            c.dispatchEvent(new WheelEvent("wheel", {bubbles: true, cancelable: true, deltaY: -30, clientX: r.left + 250, clientY: r.top + 40}));
+        })()`);
+        assert(await evaluate(`Number(document.querySelector("#notes").dataset.scale) < ${beforeZoom[0]}`), "Plain wheel zooms in time");
+        assert.equal(await evaluate('document.querySelector("#track-list button").clientHeight'), afterZoom[1]);
+        await changeStart(0);
+        await waitFor('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        await evaluate('window.holdRange = true; window.rangeHeld = false');
+        const dragPoint = await evaluate('(() => { const r = document.querySelector("#notes").getBoundingClientRect(); return {x:r.left+330,y:r.top+60}; })()');
+        await call("Input.dispatchMouseEvent", {type: "mousePressed", ...dragPoint, button: "left", clickCount: 1});
+        await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - 10, y: dragPoint.y, buttons: 1});
+        await waitFor('window.rangeHeld');
+        assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'), "Dragging retains notes while a range reply is pending");
+        await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - 20, y: dragPoint.y, buttons: 1});
+        assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'), "Repeated movement must not blank the cached window");
+        await call("Input.dispatchMouseEvent", {type: "mouseReleased", x: dragPoint.x - 20, y: dragPoint.y, button: "left", clickCount: 1});
+        await evaluate('window.holdRange = false');
+        await waitFor('ranges.at(-1).from === Number(document.querySelector("#notes").dataset.from)');
         const canvasSize = await evaluate('[document.querySelector("#notes").width, document.querySelector("#notes").height]');
         await changeStart(1e9);
-        await waitFor('ranges.at(-1).from === 1e9 && document.querySelector("#notes").dataset.notes === "0"');
+        await waitFor('Math.abs(ranges.at(-1).from - 1e9) < 0.00001 && document.querySelector("#notes").dataset.notes === "0"');
         assert.deepEqual(await evaluate('[document.querySelector("#notes").width, document.querySelector("#notes").height]'), canvasSize, "Large times must not allocate a song-sized canvas");
         await evaluate('window.holdRange = true; window.rangeHeld = false');
         await changeStart(100);
@@ -242,6 +276,14 @@ try {
         assert.equal(await evaluate('document.querySelector("#notes").dataset.notes'), "0");
         await evaluate('document.querySelector("#roll").scrollTop = 0');
         await waitFor('ranges.at(-1).first === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        const timeView = await evaluate('[document.querySelector("#notes").dataset.from, document.querySelector("#notes").dataset.scale, document.querySelector("#follow").checked]');
+        const trackPoint = await evaluate('(() => { const r = document.querySelector("#track-headers").getBoundingClientRect(); return {x:r.left+30, y:r.top+20}; })()');
+        await call("Input.dispatchMouseEvent", {type: "mouseWheel", ...trackPoint, deltaX: 0, deltaY: 100});
+        await waitFor('document.querySelector("#roll").scrollTop > 0 && ranges.at(-1).first > 0');
+        assert.deepEqual(await evaluate('[document.querySelector("#notes").dataset.from, document.querySelector("#notes").dataset.scale, document.querySelector("#follow").checked]'), timeView,
+            "Wheel over track names scrolls vertically without changing time zoom or Follow");
+        await call("Input.dispatchMouseEvent", {type: "mouseWheel", ...trackPoint, deltaX: 0, deltaY: -100});
+        await waitFor('document.querySelector("#roll").scrollTop === 0 && ranges.at(-1).first === 0');
         const rpc = async args => {
             for (let i = 0; i < 30; ++i) {
                 const result = await evaluate(`webui.call("command", ...${JSON.stringify(args)}).then(JSON.parse)`);

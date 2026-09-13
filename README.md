@@ -72,9 +72,12 @@ Scores are UTF-8 text without NUL bytes, up to 8 MiB.
 Active event origins light up automatically, including note generators inside
 functions. Editing suspends tracking until the buffer matches the running score
 or is rerun. The timeline shows tracks, effect chains and MIDI notes from the last
-successful run; it remains after Stop or a failed preparation. Pan, zoom and
-**Follow** operate on a bounded window, with density replacing individual notes
-when needed. Clicking a note selects its source when available. Timing follows
+successful run; it remains after Stop or a failed preparation. Drag or Shift+wheel
+to pan, wheel to zoom in time, and Ctrl/Command+wheel to resize all tracks together.
+**Follow** keeps playback in view; wheel over track names or use the scrollbar to
+move vertically between tracks. Cached notes
+remain visible during navigation, with density replacing individual notes when
+needed. Clicking a note selects its source when available. Timing follows
 rendered audio, without compensating for device latency or plugin release tails.
 
 The editor uses a textarea and plain JavaScript. It does not yet provide syntax
@@ -223,9 +226,13 @@ Janet reads the JSON and passes numeric configuration to C. The DSP loader uses
 ABI v2. No internal `parameters.h`, C metadata tables or per-plugin Janet wrapper
 is needed. Native UIs use the separate ABI v1 in `perone_ui.h`.
 
-The editor's **GUI** panel shows one module at a time. **Plugin** loads its web UI
-or falls back to generated controls; **Parameters** always uses generated controls.
-On Linux/X11, **Native** opens the original plugin window from its `*-ui.so`.
+Click a timeline track header to open its instrument and effects in the **GUI**
+panel, alongside both the editor and timeline. Each plugin has a collapsible
+section with its web UI or generated controls;
+expanded sections update together. The **≡** button switches to generated controls.
+On Linux/X11, **↗** toggles the original native window when a `*-ui.so` is present.
+Native windows remain open across track selection and panel hiding. Opening a
+native window collapses that plugin's inline UI; expanding it closes the window.
 `make gui` runs `examples/gui.janet` with the original Tibia and A-SID windows;
 `build/daw-ui` accepts other scores. All DSP and UI binaries must be built separately.
 
@@ -252,8 +259,9 @@ Messages have 64 queue slots per direction and a maximum payload of 4096 bytes,
 subject to smaller product limits. One view per node consumes output messages;
 duplicated mono effects report from the left instance.
 
-Switching views, hiding the panel or stopping releases the UI and invalidates its
-callbacks. Asynchronous creation queues gestures until attachment; a view arriving
+Collapsing a section or changing tracks releases its inline UI and invalidates
+its callbacks. Stop releases every inline and native UI. Asynchronous creation
+queues gestures until attachment; a view arriving
 after Stop is freed. Invalid callbacks or communication errors detach the web view.
 A new attachment clears old notifications and overflow while preserving accepted
 input changes. Native and web UI lifecycle tests are described in the [test guide](test/README.md).

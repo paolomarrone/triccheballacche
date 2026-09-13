@@ -28,6 +28,7 @@ try {
     await writeFile(entry, `(def s (daw/plugin "${directory}/synth.perone" {:gain 0.01}))
 (def f (daw/plugin "${directory}/effect.perone" {:gain 0.4}))
 (daw/track s {:effects [f]})
+(daw/track (daw/plugin "${directory}/synth.perone" {:gain 0.01}))
 (daw/param f 1.5 :gain 0.2)
 (daw/end 40)
 `);
@@ -66,21 +67,46 @@ try {
                 await call("Input.dispatchMouseEvent", {type: "mousePressed", x, y, button: "left", clickCount: 1});
                 await call("Input.dispatchMouseEvent", {type: "mouseReleased", x, y, button: "left", clickCount: 1});
             };
-            const select = async (id, value) => evaluate(`(() => {
-                const element = document.getElementById('${id}'); element.value = '${value}'; element.dispatchEvent(new Event('change'));
-            })()`);
-            const root = 'document.querySelector("#plugin-ui > div")?.shadowRoot';
+            const openEffect = async () => evaluate(`document.querySelector('.plugin[data-node="1"]').open = true`);
+            const toggleParameters = async () => evaluate(`document.querySelector('.plugin[data-node="1"] button[aria-label="Toggle parameter controls"]').click()`);
+            const root = `document.querySelector('.plugin[data-node="1"] .plugin-body > div')?.shadowRoot`;
+            const synthRoot = `document.querySelector('.plugin[data-node="0"] .plugin-body > div')?.shadowRoot`;
             const fixture = `${root}?.querySelector(".fixture-ui")`;
             await call("Page.navigate", {url});
             await call("Emulation.setDeviceMetricsOverride", {width: 1100, height: 760, deviceScaleFactor: 1, mobile: false});
             await wait('document.querySelector("#run")?.disabled === false');
             await click("views");
             await click("run");
-            await wait(`${root}?.querySelectorAll(".perone-controls label").length === 3`);
-            await select("plugin-node", 1);
+            await wait(`${synthRoot}?.querySelectorAll(".perone-controls label").length === 3`);
+            const geometry = () => evaluate(`(() => {
+                const sheet = document.querySelector("#sheet").getBoundingClientRect();
+                const timeline = document.querySelector("#timeline").getBoundingClientRect();
+                const plugins = document.querySelector("#plugins").getBoundingClientRect();
+                return {top: plugins.top - sheet.top, bottom: plugins.bottom - timeline.bottom,
+                    gap: plugins.left - timeline.right, sidebar: plugins.height, timeline: timeline.height};
+            })()`);
+            const beforeResize = await geometry();
+            assert(Math.abs(beforeResize.top) < 1 && Math.abs(beforeResize.bottom) < 1 && beforeResize.gap >= 0,
+                "The plugin sidebar spans the editor and timeline without overlapping either");
+            await evaluate('document.querySelector("#split").dispatchEvent(new KeyboardEvent("keydown", {key: "ArrowUp"}))');
+            await wait(`document.querySelector("#timeline").clientHeight > ${beforeResize.timeline}`);
+            const afterResize = await geometry();
+            assert.equal(afterResize.sidebar, beforeResize.sidebar, "Resizing the timeline preserves the full-height sidebar");
+            assert.equal(await evaluate('document.querySelectorAll("#plugin-node,#plugin-kind").length'), 0);
+            assert.equal(await evaluate(`document.querySelectorAll('button[aria-label="Toggle native UI"]').length`), 0);
+            assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 2);
+            await openEffect();
             await wait(`${fixture}?.dataset.helper === "7"`);
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .2) < .0001`);
             assert.equal(await evaluate(`getComputedStyle(${fixture}).display`), "grid");
+            assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 2, "Expanded plugins stay attached together");
+            await evaluate(`(() => {
+                const gain = ${synthRoot}.querySelectorAll("input")[0]; gain.value = .03;
+                gain.dispatchEvent(new Event("input")); gain.dispatchEvent(new Event("change"));
+            })()`);
+            await wait(`${synthRoot}.querySelectorAll("output")[1].textContent.startsWith("0.03")`);
+            assert(Math.abs(await evaluate(`Number(${fixture}.dataset.gain)`) - .2) < .0001);
+
             await evaluate(`${root}.querySelector('#set-gain').click()`);
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .3) < .0001`);
             await wait(`Math.abs(Number(${fixture}.dataset.meter) - .3) < .0001`);
@@ -93,10 +119,10 @@ try {
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .3) < .0001`);
             await evaluate(`${root}.querySelector('#send-message').click()`);
             await wait(`${root}.querySelector('output').textContent === "0,127,255"`);
-            await select("plugin-kind", "generic");
+            await toggleParameters();
             await wait(`${root}?.querySelectorAll(".perone-controls label").length === 3`);
             assert.equal(await evaluate("fixtureFreed"), 1);
-            await select("plugin-kind", "auto");
+            await toggleParameters();
             await wait(`${fixture}?.dataset.helper === "7"`);
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .3) < .0001`);
             await evaluate("fixtureCallbacks[0].set_parameter(1, .9); fixtureCallbacks[0].msg_write(new Uint8Array([42]))");
@@ -104,23 +130,23 @@ try {
             assert(Math.abs(await evaluate(`Number(${fixture}.dataset.gain)`) - .3) < .0001, "Freed callbacks must not edit the DSP");
             await writeFile(`build/editor-ui-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
             await click("stop");
-            await wait('document.querySelector("#plugin-ui").childElementCount === 0');
+            await wait('document.querySelectorAll(".plugin-body > div").length === 0');
             assert.equal(await evaluate("fixtureFreed"), 2);
             await click("run");
-            await wait(`${root}?.querySelector(".perone-controls")`);
-            await select("plugin-node", 1);
+            await wait(`${synthRoot}?.querySelector(".perone-controls")`);
+            await openEffect();
             await wait(`${fixture}?.dataset.helper === "7"`);
             await click("views");
-            await wait('document.querySelector("#plugin-ui").childElementCount === 0');
+            await wait('document.querySelectorAll(".plugin-body > div").length === 0');
             assert.equal(await evaluate("fixtureFreed"), 3);
             await click("views");
             await wait(`${fixture}?.dataset.helper === "7"`);
             // Creation-time gestures and replies survive an asynchronous factory spanning several polls.
             await wait('parseFloat(document.querySelector("#time").textContent) > 2');
-            await select("plugin-kind", "generic");
-            await wait(`${root}?.querySelector(".perone-controls")`);
+            await toggleParameters();
+            await wait(`${synthRoot}?.querySelector(".perone-controls")`);
             await evaluate("fixtureWait = true; fixtureResume = undefined");
-            await select("plugin-kind", "auto");
+            await toggleParameters();
             await wait('typeof fixtureResume === "function"');
             await new Promise(resolve => setTimeout(resolve, 400));
             await evaluate("fixtureWait = false; fixtureResume()");
@@ -128,27 +154,42 @@ try {
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .45) < .0001`);
             // Bad callbacks detach the view; audio continues and a new view can attach cleanly.
             await evaluate("fixtureCallbacks.at(-1).set_parameter(0, .9)");
-            await wait('document.querySelector("#plugin-ui").childElementCount === 0');
+            await wait(`${root} === undefined`);
+            assert(await evaluate(`${synthRoot}?.querySelector(".perone-controls")`));
             assert.match(await evaluate('document.querySelector("#errors").textContent'), /Invalid UI parameter/);
             assert.equal(await evaluate('document.querySelector("#stop").disabled'), false);
-            await select("plugin-kind", "generic");
+            await toggleParameters();
             await wait(`${root}?.querySelector(".perone-controls")`);
-            await select("plugin-kind", "auto");
+            await toggleParameters();
             await wait(`${fixture}?.dataset.helper === "7"`);
+            // Track headers select their actual chain and open the panel; other chains have no mounted views.
+            await click("views");
+            await evaluate(`document.querySelector('#track-list [data-track="1"]').click()`);
+            await wait('!document.querySelector("#plugins").hidden && document.querySelector("#views").checked');
+            assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 1);
+            await wait(`document.querySelector('.plugin[data-node="3"] .plugin-body > div')?.shadowRoot?.querySelector(".perone-controls")`);
+            await evaluate(`document.querySelector('#track-list [data-track="0"]').click()`);
+            await wait(`${synthRoot}?.querySelector(".perone-controls")`);
+            assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 2);
+            await openEffect();
+            await wait(`${fixture}?.dataset.helper === "7"`);
+            await evaluate(`document.querySelector('.plugin[data-node="0"]').open = false`);
+            await wait(`${synthRoot} === undefined`);
+            assert(await evaluate(`${root}?.querySelector(".fixture-ui")`), "Collapsing one plugin preserves the other");
             await click("stop");
             await wait('document.querySelector("#stop").disabled');
             // An asynchronous factory can complete after Stop; its returned UI must still be freed.
             const freed = await evaluate("fixtureFreed");
             await click("run");
-            await wait(`${root}?.querySelector(".perone-controls")`);
+            await wait(`${synthRoot}?.querySelector(".perone-controls")`);
             await evaluate("fixtureWait = true; fixtureResume = undefined");
-            await select("plugin-node", 1);
+            await openEffect();
             await wait('typeof fixtureResume === "function"');
             await click("stop");
             await wait('document.querySelector("#stop").disabled');
             await evaluate("fixtureWait = false; fixtureResume()");
             await wait(`fixtureFreed === ${freed + 1}`);
-            assert.equal(await evaluate('document.querySelector("#plugin-ui").childElementCount'), 0);
+            assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 0);
             assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
             assert.deepEqual(diagnostics, []);
             await call("Page.navigate", {url: "about:blank"});

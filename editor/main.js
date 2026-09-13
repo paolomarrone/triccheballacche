@@ -79,6 +79,7 @@ function request(op, ...args) {
             byId("time").textContent = `${seconds.toFixed(2)} s`;
         }
         if (op === "status") {
+            if (response.nativeOpen) controls?.windows(response.nativeOpen);
             frames = response.revision === revision ? response.frames || [] : [];
             partial = response.truncated;
         }
@@ -110,7 +111,7 @@ async function action(op) {
             projection.score(result.score);
             tracedSource = code.value;
             tracedPath = result.path;
-            await controls.score(result.score);
+            controls.score(result.score, result.nativeAvailable);
         }
         if (op === "open") code.value = result.text;
         if (op === "open" || op === "save") {
@@ -134,11 +135,11 @@ const projection = timeline(request, origins => {
     code.focus(); code.setSelectionRange(offset, offset + (rows[line]?.length || 0));
     code.scrollTop = Math.max(0, line * parseFloat(getComputedStyle(code).lineHeight) - code.clientHeight / 2);
     update();
-}, showError);
+}, index => { views.checked = true; controls?.track(index); }, showError);
 new ResizeObserver(paint).observe(code);
 
 for (const op of ["open", "save", "run", "stop"]) byId(op).addEventListener("click", () => action(op));
-views.addEventListener("change", () => controls?.show(views.checked).catch(showError));
+views.addEventListener("change", () => controls?.show(views.checked));
 for (const event of ["input", "click", "keyup", "select"]) code.addEventListener(event, update);
 code.addEventListener("scroll", paint);
 window.addEventListener("resize", paint);

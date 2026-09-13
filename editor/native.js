@@ -1,4 +1,4 @@
-export const nativeViews = true, saveLabel = "Save", saveTitle = "Save · Ctrl+S";
+export const saveLabel = "Save", saveTitle = "Save · Ctrl+S";
 
 export async function connect() {
     // The bridge creates its socket at DOMContentLoaded; readiness is separate from script loading.

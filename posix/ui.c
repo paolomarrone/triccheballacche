@@ -84,6 +84,19 @@ static Janet configure(int32_t argc, Janet *argv) {
 	return janet_wrap_nil();
 }
 
+int ui_available(const Node *node) {
+	const char *suffix = node->path ? strrchr(node->path, '.') : NULL;
+	if (!suffix || strchr(suffix, '/'))
+		return 0;
+	char *path = malloc(strlen(node->path) + 4);
+	if (!path)
+		return 0;
+	sprintf(path, "%.*s-ui%s", (int)(suffix - node->path), node->path, suffix);
+	int available = !access(path, R_OK);
+	free(path);
+	return available;
+}
+
 int ui_open(UI **out, Node *node) {
 	*out = NULL;
 	if (!node->path)

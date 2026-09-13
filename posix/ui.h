@@ -4,6 +4,8 @@
 
 typedef struct UI UI;
 
+// Check for the platform's UI library without loading it or creating a window.
+int ui_available(const Node *node);
 // Create hidden on the UI thread. A bundle without a native UI succeeds with *ui == NULL.
 int ui_open(UI **ui, Node *node);
 // Show/hide on the UI thread; hiding keeps the instance and its control exchange alive.

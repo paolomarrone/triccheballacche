@@ -145,6 +145,18 @@ static void reply(
 	json_string(&json, text);
 	json_print(&json, ",\"path\":");
 	json_string(&json, path);
+	json_print(&json, ",\"nativeOpen\":[");
+	for (int i = 0, count = 0; i < editor->session.nnodes; ++i)
+		if (editor->controls.native[i])
+			json_print(&json, "%s%d", count++ ? "," : "", i);
+	json_print(&json, "]");
+	if (score) {
+		json_print(&json, ",\"nativeAvailable\":[");
+		for (int i = 0, count = 0; i < editor->session.nnodes; ++i)
+			if (ui_available(editor->session.nodes + i))
+				json_print(&json, "%s%d", count++ ? "," : "", i);
+		json_print(&json, "]");
+	}
 	json_print(&json,
 	    ",\"playing\":%s,\"time\":%.17g,\"revision\":%u,\"view\":%s,\"error\":", editor->player ? "true" : "false",
 	    time, editor->revision, view ? view : "null");
@@ -220,10 +232,7 @@ static void poll_player(Editor *editor) {
 		return;
 	const char *error = NULL;
 
-	int ui_status = ui_poll(editor->controls.native);
-	if (ui_status == 1)
-		ui_show(editor->controls.native, 0);
-	if (ui_status < 0)
+	if (controls_poll(&editor->controls, &editor->session) < 0)
 		error = "Plugin UI control error";
 	int status = player_status(editor->player);
 	if (status < 0)
@@ -243,7 +252,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Usage: %s [--serve] [score.janet]\n", argv[0]);
 		return 1;
 	}
-	Editor editor = {.controls = {.node = -1}, .entry = argc > arg ? argv[arg] : "examples/gui.janet"};
+	Editor editor = {.entry = argc > arg ? argv[arg] : "examples/gui.janet"};
 	size_t window = webui_new_window();
 	webui_set_timeout(0);
 	webui_set_public(window, false);

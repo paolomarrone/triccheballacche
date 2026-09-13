@@ -1,11 +1,11 @@
 import {createPlayerHost, preparePlayer, closePlayer} from "./player.js";
 import {addFile} from "./host.js";
 
-export const nativeViews = false, saveLabel = "Download", saveTitle = "Download a copy of the score · Ctrl+S";
+export const saveLabel = "Download", saveTitle = "Download a copy of the score · Ctrl+S";
 const options = new URLSearchParams(location.search);
 const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();
-let host, player, view = 0, revision = 0, time = 0, watched = -1, failure = "", log = [];
+let host, player, view = 0, revision = 0, time = 0, failure = "", log = [];
 
 export async function connect() {
     if (!crossOriginIsolated) throw Error("COOP/COEP headers required: run node test/server.mjs.");
@@ -44,7 +44,6 @@ async function stop() {
     if (player) time = player.time;
     // Clear the JS player even on failure; closePlayer retains its host lock and permits cleanup retries.
     player = undefined;
-    watched = -1;
     await closePlayer(host);
 }
 
@@ -87,14 +86,9 @@ export async function command(op, ...args) {
             const [version, node, ...values] = args;
             if (!player || version !== revision) throw Error("Stale plugin view");
             if (op === "watch") {
-                if (watched >= 0) await player.control("watch", watched, false);
-                watched = -1;
-                if (node >= 0) {
-                    await player.control("watch", node, true);
-                    watched = node;
-                }
+                if (!["off", "web"].includes(values[0])) throw Error("Invalid view type");
+                await player.control("watch", node, values[0] === "web");
             } else {
-                if (node !== watched) throw Error("Plugin view not attached");
                 result = await player.control(op, node, ...values);
             }
         } else if (op === "range" || op === "note") result = query(op, args);

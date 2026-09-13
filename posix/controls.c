@@ -5,12 +5,28 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void detach(Controls *c, Session *s, int id) {
+	ui_close(c->native[id]);
+	c->native[id] = NULL;
+	if (c->watched[id])
+		watch_dsp(s->nodes[id].dsp[0].dsp, 0);
+	c->watched[id] = 0;
+}
+
 void controls_close(Controls *c, Session *s) {
-	ui_close(c->native);
-	c->native = NULL;
-	if (c->node >= 0 && c->node < s->nnodes)
-		watch_dsp(s->nodes[c->node].dsp[0].dsp, 0);
-	c->node = -1;
+	for (int i = 0; i < s->nnodes; ++i)
+		detach(c, s, i);
+}
+
+int controls_poll(Controls *c, Session *s) {
+	int error = 0;
+	for (int i = 0; i < s->nnodes; ++i) {
+		int status = ui_poll(c->native[i]);
+		if (status)
+			detach(c, s, i);
+		error |= status < 0;
+	}
+	return error ? -1 : 0;
 }
 
 static double number(webui_event_t *event, size_t index) {
@@ -33,10 +49,6 @@ void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned r
 		error = "Stale plugin view";
 		goto done;
 	}
-	if (!strcmp(op, "watch") && id == -1) {
-		controls_close(c, s);
-		goto done;
-	}
 	if (!isfinite(id) || id < 0 || id >= s->nnodes || id != floor(id) || !s->nodes[(int)id].path) {
 		error = "Invalid module";
 		goto done;
@@ -44,18 +56,25 @@ void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned r
 	Node *node = s->nodes + (int)id;
 	DSP *dsp = node->dsp[0].dsp;
 	const PluginConfig *config = &node->dsp[0].config;
+	int n = id;
 	if (!strcmp(op, "watch")) {
-		controls_close(c, s);
-		c->node = id;
-		if (webui_get_bool_at(event, 3)) {
-			if (ui_open(&c->native, node) || !c->native) {
-				controls_close(c, s);
+		const char *mode = webui_get_string_at(event, 3);
+		if (strcmp(mode, "off") && strcmp(mode, "web") && strcmp(mode, "native")) {
+			error = "Invalid view type";
+			goto done;
+		}
+		detach(c, s, n);
+		if (!strcmp(mode, "native")) {
+			if (ui_open(&c->native[n], node) || !c->native[n]) {
+				detach(c, s, n);
 				error = "Native UI unavailable";
 			} else
-				ui_show(c->native, 1);
-		} else
+				ui_show(c->native[n], 1);
+		} else if (!strcmp(mode, "web")) {
 			watch_dsp(dsp, 1);
-	} else if (c->node != id || c->native) {
+			c->watched[n] = 1;
+		}
+	} else if (!c->watched[n]) {
 		error = "Web view not attached";
 	} else if (!strcmp(op, "parameter")) {
 		double index = number(event, 3), value = number(event, 4);

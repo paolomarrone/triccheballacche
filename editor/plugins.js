@@ -1,43 +1,111 @@
 import {create as generic} from "./perone-ui.js";
 
-// One mounted view, independent of the audio backend. The product and indices remain Perone's.
+// Each expanded section owns one view; native windows live until explicitly closed or playback stops.
 export function plugins(request, adapter, fail) {
-    const panel = document.getElementById("plugins"), select = document.getElementById("plugin-node");
-    const kind = document.getElementById("plugin-kind"), container = document.getElementById("plugin-ui");
-    let score, running = false, visible = false, current, generation = 0;
-    if (adapter.nativeViews) kind.add(new Option("Native", "native"));
+    const panel = document.getElementById("plugins"), list = document.getElementById("plugin-list");
+    const entries = new Map();
+    let score, running = false, busy = false, visible = false, track = 0;
+    let available = new Set(), native = new Set();
 
-    function dispose() {
-        ++generation;
-        const old = current;
-        current = undefined; // Ignore callbacks emitted by free(), including gesture ends.
+    function detach(entry) {
+        const old = entry.token;
+        entry.token = undefined; // Ignore callbacks from free() and factories that finish after disposal.
         try { old?.ui?.free(); }
         catch (error) { fail(error); }
-        container.replaceChildren();
+        entry.body.replaceChildren();
+        if (old && running) request("watch", old.revision, entry.id, "off").catch(() => {});
     }
 
-    function failed(token, error) {
-        if (current !== token) return;
-        dispose();
+    function dispose() {
+        for (const entry of entries.values()) detach(entry);
+    }
+
+    function show(value) {
+        visible = value; panel.hidden = !visible;
+        if (!visible) dispose();
+        else for (const entry of entries.values()) if (!entry.token) mount(entry).catch(fail);
+    }
+
+    function failed(entry, token, error) {
+        if (entry.token !== token) return;
+        detach(entry);
         fail(error);
-        // Teardown may race Stop; its reply must not hide the original failure.
-        request("watch", token.revision, -1).catch(() => {});
     }
 
-    async function mount() {
+    function buttons(entry) {
+        for (const button of entry.details.querySelectorAll("summary button")) button.disabled = !running || busy || entry.pending;
+        entry.window?.setAttribute("aria-pressed", native.has(entry.id));
+        if (entry.window) entry.window.title = native.has(entry.id) ? "Close native UI" : "Open native UI";
+        entry.parameters?.setAttribute("aria-pressed", entry.generic);
+        if (entry.parameters) entry.parameters.title = entry.generic ? "Show plugin UI" : "Show parameters";
+    }
+
+    async function windowView(entry) {
+        if (!running || busy || entry.pending) return;
+        entry.pending = true;
+        const opening = !native.has(entry.id), revision = score.revision;
+        entry.details.open = false;
+        detach(entry);
+        buttons(entry);
+        try {
+            await request("watch", revision, entry.id, opening ? "native" : "off");
+            if (score.revision === revision) opening ? native.add(entry.id) : native.delete(entry.id);
+        } catch (error) { fail(error); }
+        finally { entry.pending = false; buttons(entry); }
+    }
+
+    function render() {
         dispose();
-        fail("");
+        entries.clear();
+        list.replaceChildren();
         panel.hidden = !visible;
-        if (!running || !score) return;
-        const serial = generation;
-        await request("watch", score.revision, -1);
-        if (serial !== generation || !visible || !select.options.length) return;
-        const id = Number(select.value), node = score.nodes[id], native = kind.value === "native";
-        const token = current = {id, revision: score.revision, ready: false};
-        if (native) {
-            try { await request("watch", token.revision, id, true); }
-            catch (error) { failed(token, error); }
-            return;
+        if (!score) return;
+        const chain = score.tracks[track];
+        if (!chain) return;
+        const ids = [chain[0], ...chain.slice(2)].filter(id => id >= 0 && score.nodes[id].product);
+        for (const id of ids) {
+            const details = document.createElement("details"), summary = document.createElement("summary");
+            const name = document.createElement("span"), body = document.createElement("div");
+            const entry = {id, details, body, generic: false};
+            entries.set(id, entry);
+            details.className = "plugin"; details.dataset.node = id;
+            name.className = "plugin-name"; name.textContent = name.title = score.nodes[id].name;
+            body.className = "plugin-body";
+            summary.onclick = event => { if (entry.pending || busy) event.preventDefault(); };
+            summary.append(name); details.append(summary, body); list.append(details);
+            const button = (text, title, action) => {
+                const control = document.createElement("button");
+                control.textContent = text; control.setAttribute("aria-label", title);
+                control.onclick = event => { event.preventDefault(); event.stopPropagation(); action(); };
+                summary.append(control);
+                return control;
+            };
+            if (score.nodes[id].product.ui?.web) entry.parameters = button("≡", "Toggle parameter controls", () => {
+                entry.generic = !entry.generic;
+                detach(entry); entry.details.open = true;
+                mount(entry).catch(fail); buttons(entry);
+            });
+            if (available.has(id)) entry.window = button("↗", "Toggle native UI", () => windowView(entry));
+            details.open = id === ids[0] && !native.has(id);
+            details.ontoggle = () => {
+                if (!details.open) detach(entry);
+                else if (!entry.token) mount(entry).catch(fail);
+            };
+            buttons(entry);
+            if (details.open) mount(entry).catch(fail);
+        }
+    }
+
+    async function mount(entry) {
+        if (entries.get(entry.id) !== entry || !running || busy || !visible || !entry.details.open || entry.pending) return;
+        detach(entry);
+        fail("");
+        const id = entry.id, node = score.nodes[id];
+        const token = entry.token = {revision: score.revision, ready: false};
+        if (native.has(id)) {
+            await request("watch", token.revision, id, "off");
+            native.delete(id); buttons(entry);
+            if (entry.token !== token) return;
         }
         const host = document.createElement("div"), shadow = host.attachShadow({mode: "open"});
         const style = document.createElement("style");
@@ -49,38 +117,38 @@ export function plugins(request, adapter, fail) {
             button, input, select { font: inherit; }`;
         const element = document.createElement("div");
         shadow.append(style, element);
-        container.append(host);
+        entry.body.append(host);
         const edits = new Map(), messages = [];
         let sending = false;
         async function flush() {
             sending = true;
             try {
-                while (current === token && (edits.size || messages.length)) {
+                while (entry.token === token && (edits.size || messages.length)) {
                     for (const index of [...edits.keys()]) {
-                        if (current !== token) return;
+                        if (entry.token !== token) return;
                         const value = edits.get(index);
                         edits.delete(index);
                         // One request in flight leaves room for status and DSP feedback between edits.
                         await request("parameter", token.revision, id, index, value);
                     }
-                    if (current === token && messages.length)
+                    if (entry.token === token && messages.length)
                         await request("message", token.revision, id, messages.shift());
                 }
-            } catch (error) { failed(token, error); }
+            } catch (error) { failed(entry, token, error); }
             finally { sending = false; }
         }
         const send = (op, ...args) => {
-            if (current !== token) return;
+            if (entry.token !== token) return;
             if (op === "parameter") edits.set(args[0], args[1]);
             else if (messages.length < 64) messages.push(args[0]);
-            else { failed(token, Error("UI message queue full")); return; }
+            else { failed(entry, token, Error("UI message queue full")); return; }
             if (token.ready && !sending) flush();
         };
         const parameter = (index, value) => {
-            if (current !== token) return;
+            if (entry.token !== token) return;
             const p = node.product.parameters[index];
             if (!Number.isInteger(index) || !p || p.direction !== "input" || !Number.isFinite(value)) {
-                failed(token, Error("Invalid UI parameter")); return;
+                failed(entry, token, Error("Invalid UI parameter")); return;
             }
             const low = p.isBypass ? 0 : p.minimum, high = p.isBypass ? 1 : p.maximum;
             const integer = p.integer || p.toggled || p.isBypass;
@@ -90,62 +158,74 @@ export function plugins(request, adapter, fail) {
         const callbacks = {product: node.product, set_parameter_begin: parameter,
             set_parameter: parameter, set_parameter_end: parameter,
             msg_write(bytes) {
-                if (current !== token) return;
+                if (entry.token !== token) return;
                 const limit = node.product.messaging?.uiToDspSize;
                 if (!(bytes instanceof Uint8Array) || !limit || bytes.length > limit) {
-                    failed(token, Error("Invalid UI message")); return;
+                    failed(entry, token, Error("Invalid UI message")); return;
                 }
                 send("message", Array.from(bytes));
             }};
         try {
-            const create = kind.value !== "generic" && node.product.ui?.web ?
+            const create = !entry.generic && node.product.ui?.web ?
                 (await import(adapter.uiUrl(node, token.revision, id))).create : generic;
-            if (current !== token) return;
+            if (entry.token !== token) return;
             const ui = await create(element, callbacks);
             if (!ui || typeof ui.free !== "function") throw Error("Perone UI must return free()");
-            if (current !== token) { ui.free(); return; }
+            if (entry.token !== token) { ui.free(); return; }
             token.ui = ui;
             // No DSP stream until the factory is ready to receive it. Creation-time gestures stay queued.
-            await request("watch", token.revision, id, false);
-            if (current !== token) return;
+            await request("watch", token.revision, id, "web");
+            if (entry.token !== token) return;
             token.ready = true;
             if (edits.size || messages.length) flush();
             // The first poll supplies current values, including initial host overrides.
-            await poll();
-        } catch (error) { failed(token, error); }
+            await pollEntry(entry);
+        } catch (error) { failed(entry, token, error); }
     }
 
-    async function poll() {
-        const token = current;
+    async function pollEntry(entry) {
+        const token = entry.token;
         if (!token?.ready) return;
         try {
-            const data = await request("controls", token.revision, token.id);
-            if (current !== token) return;
+            const data = await request("controls", token.revision, entry.id);
+            if (entry.token !== token) return;
             for (const [index, value] of data.values.entries()) {
-                if (current !== token) return;
+                if (entry.token !== token) return;
                 if (Number.isFinite(value)) token.ui.set_parameter?.(index, value);
             }
             for (const bytes of data.messages) {
-                if (current !== token) return;
+                if (entry.token !== token) return;
                 token.ui.msg_in?.(new Uint8Array(bytes));
             }
-        } catch (error) { failed(token, error); }
+        } catch (error) { failed(entry, token, error); }
     }
 
-    for (const input of [select, kind]) input.addEventListener("change", () => mount().catch(fail));
     return {
-        async score(next) {
+        score(next, nativeAvailable = []) {
             score = next;
-            select.replaceChildren(...next.nodes.flatMap((node, id) => node.product ? [new Option(`${id} · ${node.name}`, id)] : []));
-            await mount();
+            available = new Set(nativeAvailable); native.clear();
+            track = Math.min(track, Math.max(0, next.tracks.length - 1));
+            render();
         },
-        async show(value) { visible = value; await mount(); },
-        status(value, busy) {
-            running = value;
-            select.disabled = kind.disabled = !running || busy;
-            if (!running && current) dispose();
+        track(index) {
+            if (index === track) show(true);
+            else { track = index; visible = true; render(); }
+        },
+        show,
+        windows(ids) {
+            native = new Set(ids);
+            for (const entry of entries.values()) buttons(entry);
+        },
+        status(value, pending) {
+            const resumed = busy && !pending;
+            running = value; busy = pending;
+            if (!running) { dispose(); native.clear(); }
+            for (const entry of entries.values()) {
+                buttons(entry);
+                if (running && resumed && !entry.token) mount(entry).catch(fail);
+            }
         },
         dispose,
-        poll
+        async poll() { for (const entry of [...entries.values()]) await pollEntry(entry); }
     };
 }

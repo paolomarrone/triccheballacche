@@ -9,7 +9,7 @@ input[type=text], button { font: inherit; padding: 3px 7px; }
 nav label { display: flex; align-items: center; white-space: nowrap; }
 button { cursor: pointer; }
 button:disabled { cursor: default; }
-main { display: flex; flex-direction: column; gap: 5px; flex: 1; min-height: 0; }
+main { display: flex; gap: 5px; flex: 1; min-height: 0; }
 #sheet { --row: 20px; --inset: 8px; display: flex; flex: 1; min-height: 0; border: 1px solid var(--border); font: 14px/var(--row) monospace; }
 #gutter { position: relative; flex: 0 0 3.5em; overflow: hidden; color: var(--muted); border-right: 1px solid var(--border); user-select: none; }
 #numbers { position: absolute; top: var(--inset); width: 100%; margin: 0; font: inherit; text-align: right; }
@@ -29,18 +29,26 @@ footer { color: var(--muted); font-size: 12px; }
 #split:hover, #split:focus-visible { background: var(--border); }
 #timeline { display: flex; flex-direction: column; flex: 0 1 240px; min-height: 100px; border: 1px solid var(--border); }
 #timeline-tools { display: flex; align-items: center; gap: 4px; padding: 3px; border-bottom: 1px solid var(--border); }
-#timeline-tools button { padding: 0 7px; }
 #timeline-tools label { white-space: nowrap; }
-#view-start { width: 7em; min-width: 3em; font: inherit; padding: 1px 4px; }
 #note-info { margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 12px; }
 #roll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; }
 #notes { display: block; position: sticky; top: 0; touch-action: none; }
 #lanes-space { pointer-events: none; }
 
-#workspace { display: flex; flex: 1; min-height: 0; gap: 5px; }
+#workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; gap: 5px; }
 #plugins { display: flex; flex-direction: column; flex: 0 1 auto; width: max-content; max-width: 65%; min-width: min(330px, 45%); border: 1px solid var(--border); }
-#plugin-tools { display: flex; gap: 4px; padding: 4px; border-bottom: 1px solid var(--border); }
-#plugin-tools select { min-width: 0; font: inherit; }
-#plugin-node { flex: 1; }
-#plugin-ui { overflow: auto; min-height: 0; padding: 6px; }
+#plugin-list { overflow: auto; min-height: 0; }
+.plugin { border-bottom: 1px solid var(--border); }
+.plugin summary { display: flex; align-items: center; gap: 4px; padding: 5px; cursor: pointer; list-style: none; }
+.plugin summary::before { content: "▸"; color: var(--muted); }
+.plugin[open] summary::before { content: "▾"; }
+.plugin-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin summary button { padding: 0 5px; }
+.plugin summary button[aria-pressed=true] { color: var(--accent); background: var(--active); }
+.plugin-body { padding: 6px; overflow: auto; }
+#track-headers { position: sticky; top: 24px; overflow: hidden; background: Canvas; }
+#track-list button { display: flex; flex-direction: column; justify-content: center; gap: 5px; width: 100%; height: var(--track-height); padding: 4px 8px; border: 0; border-bottom: 1px solid var(--border); text-align: left; background: Canvas; color: CanvasText; }
+#track-list button:hover, #track-list button[aria-pressed=true] { background: var(--active); }
+#track-list span, #track-list small { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#track-list small { color: var(--muted); font-size: 12px; }
 [hidden] { display: none !important; }

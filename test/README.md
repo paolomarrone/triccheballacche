@@ -44,8 +44,9 @@ context closure, timeouts, cancellation during preparation and cleanup retries.
 
 Editor tests cover Unicode paths, unsaved relative imports, run/stop, atomic saves
 or downloads, diagnostics and recovery, source tracking, scrolling and selection.
-They check timeline persistence, stale replies, large times, unknown ends and
-bounded requests/canvas sizes. `chromium.mjs` shares browser startup, DevTools and
+They check timeline persistence, notes retained while dragging with delayed replies,
+independent time/track zoom, stale replies, large times, unknown ends and bounded
+requests/canvas sizes. `chromium.mjs` shares browser startup, DevTools and
 cleanup; logs, reports and screenshots go under `build/`. Unicode fixtures retain
 characters such as `音` to test encoding independently of the interface language.
 
@@ -81,8 +82,9 @@ not audio; the scheduler's finite-duration limits still apply.
 `test-editor-ui` mounts the same ES UI against both backends. Its fixture loads
 relative JavaScript, CSS and a separate UI Wasm with external imports through
 `instantiateStreaming`, verifying asset paths and MIME types. It checks initial
-values, automation, meters, 400-value gesture bursts, binary messages, generic
-controls, stale/invalid callbacks and restart. Asynchronous creation must preserve
+values, automation, meters, 400-value gesture bursts, binary messages, concurrent
+plugin sections, track selection, collapse, generic controls, stale/invalid callbacks
+and restart. Asynchronous creation must preserve
 early gestures and free a view that arrives after Stop. Screenshots are saved as
 `build/editor-ui-{native,web}.png`.
 

@@ -52,10 +52,13 @@ try {
         await wait('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
         const size = await evaluate('[document.querySelector("#notes").width,document.querySelector("#notes").height]');
-        await set("view-start", 1e9);
+        await evaluate(`(() => {
+            const c = document.querySelector("#notes");
+            c.dispatchEvent(new WheelEvent("wheel", {bubbles: true, shiftKey: true, deltaY: 1e9 / Number(c.dataset.scale)}));
+        })()`);
         await wait('document.querySelector("#notes").dataset.notes === "0"');
         assert.deepEqual(await evaluate('[document.querySelector("#notes").width,document.querySelector("#notes").height]'), size);
-        await set("view-start", 0);
+        await evaluate('document.querySelector("#notes").dispatchEvent(new KeyboardEvent("keydown", {key: "Home"}))');
         await wait('Number(document.querySelector("#notes").dataset.notes) > 0');
         await set("code", "(error \"wasm error 音\")");
         await click("run");
