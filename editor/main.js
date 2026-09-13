@@ -56,8 +56,8 @@ function update() {
     code.disabled = !ready;
     code.readOnly = busy;
     byId("modified").textContent = dirty() ? "●" : "";
-    byId("state").textContent = !ready ? "Collegamento…" : busy ? "Attendere…" : !playing ? "Fermo" :
-        tracking() ? `In ascolto${partial ? " · origini parziali" : ""}` : "In ascolto · tracking sospeso: riesegui le modifiche";
+    byId("state").textContent = !ready ? "Connecting…" : busy ? "Please wait…" : !playing ? "Stopped" :
+        tracking() ? `Playing${partial ? " · partial origins" : ""}` : "Playing · tracking paused: rerun your changes";
     const before = code.value.slice(0, code.selectionStart).split("\n");
     byId("position").textContent = `${before.length}:${before.at(-1).length + 1}`;
     document.title = `${dirty() ? "* " : ""}${savedPath || "triccheballacche"}`;
@@ -93,9 +93,9 @@ function request(op, ...args) {
 
 async function action(op) {
     if (!ready || busy) return;
-    if (op === "open" && dirty() && !confirm("Aprire un altro file e scartare le modifiche non salvate?")) return;
+    if (op === "open" && dirty() && !confirm("Open another file and discard unsaved changes?")) return;
     if (["open", "save", "run"].includes(op) && !path.value.trim()) {
-        showError("Indica il percorso della partitura.");
+        showError("Enter a score path.");
         return;
     }
     busy = true;

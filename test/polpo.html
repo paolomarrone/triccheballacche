@@ -1,8 +1,9 @@
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8">
 <title>Il polpo a sette gomiti — triccheballacche/Wasm</title>
-<button id="run" disabled>Riproduci e verifica Polpo</button>
-<pre id="status">Caricamento…</pre>
+<button id="run" disabled>Play and check Polpo</button>
+<pre id="status">Loading…</pre>
 <script type="module">
 import {createPlayerHost} from "../web/player.js";
 import {createHost, addFile} from "../web/host.js";
@@ -11,7 +12,7 @@ import {testPlayback} from "./playback.mjs";
 const run = document.querySelector("#run");
 const status = document.querySelector("#status"), score = "examples/prog/polpo.janet";
 try {
-    if (!crossOriginIsolated) throw Error("Avviare il server con node test/server.mjs (servono COOP/COEP).");
+    if (!crossOriginIsolated) throw Error("Run node test/server.mjs (COOP/COEP headers required).");
     const host = await createPlayerHost(), reference = await createHost();
     const files = ["lib/music.janet", "lib/pattern.janet", score];
     for (const [plugin, binary] of [["synth_mono", "bw_example_synth_mono"], ["shape", "shape"],
@@ -27,13 +28,13 @@ try {
         await addFile(reference, path, bytes);
     }
     run.disabled = false;
-    status.textContent = "Pronto: Polpo completo, 30 secondi a 48 kHz. Volume di ascolto ridotto nel test.";
+    status.textContent = "Ready: full Polpo score, 30 seconds at 48 kHz. Playback volume reduced for this test.";
     run.onclick = async () => {
         run.disabled = true;
-        status.textContent = "Render di riferimento, poi riproduzione e confronto dei campioni…";
+        status.textContent = "Rendering reference audio, then playing and comparing samples…";
         try {
             await testPlayback(host, reference, score, 48000);
-            status.textContent = "OK: Polpo completo, PCM identico al mix offline Wasm a 48 kHz, risorse rilasciate.";
+            status.textContent = "OK: full Polpo score, PCM identical to the offline Wasm mix at 48 kHz, resources released.";
         } catch (error) {
             status.textContent = String(error);
         } finally {
@@ -42,3 +43,4 @@ try {
     };
 } catch (error) { status.textContent = String(error); }
 </script>
+</html>

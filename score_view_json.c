@@ -92,7 +92,7 @@ static const char *range(
     Json *json, const ScoreView *view, double from, double to, double first, double count, double bins) {
 	if (!isfinite(from) || !isfinite(to) || from < 0 || from >= to || !integer(first, 0, view->ntracks) ||
 	    !integer(count, 1, MAX_LANES) || !integer(bins, 1, MAX_BINS))
-		return "Intervallo della vista non valido";
+		return "Invalid view range";
 	json_print(json, ",\"from\":%.17g,\"to\":%.17g,\"first\":%.0f,\"lanes\":[", from, to, first);
 	for (int i = first; i < first + count && i < view->ntracks; ++i) {
 		int node = view->tracks[i].source;
@@ -151,7 +151,7 @@ char *score_view_json(const ScoreView *view, unsigned revision, const char *op, 
 			score_view_visit(view, i, a, nextafter(a, INFINITY), 0, collect_frames, &frames);
 		write_frames(&json, &frames);
 	} else {
-		error = "Query sconosciuta";
+		error = "Unknown query";
 	}
 	json_print(&json, ",\"error\":");
 	json_string(&json, error);

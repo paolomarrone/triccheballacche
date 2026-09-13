@@ -30,7 +30,7 @@ void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned r
 	Json json = {0};
 	json_print(&json, "{");
 	if (version != revision || !s->sealed) {
-		error = "Vista plugin scaduta";
+		error = "Stale plugin view";
 		goto done;
 	}
 	if (!strcmp(op, "watch") && id == -1) {
@@ -38,7 +38,7 @@ void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned r
 		goto done;
 	}
 	if (!isfinite(id) || id < 0 || id >= s->nnodes || id != floor(id) || !s->nodes[(int)id].path) {
-		error = "Modulo non valido";
+		error = "Invalid module";
 		goto done;
 	}
 	Node *node = s->nodes + (int)id;
@@ -50,18 +50,18 @@ void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned r
 		if (webui_get_bool_at(event, 3)) {
 			if (ui_open(&c->native, node) || !c->native) {
 				controls_close(c, s);
-				error = "GUI nativa non disponibile";
+				error = "Native UI unavailable";
 			} else
 				ui_show(c->native, 1);
 		} else
 			watch_dsp(dsp, 1);
 	} else if (c->node != id || c->native) {
-		error = "Vista web non collegata";
+		error = "Web view not attached";
 	} else if (!strcmp(op, "parameter")) {
 		double index = number(event, 3), value = number(event, 4);
 		if (!isfinite(index) || index < 0 || index >= config->nparams || index != floor(index) ||
 		    (config->outputs & (UINT64_C(1) << (int)index)) || !isfinite((float)value)) {
-			error = "Parametro non valido";
+			error = "Invalid parameter";
 		} else {
 			const ScoreNode *meta = view->nodes + (int)id;
 			int p = index, integer = !!(meta->integers & (UINT64_C(1) << p));
@@ -78,18 +78,18 @@ void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned r
 		size_t length = strlen(text);
 		unsigned char bytes[MAX_MESSAGE];
 		if (length % 2 || length / 2 > config->to_dsp || !config->to_dsp) {
-			error = "Messaggio non valido";
+			error = "Invalid message";
 		} else {
 			for (size_t i = 0; i < length; i += 2) {
 				int a = hex(text[i]), b = hex(text[i + 1]);
 				if (a < 0 || b < 0) {
-					error = "Messaggio non valido";
+					error = "Invalid message";
 					break;
 				}
 				bytes[i / 2] = 16 * a + b;
 			}
 			if (!error && send_dsp(dsp, length / 2, bytes))
-				error = "Coda messaggi GUI piena";
+				error = "UI message queue full";
 		}
 	} else if (!strcmp(op, "controls")) {
 		json_print(&json, "\"values\":[");
@@ -108,7 +108,7 @@ void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned r
 			int result = receive_dsp(dsp, &size, bytes);
 			if (result <= 0) {
 				if (result < 0)
-					error = "Coda messaggi DSP piena";
+					error = "DSP message queue full";
 				break;
 			}
 			json_print(&json, "%s[", i ? "," : "");
@@ -122,6 +122,6 @@ done:
 	json_print(&json, "\"error\":");
 	json_string(&json, error);
 	json_print(&json, "}");
-	webui_return_string(event, json.failed ? "{\"error\":\"Memoria insufficiente\"}" : json.data);
+	webui_return_string(event, json.failed ? "{\"error\":\"Out of memory\"}" : json.data);
 	free(json.data);
 }

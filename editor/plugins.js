@@ -5,7 +5,7 @@ export function plugins(request, adapter, fail) {
     const panel = document.getElementById("plugins"), select = document.getElementById("plugin-node");
     const kind = document.getElementById("plugin-kind"), container = document.getElementById("plugin-ui");
     let score, running = false, visible = false, current, generation = 0;
-    if (adapter.nativeViews) kind.add(new Option("Nativa", "native"));
+    if (adapter.nativeViews) kind.add(new Option("Native", "native"));
 
     function dispose() {
         ++generation;
@@ -73,14 +73,14 @@ export function plugins(request, adapter, fail) {
             if (current !== token) return;
             if (op === "parameter") edits.set(args[0], args[1]);
             else if (messages.length < 64) messages.push(args[0]);
-            else { failed(token, Error("Coda messaggi GUI piena")); return; }
+            else { failed(token, Error("UI message queue full")); return; }
             if (token.ready && !sending) flush();
         };
         const parameter = (index, value) => {
             if (current !== token) return;
             const p = node.product.parameters[index];
             if (!Number.isInteger(index) || !p || p.direction !== "input" || !Number.isFinite(value)) {
-                failed(token, Error("Parametro della GUI non valido")); return;
+                failed(token, Error("Invalid UI parameter")); return;
             }
             const low = p.isBypass ? 0 : p.minimum, high = p.isBypass ? 1 : p.maximum;
             const integer = p.integer || p.toggled || p.isBypass;
@@ -93,7 +93,7 @@ export function plugins(request, adapter, fail) {
                 if (current !== token) return;
                 const limit = node.product.messaging?.uiToDspSize;
                 if (!(bytes instanceof Uint8Array) || !limit || bytes.length > limit) {
-                    failed(token, Error("Messaggio della GUI non valido")); return;
+                    failed(token, Error("Invalid UI message")); return;
                 }
                 send("message", Array.from(bytes));
             }};
@@ -102,7 +102,7 @@ export function plugins(request, adapter, fail) {
                 (await import(adapter.uiUrl(node, token.revision, id))).create : generic;
             if (current !== token) return;
             const ui = await create(element, callbacks);
-            if (!ui || typeof ui.free !== "function") throw Error("La GUI Perone deve restituire free()");
+            if (!ui || typeof ui.free !== "function") throw Error("Perone UI must return free()");
             if (current !== token) { ui.free(); return; }
             token.ui = ui;
             // No DSP stream until the factory is ready to receive it. Creation-time gestures stay queued.

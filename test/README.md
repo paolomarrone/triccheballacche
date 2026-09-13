@@ -1,179 +1,93 @@
-# Prove di interfaccia
+# Tests
 
-`make test-editor` verifica il frontend WebUI in Chromium e il motore audio nativo:
-apertura di nomi e contenuti Unicode, import relativi da testo non salvato,
-Esegui/Stop, tracking dei produttori e degli import, allineamento di righe e bande
-durante lo scorrimento, sospensione dopo modifiche, salvataggio atomico, diagnostiche e ripresa dopo errori, chiamate
-concorrenti e chiusura della pagina durante l'ascolto. Copre anche note e catene della
-timeline, densità, selezione dell'origine, permanenza dopo Stop/errori, scorrimento delle
-corsie, follow, tempi grandi, fine sconosciuta e risposte obsolete. Le richieste e il
-canvas mantengono dimensioni limitate al cambiare dell'intervallo. Usa la fixture Perone locale;
-richiede Chromium e un dispositivo audio, senza plugin di produzione.
-`test/chromium.mjs` condivide avvio, DevTools e pulizia del browser con i test Wasm.
-`make test` copre anche preparazione da buffer, diagnostiche e proiezione nativa senza
-browser o dispositivo; confronta il PCM con e senza tracciamento a 44,1 e 48 kHz.
-`score_view.c` verifica separatamente copia degli eventi, pairing di note sovrapposte,
-query indicizzate e riepiloghi confrontati con una scansione completa, anche a tempi grandi.
+Run from the repository root. Core tests build local Perone fixtures and need no
+Tibia or Brickworks checkout. Integration targets require production bundles to
+be built separately; see [plugin builds](../plugins/README.md).
 
-`make gui` apre le GUI native Perone di Tibia e A-SID con `examples/gui.janet`.
-`make test-ui` verifica le UI originali C/C++, i controlli sul DSP e i messaggi;
-richiede un display X11 e i bundle compilati nei repository adiacenti. I dettagli
-e i percorsi sono nel [README principale](../README.md#gui-native-perone).
-Le prove del protocollo di controllo e delle code concorrenti sono in `loader.c`,
-eseguite da `make test` anche senza display: ultimo valore dei parametri, ordine dei
-messaggi, copie stereo, conferme durante un setter sospeso, riporto dei contatori
-e riattacco dopo un overflow, senza perdere le modifiche già accettate.
+| Command | Coverage and additional requirements |
+| --- | --- |
+| `make test` | Native scheduler, Perone lifecycle, score API, patterns, routing, export, player and projection. No audio device required. |
+| `make test-plugins` | Six local prebuilt plugins, metadata, pitch bend and block-size independence. |
+| `make test-brickworks` | All prebuilt bundles under `BRICKWORKS_PERONE`, default `../brickworks/build/perone`. |
+| `make test-prog` | Two identical renders of Polpo; requires the local plugin bundles. |
+| `make test-web` | Native/Wasm PCM and projection parity, control queues and request handling; Emscripten, Node.js and `patch`. |
+| `make test-browser` | AudioWorklet PCM, playback and cleanup in Chromium; includes `test-web`. |
+| `make test-polpo-web` | Original Polpo score: live/offline PCM comparison and cleanup; Chromium and its four prebuilt Wasm plugins. |
+| `make test-trace` | Source provenance and unchanged PCM; includes `test-web`. |
+| `make test-editor` | Native editor in Chromium, with local fixtures; X11 development libraries, GCC, `patch` and an audio device. |
+| `make test-editor-web` | Polpo in the shared browser editor; Node.js, Chromium and Polpo's Wasm plugins. |
+| `make test-editor-ui` | The same custom UI with native and Wasm DSPs; editor/browser prerequisites, no external plugin checkout. |
+| `make test-ui` | Original Tibia C/C++ and A-SID UIs, mouse gestures and DSP feedback; X11 display and prebuilt DSP/UI bundles. |
+| `make format-check` | Local C formatting with clang-format 21; excludes upstream headers and generated code. |
 
-## Editor web e provenienza Janet
+Set `EMCC=/absolute/path/to/emcc` if Emscripten is outside `PATH`, and optionally
+`CHROMIUM=/path/to/chromium`. To run browser checks manually, use
+`node test/server.mjs` and open `http://localhost:8000/test/web.html` or
+`http://localhost:8000/test/polpo.html`. The server supplies the required COOP/COEP
+headers. See [editor setup](../README.md#editors) for the shared editor and catalog.
+`node test/editor-web.mjs examples/denti.janet` accepts another score when its
+imports and Wasm bundles are included in `WEB_CONTENT`.
 
-La pagina `editor/index.html` usa lo stesso controller e la stessa timeline del
-desktop. Il backend Wasm esegue Janet e audio nel browser; non serve un eseguibile
-nativo per usare la pagina.
+## What the tests protect
 
-```sh
-make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
-make web-editor
-node test/server.mjs
-# Aprire http://localhost:8000/editor/index.html
-make test-editor-web
-make test-trace
-```
+Core tests compare rendering at 44.1/48 kHz, variable block sizes, stereo channel
+separation and duplicated mono effects. Export tests preserve the previous WAV
+and clean temporary files after rendering, write, finalization and rename failures.
+The player uses a simulated device to check startup errors, interruption, final
+silence, draining and export options without requiring audio hardware.
 
-`test/editor-web.mjs` verifica Polpo in Chromium, audio, righe attive, snapshot dopo
-Stop e fallimenti, navigazione a tempi grandi, ripresa, apertura dal filesystem della
-sessione e download Unicode senza modificare il file sul server. Accetta un altro
-score come argomento, purché le sue risorse siano nel catalogo. `WEB_CONTENT` in
-`make web-editor` seleziona le directory da pubblicare; per esempio si può aggiungere
-`../asid/plugin/perone/build` e provare `node test/editor-web.mjs examples/denti.janet`.
+`view-json.mjs` compares native and Wasm projection replies, including density,
+overlapping notes, imported origins, stale revisions and invalid queries. It frees
+the audio score before querying to verify independent projection ownership.
+`playback.mjs` and `player-lifecycle.mjs` cover real AudioWorklet output, stop/restart,
+context closure, timeouts, cancellation during preparation and cleanup retries.
 
-`make test-web` include `view-json.mjs`: confronta tutte le risposte della proiezione
-C nativa e Wasm a 44,1/48 kHz, con densità, note che attraversano la finestra, origini
-importate, revisioni obsolete e argomenti invalidi. Lo score audio viene liberato
-prima delle query: la proiezione deve restare valida. I test del player verificano
-anche il trasferimento della vista attraverso l'avvio e la chiusura dell'AudioContext.
+Editor tests cover Unicode paths, unsaved relative imports, run/stop, atomic saves
+or downloads, diagnostics and recovery, source tracking, scrolling and selection.
+They check timeline persistence, stale replies, large times, unknown ends and
+bounded requests/canvas sizes. `chromium.mjs` shares browser startup, DevTools and
+cleanup; logs, reports and screenshots go under `build/`. Unicode fixtures retain
+characters such as `音` to test encoding independently of the interface language.
 
-Se Emscripten non è nel PATH, passare `EMCC=/percorso/assoluto/emcc` a make.
-I runtime ordinari, nativi e web, includono il piccolo ponte `trace.c`, registrato
-esplicitamente da `script_env`. `lib/trace.janet` attiva il tracciamento soltanto
-quando viene chiamato `trace/install`: il solo import lascia intatte le funzioni
-musicali e `array/push`. L’editor usa lo stesso player delle altre prove web.
-`trace-host.mjs` seleziona le righe dal rapporto completo per verificare il tracciatore.
-Entrambi gli editor usano l’indice C e richiedono soltanto i frame attivi.
-`json/encode`, già fornito da Spork, permette di esportare il rapporto prima della
-chiusura di Janet. Le librerie musicali e le partiture rimangono invariate.
+## Source tracking
 
-## Come funziona
+`lib/trace.janet` installs once in a fresh score environment, before compilation
+and imports. Import alone is inert. The C bridge observes `array/push`, retaining
+the producer's Janet frame; pattern wrappers preserve origins through composition.
+User callbacks still run once. Direct `daw/note` and `daw/param` calls are captured
+as well. Tracking remains separate from musical values and audio events.
 
-`trace-host.mjs` carica un piccolo script di avvio nel filesystem virtuale. Questo
-installa `lib/trace.janet`, poi esegue il file originale con il suo percorso e gli stessi
-import. Non aggiunge righe al sorgente dell'utente e non riscrive le espressioni.
+The report contains `:locations` (stacks of file/line/column positions) and
+`:events` (`[start end origins kind node order]`, in absolute seconds).
+`trace-host.mjs` exports a complete report as a test oracle. Editors use the C
+projection index, requesting only visible notes and active origins after Janet
+has closed. The clock is `player_time`; highlights last for the programmed note
+length, with an 80 ms minimum pulse, excluding release tails and device latency.
 
-`trace/install` riceve l'ambiente dello score e il percorso dello script di avvio,
-da escludere dalle posizioni mostrate. Va chiamato una sola volta per preparazione,
-prima di compilare lo score e i suoi import, e restituisce la funzione che legge
-il rapporto. Una seconda installazione viene rifiutata prima di cambiare i binding.
-La chiusura della VM, anche dopo errori, libera binding e tabelle: la preparazione
-successiva parte da un ambiente nuovo.
+Tracking records event construction, not every executed expression. Janet tail
+calls may remove intermediate frames; merged immutable constants can produce
+multiple candidate origins. Raw pattern structs fall back to their scheduling
+site. Arbitrary array mutations, alternate import caches, `:fresh` imports and
+partially recovered scheduling errors have no complete provenance guarantee.
+The tracer is experimental, not a public reflection API.
 
-Lo stesso avvio funziona con la CLI. Per esempio, in `build/trace-run.janet`:
+Replies cap tracking at 8192 active events and 256 distinct frames, reporting
+partial origins when exceeded. Timeline queries cover at most eight lanes, with
+512 individual notes or 512 density bins per lane. These bounds affect the view,
+not audio; the scheduler's finite-duration limits still apply.
 
-```janet
-(def entry (dyn :current-file))
-(import ../lib/trace)
-(def report (trace/install (curenv) entry))
-(def daw/script "examples/prog/polpo.janet")
-(dofile daw/script :env (curenv))
-(spit "build/trace-polpo.json" (json/encode (report)))
-```
+## Plugin UIs
 
-Eseguire con `./build/daw build/trace-run.janet build/trace-polpo.wav`.
+`test-editor-ui` mounts the same ES UI against both backends. Its fixture loads
+relative JavaScript, CSS and a separate UI Wasm with external imports through
+`instantiateStreaming`, verifying asset paths and MIME types. It checks initial
+values, automation, meters, 400-value gesture bursts, binary messages, generic
+controls, stale/invalid callbacks and restart. Asynchronous creation must preserve
+early gestures and free a view that arrives after Stop. Screenshots are saved as
+`build/editor-ui-{native,web}.png`.
 
-L'osservatore C delega alla funzione originale `array/push`, poi passa array, indice
-iniziale e fiber chiamante all'osservatore Janet. Questo conserva la provenienza
-dei valori con forma `[inizio fine valore]`, associandola agli indici dell'array.
-Quando `p/events` riceve quell'array, trova quindi anche le chiamate interne a
-`note`, `drum` e altre funzioni già terminate. Non dipende dai loro nomi.
-Il passaggio C conserva il frame Janet del chiamante anche quando questo termina
-con una chiamata in coda a `array/push`; una funzione Janet sostitutiva lo perderebbe.
-L'osservazione vale anche per gli alias della funzione e i moduli importati dopo
-l'installazione. Le operazioni interne al tracciatore usano l'originale già compilato.
-
-`lib/trace.janet` sostituisce anche le funzioni esportate del modulo pattern nella cache Janet,
-prima che lo score le importi. Gli originali continuano a produrre i dati musicali.
-Le funzioni sostitutive acquisiscono `debug/stack (fiber/current)` e costruiscono
-una seconda sequenza con gli stessi tempi e gli identificatori delle posizioni.
-Le trasformazioni temporali usano le funzioni originali anche per questa sequenza;
-le funzioni utente passate a `map` e `curve` vengono eseguite una volta sola.
-
-`daw/schedule` esporta i tempi assoluti, le origini e l'ordine originale degli eventi
-nel nodo (letto tramite `native/event-count`); le chiamate dirette a `daw/note`
-e `daw/param` sono intercettate allo stesso modo. Il rapporto vive separatamente
-dagli eventi audio e dai plugin. Niente introspezione durante il rendering.
-Le tabelle del tracciatore vengono conservate fino alla fine della preparazione.
-
-Il rapporto contiene `:locations`, una lista di stack con file/riga/colonna, e
-`:events`, con record `[inizio fine origini tipo nodo ordine]` in secondi assoluti.
-Le origini sono indici in `:locations`. Gli stack descrivono la costruzione degli
-eventi: durante l'ascolto Janet è già chiuso.
-
-Entrambi gli editor usano `player_time`: la posizione pubblicata dalla callback audio,
-senza sottrarre la latenza del dispositivo. Le note illuminano le righe per la durata programmata,
-con un minimo visivo di 80 ms anche per i controlli e le percussioni di pochi campioni,
-che altrimenti possono cadere interamente fra due aggiornamenti dello schermo. Release e riverberi non
-prolungano l'evidenziazione. Più righe possono essere attive contemporaneamente.
-
-## Risultati e limiti
-
-- Lo stack descrive le chiamate ancora attive. Per la granularità interna bisogna
-  raccogliere le posizioni durante la costruzione
-  dei singoli eventi. Non tutte le righe di calcolo producono un evento osservabile.
-- Le chiamate in coda fra funzioni Janet possono ancora eliminare frame intermedi.
-  La fixture perde la posizione interna del suo `tail-helper` basato su `p/steps`,
-  ma conserva il produttore che termina con `array/push` grazie al passaggio C.
-- Janet può riunire costanti immutabili uguali durante la compilazione. Due pattern
-  identici, costruiti su righe diverse, possono quindi diventare lo stesso oggetto
-  quando vengono usati insieme. Una tabella basata sull'indirizzo darebbe attribuzioni
-  errate. Il tracciatore raccoglie le possibili origini dei pattern uguali,
-  evidenzia tutte le candidate e riporta quanti eventi hanno origine ambigua.
-- Un pattern costruito direttamente come struct non attraversa i costruttori:
-  il punto di scheduling diventa l'origine di ripiego, conteggiata nel rapporto.
-- `p/events` usa l'origine raccolta da `array/push` quando lo slot è ancora
-  riconoscibile, altrimenti usa il proprio punto di chiamata. Le operazioni della
-  libreria pattern conservano le origini disponibili; questo non ricostruisce la
-  provenienza di calcoli o manipolazioni arbitrarie. `:fallback-events` conta gli
-  eventi dei pattern senza annotazione, non tutti i casi di dettaglio ridotto.
-- Le posizioni sono punti (file, riga e colonna), non intervalli completi del testo.
-  La pagina mostra le righe del file aperto; il rapporto conserva anche i frame
-  dei file importati. Non individua automaticamente ogni numero di una lista.
-- Il tracciamento non è ancora un contratto pubblico. Import con cache alternativa,
-  `:fresh`, scritture con `put`, riordinamenti manuali degli array, trasformazioni
-  manuali dei dati e scheduling parzialmente fallito e poi
-  recuperato non hanno una garanzia di provenienza completa.
-
-`trace.mjs` confronta il PCM con e senza tracciamento a 44,1 e 48 kHz, verifica
-trasformazioni, pause, chiamate dirette, produttori interni e importati, alias di
-`array/push`, origini ambigue e tail call. Verifica anche che l'import sia inerte,
-che l'installazione sia unica e che dopo errori si possano preparare score normali
-e tracciati sullo stesso host. Scrive un rapporto in `build/trace-fixture.json`.
-`test-editor-web` osserva nel DOM il tracking di Polpo e il comportamento della
-proiezione condivisa: modificare il testo sospende le evidenziazioni, Stop conserva
-le note, un errore non sostituisce l'ultima esecuzione e la successiva può ripartire.
-
-## UI Perone condivise
-
-`make test-editor-ui` prepara bundle di fixture temporanei e usa la stessa UI ES
-in Chromium con entrambi i backend dell'editor. La UI importa un altro modulo JS,
-un CSS e un Wasm con import esterni tramite `instantiateStreaming`, collocato
-in `wasm32/` accanto al DSP come nel template Vinci di Tibia: questi asset
-devono mantenere percorsi e MIME corretti, senza entrare nel loader DSP standalone.
-Il test verifica valori iniziali/automatizzati, meter, modifiche manuali anche in
-raffiche di 400 valori, messaggi binari, passaggio ai controlli generici, callback
-scaduti o invalidi e riavvio. Verifica anche che i gesti emessi durante una creazione
-asincrona ricevano le risposte dopo il collegamento, e che Stop liberi una vista
-la cui creazione termina in ritardo.
-Non richiede Tibia o A-SID; lascia le catture in `build/editor-ui-{web,native}.png`.
-
-`make test-web` include `perone-controls.mjs`: verifica anche l'audio delle due copie
-di un effetto mono dopo una modifica, la precedenza delle automazioni, conferme dei
-valori, code FIFO limitate, messaggi vuoti/binari, overflow e riattacco della vista.
-`request.mjs` controlla che una risposta tardiva non confermi una richiesta successiva.
+`loader.c` and `perone-controls.mjs` test parameter coalescing, FIFO messages,
+concurrent acknowledgements, stereo copies, automation precedence, overflow and
+reattachment without losing accepted changes. `request.mjs` ensures a late reply
+cannot acknowledge a later request. `test-ui` adds real X11 embedding, deferred
+widget creation, resizing and shutdown with the original upstream UIs.

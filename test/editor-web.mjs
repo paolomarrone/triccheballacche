@@ -33,7 +33,7 @@ try {
         await call("Page.navigate", {url: `http://127.0.0.1:${server.address().port}/editor/index.html?score=${encodeURIComponent(entry)}`});
         await wait('document.querySelector("#run")?.disabled === false');
         assert(await evaluate('crossOriginIsolated && !globalThis.webui'));
-        assert.equal(await evaluate('document.querySelector("#save").textContent'), "Scarica");
+        assert.equal(await evaluate('document.querySelector("#save").textContent'), "Download");
         assert(await evaluate('document.querySelector("#plugin-views").getBoundingClientRect().width > 0'));
         assert.equal(await evaluate('getComputedStyle(document.querySelector("#sheet")).display'), "flex");
         const source = await evaluate('document.querySelector("#code").value');
@@ -49,7 +49,7 @@ try {
         await set("code", "# draft\n" + source);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         await click("stop");
-        await wait('document.querySelector("#state").textContent === "Fermo"');
+        await wait('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
         const size = await evaluate('[document.querySelector("#notes").width,document.querySelector("#notes").height]');
         await set("view-start", 1e9);
@@ -57,16 +57,16 @@ try {
         assert.deepEqual(await evaluate('[document.querySelector("#notes").width,document.querySelector("#notes").height]'), size);
         await set("view-start", 0);
         await wait('Number(document.querySelector("#notes").dataset.notes) > 0');
-        await set("code", "(error \"errore wasm 音\")");
+        await set("code", "(error \"wasm error 音\")");
         await click("run");
-        await wait('document.querySelector("#errors").textContent.includes("errore wasm 音")');
+        await wait('document.querySelector("#errors").textContent.includes("wasm error 音")');
         assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
         assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'));
         await set("code", source); // Restore the exact unsaved score.
         await click("run");
         await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${revision}`);
         await click("stop");
-        await wait('document.querySelector("#state").textContent === "Fermo"');
+        await wait('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
         const downloaded = source + "\n# Unicode 音\n";
         await set("code", downloaded);
@@ -84,7 +84,7 @@ try {
         assert.equal(await evaluate('document.querySelector("#code").value'), downloaded, "Downloads also update the session filesystem");
         await set("path", "examples/absent.janet");
         await click("open");
-        await wait('document.querySelector("#errors").textContent.includes("assente") || document.querySelector("#errors").textContent.includes("non presente")');
+        await wait('document.querySelector("#errors").textContent.includes("missing")');
         assert.equal(await evaluate('document.querySelector("#code").value'), downloaded);
         assert.deepEqual(diagnostics, []);
         await call("Page.navigate", {url: "about:blank"});

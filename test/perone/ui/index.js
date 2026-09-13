@@ -17,7 +17,7 @@ export async function create(element, callbacks) {
     root.dataset.helper = instance.exports.value();
     const gain = document.createElement("button"), message = document.createElement("button"), out = document.createElement("output");
     gain.textContent = label; gain.id = "set-gain";
-    message.textContent = "Messaggio"; message.id = "send-message";
+    message.textContent = "Message"; message.id = "send-message";
     const index = callbacks.product.parameters.findIndex(p => p.id === "gain");
     gain.onclick = () => {
         callbacks.set_parameter_begin(index, .3);

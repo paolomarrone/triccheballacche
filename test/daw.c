@@ -95,7 +95,7 @@ static void test_external_metadata(void) {
 	Output cfg;
 	assert(!script(&s, &cfg,
 	    "(def p (daw/plugin \"build/fixture.perone\" {:gain 0.25})) "
-	    "(def row ((daw/info p) 1)) (assert (= (row :label) \"Intensità \\\"音\\\"\")) "
+	    "(def row ((daw/info p) 1)) (assert (= (row :label) \"Intensity \\\"音\\\"\")) "
 	    "(assert (= (get-in row [:scale-points :Full]) 1)) "
 	    "(assert (= (row :default) 0.5)) "
 	    "(daw/track p) (daw/param p 0.0001 :gain 0.75) (gccollect) (daw/end 0.01)"));

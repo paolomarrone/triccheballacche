@@ -43,7 +43,7 @@ static void stop(int signal) {
 static void request(webui_event_t *event) {
 	pthread_mutex_lock(&mutex);
 	if (closing || pending) {
-		webui_return_string(event, "{\"error\":\"Editor occupato o in chiusura\"}");
+		webui_return_string(event, "{\"error\":\"Editor busy or closing\"}");
 	} else {
 		pending = event;
 		while (pending == event)
@@ -66,14 +66,14 @@ static const char *read_text(const char *path, char **text) {
 	if (stat(path, &info))
 		return strerror(errno);
 	if (!S_ISREG(info.st_mode))
-		return "Il percorso non è un file regolare";
+		return "Path is not a regular file";
 	FILE *file = fopen(path, "rb");
 	if (!file)
 		return strerror(errno);
 	long size = -1;
 	if (!fseek(file, 0, SEEK_END))
 		size = ftell(file);
-	const char *error = "Impossibile leggere il file (massimo 8 MiB di testo)";
+	const char *error = "Cannot read file (at most 8 MiB of text)";
 	if (size >= 0 && size <= MAX_SOURCE && !fseek(file, 0, SEEK_SET)) {
 		*text = malloc((size_t)size + 1);
 		if (*text && fread(*text, 1, size, file) == (size_t)size && !ferror(file) && !memchr(*text, 0, size)) {
@@ -96,7 +96,7 @@ static const char *save_text(const char *path, const char *text) {
 	char *temporary = malloc(strlen(target) + sizeof(".XXXXXX"));
 	if (!temporary) {
 		free(resolved);
-		return "Memoria insufficiente";
+		return "Out of memory";
 	}
 	sprintf(temporary, "%s.XXXXXX", target);
 	struct stat info;
@@ -116,7 +116,7 @@ static const char *save_text(const char *path, const char *text) {
 	}
 	free(temporary);
 	free(resolved);
-	return result ? "Impossibile salvare il file; il precedente è conservato" : NULL;
+	return result ? "Cannot save file; the previous file is preserved" : NULL;
 }
 
 static double decimal(webui_event_t *request, int index) {
@@ -139,7 +139,7 @@ static void reply(
 		view = score_view_json(
 		    &editor->score, editor->revision, score ? "score" : "status", time, !!editor->player, 0, 0, 0, 0);
 	if (!view && (query || score || !strcmp(op, "status")))
-		error = "Memoria insufficiente";
+		error = "Out of memory";
 	Json json = {0};
 	json_print(&json, "{\"text\":");
 	json_string(&json, text);
@@ -150,7 +150,7 @@ static void reply(
 	    time, editor->revision, view ? view : "null");
 	json_string(&json, error);
 	json_print(&json, "}");
-	webui_return_string(event, json.failed ? "{\"error\":\"Memoria insufficiente\"}" : json.data);
+	webui_return_string(event, json.failed ? "{\"error\":\"Out of memory\"}" : json.data);
 	free(json.data);
 	free(view);
 }
@@ -172,7 +172,7 @@ static void command(Editor *editor, webui_event_t *event) {
 	if (!*path)
 		path = editor->entry;
 	if (webui_get_size_at(event, 2) > MAX_SOURCE) {
-		error = "Partitura troppo grande (massimo 8 MiB)";
+		error = "Score too large (at most 8 MiB)";
 	} else if (!strcmp(op, "open")) {
 		error = read_text(path, &text);
 	} else if (!strcmp(op, "save")) {
@@ -186,10 +186,10 @@ static void command(Editor *editor, webui_event_t *event) {
 		Output output;
 		ScoreView score;
 		if (prepare_score(&editor->session, &output, path, source, &diagnostics, &score)) {
-			error = diagnostics ? diagnostics : editor->session.error ? editor->session.error : "Preparazione fallita";
+			error = diagnostics ? diagnostics : editor->session.error ? editor->session.error : "Preparation failed";
 		} else {
 			if (!error && (!(editor->player = player_new(&editor->session)) || player_start(editor->player)))
-				error = editor->session.error ? editor->session.error : "Avvio audio fallito";
+				error = editor->session.error ? editor->session.error : "Audio startup failed";
 		}
 		if (error) {
 			finish(editor);
@@ -208,7 +208,7 @@ static void command(Editor *editor, webui_event_t *event) {
 	} else if (!strcmp(op, "status")) {
 		error = editor->error;
 	} else {
-		error = "Comando sconosciuto";
+		error = "Unknown command";
 	}
 	reply(event, editor, error, text, path, changed);
 	free(diagnostics);
@@ -224,12 +224,12 @@ static void poll_player(Editor *editor) {
 	if (ui_status == 1)
 		ui_show(editor->controls.native, 0);
 	if (ui_status < 0)
-		error = "Errore nei controlli della GUI di un plugin";
+		error = "Plugin UI control error";
 	int status = player_status(editor->player);
 	if (status < 0)
-		error = editor->session.error ? editor->session.error : "Errore audio";
+		error = editor->session.error ? editor->session.error : "Audio error";
 	if (!status && !ma_device_is_started(&editor->player->device))
-		error = "Dispositivo audio arrestato";
+		error = "Audio device stopped";
 	if (error || status) {
 		free(editor->error);
 		editor->error = error ? copy_string(error) : NULL;

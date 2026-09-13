@@ -129,7 +129,7 @@ try {
             // Bad callbacks detach the view; audio continues and a new view can attach cleanly.
             await evaluate("fixtureCallbacks.at(-1).set_parameter(0, .9)");
             await wait('document.querySelector("#plugin-ui").childElementCount === 0');
-            assert.match(await evaluate('document.querySelector("#errors").textContent'), /Parametro della GUI/);
+            assert.match(await evaluate('document.querySelector("#errors").textContent'), /Invalid UI parameter/);
             assert.equal(await evaluate('document.querySelector("#stop").disabled'), false);
             await select("plugin-kind", "generic");
             await wait(`${root}?.querySelector(".perone-controls")`);

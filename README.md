@@ -1,132 +1,92 @@
 # triccheballacche
 
-Una base minimale per una DAW scriptabile: partiture in Janet, audio in C.
-Plugin Perone mono e stereo, tracce con effetti in serie e mix stereo.
-44,1 kHz di default, sample rate configurabile per sessione; nucleo C e Janet condivisi fra host nativo e Wasm.
+A minimal scriptable DAW: Janet scores, C audio, Perone plugins. Mono and stereo
+instruments feed effect chains and a stereo mix. Native and browser hosts share
+the scheduler, mixer, player, editor and score projection.
+
+## Build and run
+
+Run commands from the repository root:
 
 ```sh
-make                    # Compila host e DAW Janet.
-make test               # Test del nucleo con fixture locali.
-make -C plugins         # Compilazione separata dei plugin di esempio.
-make test-plugins       # Integrazione con i sei plugin già compilati.
-make prog
+make                    # Build the native host and Janet DAW.
+make test               # Core tests with local fixtures.
+make -C plugins         # Build example plugins separately; see prerequisites below.
 ./build/daw examples/hello.janet build/hello.wav
-./build/daw --play examples/hello.janet
-./build/daw examples/automation.janet build/automation.wav
-./build/host plugins/synth_mono/build/plugin.perone --wav build/demo.wav
-./build/host plugins/tibia_test/build/plugin.perone --input
-make keys
+./build/daw --play examples/hello.janet 48000
+make prog               # Render Il polpo a sette gomiti.
 ```
 
-Servono compilatore C, make, git e curl. Su Termux:
+The host needs a C compiler, make, git and curl. It fetches Janet 1.41.2,
+miniaudio 0.11.25 (unless `../miniaudio.h` exists), and Spork's JSON module at a
+pinned revision into `.deps/`. Janet and JSON are linked statically; no Janet,
+Spork or jpm installation is needed. On Termux:
 `pkg install clang make git curl libandroid-spawn`.
-Il build dell'host scarica in `.deps/` Janet v1.41.2, miniaudio 0.11.25
-(se non trova `../miniaudio.h`) e il solo [modulo JSON di Spork](https://github.com/janet-lang/spork/blob/0667f96b74de52747ffe5e19e185563ebf53816b/src/json.c),
-a una revisione fissata nel Makefile. Janet e JSON sono collegati staticamente;
-l'API Janet della DAW e il lettore Perone sono incorporati nei binari. Non occorre installare
-Janet, Spork o jpm. I build successivi sono offline.
 
-## Build separati: host e plugin
+Plugins are built separately with Node.js, `dot`, Tibia and, for the original
+Brickworks examples, Brickworks. See [plugin builds](plugins/README.md).
+The host only loads precompiled bundles; it needs neither DSP sources nor the generator.
 
-Il Makefile principale produce `build/host` e `build/daw`. `build/host` e
-`daw/plugin` ricevono il percorso di una directory `.perone` già compilata:
+## Editors
 
-```text
-nome.perone/
-  product.json
-  x86_64-linux/
-    <bundleName>.so
-```
-
-Janet legge il JSON, il loader C carica soltanto la libreria della piattaforma
-corrente tramite `perone_get_api(PERONE_ABI_VERSION)`. Il nome del binario viene da
-`product.bundleName`; la directory del bundle può essere rinominata o spostata.
-`PERONE_PLATFORM` nel Makefile permette di selezionare la piattaforma di destinazione
-per la compilazione incrociata, come in Tibia. Il default è `uname -m` più
-`TARGET_OS` (`uname -s`) in minuscolo, per esempio `x86_64-linux` o `aarch64-linux`.
-
-I progetti di esempio in `plugins/<nome>/` hanno build separati:
-`make -C plugins/synth_mono` produce `plugins/synth_mono/build/plugin.perone`.
-`make -C plugins` compila tutta la raccolta. Servono Node.js, `dot` e `../tibia`
-con i target `perone`/`perone-make`. Synth e filtro `fx_svf` usano gli esempi
-originali di `../brickworks`; i percorsi sono configurabili con `TIBIA` e
-`BRICKWORKS`. Il [README dei plugin](plugins/README.md) descrive il build.
-Sorgenti DSP e generatore non servono per caricare un bundle già compilato.
-
-Gli esempi già compilati in Brickworks sono utilizzabili direttamente:
+The desktop editor uses [WebUI](https://github.com/webui-dev/webui) and native audio.
+Its optional build needs X11 development libraries, GCC and `patch`; WebUI 2.4.2
+is fetched at a pinned revision. Node.js is not a desktop runtime dependency.
 
 ```sh
-./build/host ../brickworks/build/perone/synthpp_mono/build/bw_example_synthpp_mono.perone --wav build/synth.wav
-./build/daw examples/brickworks.janet build/brickworks.wav
-./build/daw examples/rame.janet build/rame.wav
-./build/daw examples/patterns.janet build/patterns.wav
-make test-brickworks    # Carica e processa tutti i bundle presenti, senza ricompilarli.
+make build/editor
+./build/editor examples/prog/polpo.janet
+./build/editor --serve examples/prog/polpo.janet  # Print a URL without opening a browser.
 ```
 
-`BRICKWORKS_PERONE` configura il percorso della raccolta per `make test-brickworks`;
-gli esempi Janet leggono la variabile d'ambiente omonima. Il percorso
-predefinito è `../brickworks/build/perone`. `brickworks.janet` dimostra synth
-polifonico, compressore, pan mono→stereo e riverbero, usando anche gli esempi C++.
-
-[Rame](examples/rame.janet) è un pezzo electro di circa 57 secondi: 24 battute a
-112 BPM, con intro, groove, pausa centrale e ripresa. Le sette parti usano solo
-bundle Brickworks: accordi, basso, arpeggio, melodia e tre synth per la batteria.
-La partitura automatizza filtri, risonanza, pulse width, distorsione, chorus,
-pan e riverberi; la cassa ha una discesa d'intonazione a ogni colpo. Esporta un
-WAV stereo PCM16 normalizzato a 0,94, con sei secondi per la coda finale.
-`opening` e `piece` costruiscono l'arrangiamento come pattern immutabili; ogni
-sezione unisce note e automazioni con tempi relativi. Le durate delle sezioni
-determinano l'inizio delle successive e la posizione dell'accordo finale.
-
-[Denti di vetro](examples/denti.janet) è una miniatura IDM originale di circa 63 secondi:
-carillon inarmonici, accordi morbidi, basso su 13 passi e break a 168–186 BPM,
-con raffiche di 5, 7, 9 e 13 colpi, tagli improvvisi e un finto finale. Due A-SID
-filtrano rispettivamente il synth acido e le percussioni metalliche: cutoff,
-quantità e velocità LFO seguono automazioni indipendenti. Le otto sezioni usano
-pattern ordinari; i cambi di tempo avvengono prima della concatenazione.
-Servono i quattro bundle locali di Polpo (`synth_mono`, `drums`, `shape`, `echo`)
-e `../asid/plugin/perone/build/asid.perone`, configurabile con `ASID_PERONE`.
+For the browser, install Emscripten, Node.js and `patch`, then build the Wasm DSPs:
 
 ```sh
-./build/editor examples/denti.janet  # GUI: scegliere il modulo; «Nativa» apre la GUI A-SID originale.
-./build/daw examples/denti.janet build/denti.wav 48000
+make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
+make web-editor
+node test/server.mjs
 ```
 
-[patterns.janet](examples/patterns.janet) mostra in pochi passaggi ripetizione,
-inversione, trasposizione e dilatazione dello stesso motivo, con una curva del filtro.
+Open <http://localhost:8000/editor/index.html>. Polpo is the default score;
+`?score=examples/rame.janet` selects another file. Publish its dependencies with
+`WEB_CONTENT`, for example:
 
-`make test` compila le fixture Perone locali (sorgente stereo MIDI ed effetto mono)
-e verifica il nucleo senza richiedere i progetti in `plugins/`, Tibia o Brickworks.
-`make test-plugins` e `make prog` richiedono i bundle di esempio già presenti e
-segnalano come compilarli se mancano. Il build dell'host e i test non compilano
-plugin di produzione.
-Il codice nativo viene compilato una volta in `build/native/` e riusato fra programmi
-e test. Il compilatore genera le dipendenze dagli header (`-MMD -MP`); i test che
-includono un'implementazione per simulare I/O mantengono i propri oggetti separati.
-`make clean` pulisce programmi, oggetti e fixture dell'host, conservando i render;
-`make -C plugins clean` pulisce i plugin.
-`make keys` compila e avvia il synth da terminale autonomo in `examples/termux_synth/`.
-
-```text
-*.c, *.h           motore, sessione, player, proiezione e adattatore Janet
-posix/             loader nativo, export, CLI, X11 e backend WebUI
-web/               loader Wasm, AudioWorklet e backend dell'editor web
-editor/            interfaccia condivisa fra native e web
-perone.h           copia dell’ABI Perone definita in Tibia
-plugins/<nome>/    sorgenti, metadati e build autonomo del plugin
-lib/               metadati Perone, API della DAW e funzioni musicali Janet
-test/              test C e Janet, fixture del plugin Perone
-examples/          partiture e demo da terminale
-build/             binari dell'host e render
+```sh
+make web-editor WEB_CONTENT="lib examples plugins ../brickworks/build/perone ../asid/plugin/perone/build ../tibia/out/perone/c/build"
 ```
 
-Il codice C usa tab da 4 colonne, Janet due spazi. `.editorconfig` e `.clang-format`
-fissano spaziature e indentazione; le funzioni sono separate da una riga vuota.
-`make format` uniforma i sorgenti C locali, `make format-check` ne verifica lo stile
-con clang-format 21. Dipendenze, file generati e le copie upstream `perone.h` e `perone_ui.h`
-sono esclusi. Il formatter serve solo per questi due comandi.
+The catalog copies assets into `build/web/`; `?project=...` selects a different
+catalog URL relative to the page. If Emscripten is outside `PATH`, pass absolute
+`EMCC` and `EMXX` paths to the plugin build and `EMCC` to the host build.
+Browser playback requires HTTPS or localhost, AudioWorklet and shared memory.
+The test server supplies `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp`. Chromium is verified; Firefox and
+Safari remain unverified.
 
-## API: plugin e tracce sono distinti
+**Run** uses the current buffer and original path, preserving relative imports.
+Ctrl/Command+Enter runs from the start, Esc stops, and Ctrl/Command+S saves.
+Desktop saves replace the file atomically; web **Download** saves a local copy
+and updates the session filesystem. Reloading restores the published files.
+Scores are UTF-8 text without NUL bytes, up to 8 MiB.
+
+Active event origins light up automatically, including note generators inside
+functions. Editing suspends tracking until the buffer matches the running score
+or is rerun. The timeline shows tracks, effect chains and MIDI notes from the last
+successful run; it remains after Stop or a failed preparation. Pan, zoom and
+**Follow** operate on a bounded window, with density replacing individual notes
+when needed. Clicking a note selects its source when available. Timing follows
+rendered audio, without compensating for device latency or plugin release tails.
+
+The editor uses a textarea and plain JavaScript. It does not yet provide syntax
+highlighting, MIDI editing, parameter curves or live replacement of a running
+score. Janet preparation is synchronous and cannot be interrupted by the editor.
+The view can navigate without a known end; the scheduler still requires a finite
+score. See [limits](#architecture-and-limits) and [tracking details](test/README.md#source-tracking).
+
+## Score API
+
+Save this as `score.janet` in the repository root and run
+`./build/daw score.janet build/score.wav`:
 
 ```janet
 (def synth (daw/plugin "plugins/synth_mono/build/plugin.perone" {:vcf_cutoff 900}))
@@ -140,106 +100,60 @@ sono esclusi. Il formatter serve solo per questi due comandi.
 (daw/end 5)
 ```
 
-Salva la partitura e lancia `./build/daw partitura.janet output.wav`.
-Non serve ricompilare. Tutti i tempi sono secondi assoluti, arrotondati al campione.
-Tempo, battute, accordi, rampe e pattern sono funzioni della libreria Janet `lib/music.janet`.
+Times are absolute seconds, rounded to samples. Imports are relative to the score;
+plugin paths are relative to the host's working directory.
 
-| Operazione | Significato |
+| Call | Contract |
 | --- | --- |
-| `daw/plugin path &opt params` | Crea un'istanza e restituisce il suo handle. Parametri iniziali in una tabella. |
-| `daw/track source &opt options` | Collega un generatore e gli effetti; restituisce l'handle del mixer della traccia. |
-| `daw/master &opt options` | Configura il master opzionale, una volta sola; restituisce il suo handle. |
-| `daw/note plugin start duration pitch &opt velocity` | Nota MIDI 0–127, velocity 1–127 (default 100). |
-| `daw/param node time parameter value` | Automatizza un parametro del plugin, della traccia o del master. |
-| `daw/info node` | Descrizioni immutabili dei parametri, inclusi mapping ed etichette dei valori enumerati. |
-| `daw/product node` | Metadati completi del prodotto letti dal JSON; `nil` per i mixer. |
-| `daw/schedule start bpm pattern` | Emette un pattern in quarti a partire da `start` secondi e restituisce la fine nominale in secondi. |
-| `daw/end seconds &opt options` | Chiude la partitura e imposta durata e opzioni di export. Riproduzione ed export iniziano dopo il successo dello script. |
+| `daw/plugin path &opt params` | Create a plugin handle with optional initial parameter overrides. |
+| `daw/track source &opt options` | Attach a source and effects; return the track mixer handle. |
+| `daw/master &opt options` | Configure the optional master once; return its mixer handle. |
+| `daw/note plugin start duration pitch &opt velocity` | MIDI pitch 0–127, velocity 1–127 (default 100), duration of at least one sample. |
+| `daw/param node time parameter value` | Schedule an input parameter on a plugin or mixer, by keyword or index. |
+| `daw/info node` | Immutable parameter descriptions: index, name, label, direction, unit, range, default, integer flag, mapping and scale points. |
+| `daw/product node` | Complete immutable product metadata; `nil` for mixers. |
+| `daw/schedule start bpm pattern` | Emit a pattern in quarter-note beats; return its nominal end in seconds. |
+| `daw/end seconds &opt options` | Seal the score and set duration and export options. Playback/export follows successful preparation. |
 
-Opzioni traccia: `:gain` 0–4 (default 1), `:pan` −1–1 (default 0),
-`:effects [fx1 fx2 ...]` nell'ordine di elaborazione. Il master accetta `:gain` e
-`:effects`. Un effetto stereo usa una sola istanza che elabora entrambi i canali;
-un effetto mono 1→1 su un segnale stereo usa due istanze indipendenti, anche sulle tracce.
-Senza `daw/master` il master è semplicemente unitario.
+Track options are `:effects [fx1 fx2 ...]`, `:gain` 0–4 (default 1), and `:pan`
+−1–1 (default 0). The master accepts effects and gain; its default is unity.
+Each plugin belongs to exactly one chain. Unattached plugins, unknown options,
+invalid parameter names, out-of-range values and noninteger values for integer
+parameters are errors. Output parameters are readable but cannot be scheduled.
+`daw/info` retains the product defaults, independently of initial overrides.
 
-Le catene seguono i canali dichiarati dai plugin. Un segnale mono viene duplicato
-su L/R, alla stessa ampiezza, quando entra in un effetto stereo 2→2. Un plugin
-1→2 può generare stereo da una sorgente mono. Una conversione stereo→mono richiede
-un plugin con ingresso stereo e uscita mono; un effetto 1→2 non può ricevere
-direttamente un segnale stereo. Il master produce sempre due canali e duplica
-l'eventuale uscita mono della sua catena.
+At the same sample, parameters precede note-offs, then note-ons. Insertion order
+breaks ties; the last value of a parameter wins. Controls are discrete events;
+DSP smoothing depends on the plugin. The mono synth's `:volume` sets amplitude;
+its MIDI velocity does not. Track gain remains independent and automatable.
 
-`:pan` conserva il panning a potenza costante per le catene che terminano in mono
-(centro: circa −3 dB per canale). Per le catene stereo regola il bilanciamento
-lineare: centro unitario su entrambi i canali, estremi con il canale opposto muto.
-Non incrocia né somma i canali stereo. Gain e pan seguono gli effetti della traccia.
+## Patterns and musical time
 
-Ogni plugin appartiene a una sola catena. Crea un'altra istanza se ti serve altrove.
-Un plugin non collegato è un errore a `daw/end`, non una traccia scartata in silenzio.
-Non ci sono ancora bus, mandate, sidechain o collegamenti arbitrari.
-
-I parametri accettano keyword descrittive o indici numerici. Janet verifica nomi,
-range e valori interi prima di inviarli al C; le opzioni sconosciute sono errori.
-`(pp (daw/info synth))` permette di scoprire i controlli.
-Per il synth `:volume` è il volume; la velocity MIDI non ne controlla l'ampiezza.
-Gain e pan della traccia sono invece indipendenti dallo strumento e automatizzabili.
-
-A parità di campione: parametri → note-off → note-on; tra controlli vale l'ordine
-di inserimento. Le curve Janet generano eventi discreti: nessuna interpolazione
-implicita del mixer, e lo smussamento dei parametri DSP dipende dal plugin.
-`examples/automation.janet` mostra un minuto di automazione su effetto e panorama.
-
-## Tempo, pitch e pattern Janet
-
-`lib/music.janet` contiene cinque funzioni matematiche, senza stato di sessione:
-
-| Funzione | Risultato |
-| --- | --- |
-| `music/seconds bpm beats` | Converte quarti in secondi; accetta frazioni e offset negativi. |
-| `music/bars bpm count &opt numerator denominator` | Durata di `count` battute in secondi, metro 4/4 di default. Due battute di 7/8 a 120 BPM durano 3,5 secondi. |
-| `music/degree root intervals n` | Grado di scala a partire da zero, ripetendo gli intervalli ogni ottava anche per gradi negativi. |
-| `music/chord root intervals` | Altezze MIDI nell'ordine dato. Non alloca voci o plugin. |
-| `music/lerp a b x` | Interpolazione lineare; `x` non viene limitato a 0–1. |
-
-`lib/pattern.janet` costruisce e trasforma dati musicali finiti. Un pattern è una
-struttura con durata nominale `:length` e una sequenza di eventi `[inizio fine valore]`:
+`lib/pattern.janet` provides finite, immutable data without calling `daw/*`:
 
 ```janet
-{:length 4
- :events [[0 0.75 60] [1 1.5 64] [3 3.5 67]]}
+{:length 4 :events [[0 0.75 60] [1 1.5 64] [3 3.5 67]]}
 ```
 
-Tutti i tempi del pattern sono **quarti relativi**, senza BPM. Qui la pausa finale
-fino al quarto beat appartiene alla frase. Le note possono proseguire oltre la
-lunghezza dichiarata; sono ammessi anche anticipi negativi. Un evento con inizio e
-fine uguali rappresenta un punto, utile per i controlli. La durata nominale può
-essere zero, anche con eventi; una pausa è `(p/events durata [])`.
+Times are relative quarter-note beats. `:length` is the nominal phrase length,
+not the last event's end: pickups, overhangs and zero-length phrases are allowed.
+An event `[t t value]` is a point. Values are generic Janet data; constructors
+copy and freeze containers, subject to Janet's limits for opaque values.
 
-Le funzioni restituiscono nuove strutture senza chiamare `daw/*`. `events` copia e
-congela ricorsivamente sequenze, dizionari e buffer, compresi i valori degli eventi.
-Il valore resta generico: numero, accordo, comando o altro dato Janet. Per valori
-opachi come closure e abstract valgono i limiti di `freeze` di Janet: il loro stato
-interno non viene congelato. L'ordine di inserimento degli eventi viene conservato.
-
-| Operazione | Significato |
+| Call | Result |
 | --- | --- |
-| `p/events length items` | Valida e congela gli eventi. Tempi finiti, `length >= 0`, `inizio <= fine`. |
-| `p/steps step values` | Intervalli contigui di `step` quarti; `nil` occupa un passo di pausa. Durata totale `step * length(values)`. |
-| `p/curve length steps shape` | `steps + 1` punti `[t t shape(x)]` per `x=0..1`, estremi inclusi. Lunghezza positiva. |
-| `p/serial patterns` | Somma le durate e sposta ogni pattern dopo il precedente, conservando anticipi e prolungamenti. |
-| `p/parallel patterns` | Sovrappone a zero e usa la durata maggiore, nell'ordine della lista. |
-| `p/map f pattern` | Trasforma soltanto i valori. Un valore `nil` restituito da `f` resta un evento. |
-| `p/stretch factor pattern` | Moltiplica tempi e durata per un fattore positivo. `0.5` dimezza la durata. |
-| `p/reverse pattern` | Inverte `[a b]` in `[length-b length-a]`, mantenendo valori e ordine di inserimento. |
+| `p/events length items` | Validate and freeze events: finite times, `length >= 0`, `start <= end`. |
+| `p/steps step values` | Equal intervals; `nil` occupies a rest. Length is `step * length(values)`. |
+| `p/curve length steps shape` | `steps + 1` points from `shape(x)`, including `x=0` and `x=1`; positive length. |
+| `p/serial patterns` | Place phrases consecutively and sum their lengths. |
+| `p/parallel patterns` | Overlay at zero and take the largest length. |
+| `p/map f pattern` | Transform values only; a returned `nil` remains an event. |
+| `p/stretch factor pattern` | Scale times and length by a positive factor. |
+| `p/reverse pattern` | Map `[a b]` to `[length-b length-a]`, keeping values and insertion order. |
 
-`serial` e `parallel` su una lista vuota restituiscono un pattern vuoto di durata
-zero. Non tagliano gli eventi ai confini della frase. `reverse` può trasformare un
-prolungamento in un anticipo, e porta un controllo a tempo zero sulla fine della
-frase. Trasforma gli intervalli e i punti musicali, senza invertire audio o stato DSP.
-Le curve sono controlli discreti: la risoluzione è esplicita e lo smussamento dipende
-dal plugin. Gli estremi coincidenti seguono l'ordine della composizione.
-
-Da una partitura nella radice del repository, con `synth` già collegato a una traccia:
+Serial and parallel preserve overhangs and list order; an empty list gives a
+zero-length pattern. Repetition and alternation use ordinary Janet functions.
+With `synth` already attached to a track, replace the scheduling calls above with:
 
 ```janet
 (import ./lib/music)
@@ -255,610 +169,170 @@ Da una partitura nella radice del repository, con `synth` già collegato a una t
 (daw/end (+ end 2))
 ```
 
-`daw/schedule start bpm pattern` converte i quarti in secondi assoluti ed emette
-immediatamente gli eventi. Accetta due comandi, entrambi con quattro elementi:
+`daw/schedule` accepts `[:note node pitch velocity]` on positive intervals and
+`[:param node parameter value]` on points. Scheduling emits immediately and
+preserves DSP state across repetitions. Choose `daw/end` to include note-offs and
+effect tails; a control at the nominal end needs at least one extra sample.
+All placed events and the nominal end must fit the host's duration limit. If a
+scheduling error is caught, events already emitted remain in the session.
 
-- `[:note node pitch velocity]`: l'intervallo deve avere durata positiva. Stessi
-  limiti di `daw/note`, compresa la velocity MIDI 1–127.
-- `[:param node parameter value]`: l'evento deve essere un punto. Nomi, range e
-  valori interi sono verificati attraverso gli stessi metadati di `daw/param`.
+`lib/music.janet` contains five independent mathematical functions:
 
-Una nota deve durare almeno un campione dopo la conversione. Inizio, fine nominale
-ed eventi devono rientrare nel limite dell'host di 3600 secondi; gli anticipi devono
-quindi essere posizionati abbastanza avanti. Il valore restituito è la fine nominale,
-che può precedere un note-off: la partitura sceglie `daw/end` includendo note e code.
-Un controllo alla fine nominale richiede un export più lungo di almeno un campione.
-Le operazioni non ripristinano parametri né allocano copie dei plugin; ripetere un
-pattern sullo stesso strumento ne continua lo stato DSP. Gli errori interrompono lo
-script; se catturati, gli eventi già emessi prima dell'errore restano nella sessione.
+| Call | Result |
+| --- | --- |
+| `music/seconds bpm beats` | Beats to seconds, including fractions and negative offsets. |
+| `music/bars bpm count &opt numerator denominator` | Bar duration; default meter 4/4. |
+| `music/degree root intervals n` | Zero-based scale degree, repeating by octaves, including negative degrees. |
+| `music/chord root intervals` | MIDI pitches in the given order; no voice allocation. |
+| `music/lerp a b x` | Linear interpolation without clamping `x`. |
 
-Il C mantiene parametri → note-off → note-on a parità di campione e, tra controlli,
-l'ordine di inserimento. L'ultimo valore per lo stesso parametro prevale. I tempi
-sono numeri Janet e vengono arrotondati al campione solo dall'host: cambiare l'ordine
-di calcolo dei tempi può spostare di un campione un evento esattamente tra due campioni.
-
-Gli import sono relativi alla partitura: `../lib/pattern` negli esempi e
-`../../lib/pattern` nel brano prog. I percorsi dei plugin restano relativi alla
-directory da cui si esegue l'host. L'esempio prog incorpora i cambi di tempo nelle
-posizioni degli eventi e programma il risultato a 60 BPM, un quarto per secondo.
-
-La programmazione nella sessione avviene con `daw/schedule`; `daw/note` e `daw/param`
-restano disponibili come API a basso livello. Ripetizione e alternanza si costruiscono
-con le normali funzioni Janet e `p/serial`, senza allineamenti impliciti fra ritmi diversi.
-
-## Rendering neutro, elaborazione esplicita
+## Audio and export
 
 ```text
-sorgente mono/stereo → effetti → gain/pan → somma stereo → effetti master → gain master → WAV
+source → effects → gain/pan → stereo sum → master effects → master gain
 ```
 
-Il default è WAV float32 stereo: niente saturazione, filtro DC, fade, normalizzazione
-o clipping automatico. I valori oltre ±1 vengono conservati nel file; attenzione
-al livello quando lo si riproduce.
-
-Opzioni di export di `daw/end`:
-
-```janet
-(daw/end 30 {:format :pcm16 :normalize 0.94})
-```
-
-`:format` è `:float` (default) o `:pcm16`; PCM16 limita i campioni a ±1.
-`:normalize` imposta il picco, da 0 a 1; 0 (default) la disabilita.
-La normalizzazione usa un file temporaneo, non un buffer dell'intero brano.
-
-L'export della DAW scrive un WAV temporaneo nella directory di destinazione e
-sostituisce il file richiesto soltanto dopo la chiusura riuscita. Se il rendering
-o la scrittura falliscono, il WAV precedente resta intatto; se non esisteva,
-non viene pubblicato un file incompleto.
-
-La stessa partitura può essere riprodotta direttamente sul dispositivo audio:
-
-```sh
-./build/daw --play examples/hello.janet           # 44100 Hz
-./build/daw --play examples/hello.janet 48000
-```
-
-`--play` prepara la sessione Janet e la riproduce in streaming tramite miniaudio,
-con la stessa callback C usata dal browser. Termina alla fine del brano; Ctrl-C o
-SIGTERM interrompono la riproduzione e liberano prima il dispositivo, poi la sessione.
-L'ultimo blocco viene completato con silenzio e il player lascia scorrere la coda
-del dispositivo prima di segnalare il completamento. La durata musicale resta quella
-di `daw/end`, comprese le code degli effetti scelte dalla partitura.
-L'uscita del player è il mix float32 stereo. `:format` e `:normalize` riguardano
-l'export e vengono ignorati durante la riproduzione, sia nativa sia web: la stessa
-partitura può essere ascoltata ed esportata senza modifiche. I livelli in riproduzione
-dipendono dai gain della partitura; il WAV normalizzato può avere un livello diverso.
-
-Plugin inclusi oltre al synth e all'effetto di test:
-
-- `plugins/shape/build/plugin.perone`: waveshaper, drive/level e filtri DC/lowpass a coefficienti espliciti.
-- `plugins/echo/build/plugin.perone`: tre tap regolabili in millisecondi, livelli indipendenti e segnale dry.
-- `plugins/drums/build/plugin.perone`: 32 voci; note MIDI 0–6 = kick, snare, hat, open-hat, crash, tom-high, tom-low.
-  La velocity regola il singolo colpo; `:gain` regola l'intera istanza e `:seed` i colpi successivi.
-  I suoni decadono naturalmente e ignorano il note-off; a voci esaurite viene sostituita la più vecchia.
-
-`examples/prog/polpo.janet` sceglie esplicitamente strumenti, effetti, master e fade.
-`make prog` produce il nuovo WAV di 30 secondi in `build/il_polpo_a_sette_gomiti.wav`.
-Il [WAV storico](examples/prog/il_polpo_a_sette_gomiti.wav) resta incluso e invariato.
-Il nuovo render non è bit-identico: percussioni e delay ora usano istanze e catene
-indipendenti. `make test-prog` verifica che due nuovi render siano identici.
-
-## Editor desktop e web
-
-Sul desktop l'editor usa [WebUI](https://github.com/webui-dev/webui) per collegare HTML/CSS/JS
-al motore C nativo. Il browser mostra l'interfaccia; Janet prepara la sessione,
-miniaudio riproduce e i plugin vengono caricati dai bundle nativi `.perone`.
-Non servono Node.js o una build JavaScript per usare l'editor.
-
-```sh
-make editor
-# Oppure:
-make build/editor
-./build/editor examples/prog/polpo.janet
-./build/editor --serve examples/gui.janet
-# --serve stampa l'URL locale da aprire senza lanciare un browser.
-make test-editor
-```
-
-Eseguire dalla radice del repository. Il build opzionale scarica WebUI 2.4.2
-alla revisione fissata nel Makefile in `.deps/webui` e lo compila con GCC;
-`WEBUI` può indicare un altro checkout con `include/` e `dist/`. Servono le
-dipendenze del player nativo e X11, come per `daw-ui`; la prova corrente è Linux.
-I plugin restano compilati separatamente. Il server ascolta solo in locale e
-serve la cartella `editor/`; apertura e salvataggio dei file passano dal backend.
-
-La stessa interfaccia funziona anche nel browser con Janet, motore e plugin Wasm,
-senza WebUI o un processo nativo. Dopo aver compilato separatamente i bundle wasm32:
-
-```sh
-make web-editor
-node test/server.mjs
-# Aprire http://localhost:8000/editor/index.html
-make test-editor-web
-```
-
-`make web-editor` genera anche `build/web/project.json`: un catalogo e una copia dei
-file `.janet`, `.json` e `.wasm` nelle directory indicate da `WEB_CONTENT` (default:
-`lib examples plugins`), più tutti gli asset sotto `ui/` dei bundle Perone. Tra i
-Wasm del bundle soltanto quelli che esportano `perone_get_api` sono precaricati come DSP:
-il Wasm della UI può vivere anche accanto al DSP, in `wasm32/`. Il catalogo ispeziona
-gli export senza eseguire i moduli. I percorsi relativi dentro ogni bundle restano
-intatti per import, CSS e Wasm della UI. Il browser
-precarica partiture, metadati e DSP prima di abilitare l'editor; Janet
-risolve gli import e legge i metadati come nel native. Non si analizza il sorgente per
-indovinare le dipendenze e non c'è una lista di plugin per ciascun pezzo. Rigenerare
-il catalogo dopo modifiche ai file o nuove compilazioni. I file copiati non più elencati
-restano inutilizzati nella directory di build fino alla sua pulizia.
-
-Per includere anche i bundle esterni di A-SID e Tibia, conservando i percorsi usati
-dalle partiture:
-
-```sh
-make web-editor WEB_CONTENT="lib examples plugins ../asid/plugin/perone/build ../tibia/out/perone/c/build"
-# /editor/index.html?score=examples/denti.janet
-```
-
-`?score=...` sceglie il file iniziale (default Polpo); `?project=...` sceglie un altro
-catalogo, relativo all'URL della pagina. Il catalogo usa record `{path, url}`, con
-`asset: true` per i file UI caricati su richiesta, esclusi dal loader DSP, e URL
-relativi al catalogo. I percorsi appartengono al filesystem virtuale del runtime:
-non danno accesso al disco del visitatore. Sul web **Apri** legge questo progetto e
-**Scarica** salva una copia locale e aggiorna il filesystem della sessione, senza
-scrivere sul server; ricaricare la pagina ripristina i file pubblicati nel catalogo.
-Le GUI web funzionano anche qui; la scelta «Nativa» è disponibile solo sul desktop.
-Servono un browser con AudioWorklet e gli
-header COOP/COEP, già forniti dal server di test; i dettagli sono nella sezione web.
-
-Sul desktop, il campo del percorso accetta nomi relativi al repository o assoluti. Apri legge la
-partitura; Salva la scrive, preservando il file precedente se la scrittura fallisce.
-I file sono testo UTF-8, fino a 8 MiB. Esegui usa il buffer corrente senza salvarlo
-implicitamente e riparte dall'inizio. Percorso originale e import relativi sono
-conservati anche per una partitura non ancora salvata. Il testo resta modificabile
-durante l'ascolto; le modifiche si applicano alla successiva esecuzione.
-Ctrl+Invio esegue, Ctrl+S salva ed Esc ferma; su macOS vale anche il tasto Command.
-Errori Janet di parsing, compilazione ed esecuzione vengono mostrati nell'editor.
-
-GUI apre un pannello laterale: si sceglie il modulo e si vede una UI alla volta.
-«Plugin» carica la UI web dichiarata dal bundle, oppure controlli generici se manca;
-«Parametri» forza i controlli generici. Sul desktop «Nativa» apre invece la finestra
-originale del modulo selezionato. Cambiare modulo o tipo di vista libera la precedente;
-nascondere il pannello stacca la UI senza fermare il DSP. Stop, fine del pezzo e
-riesecuzione invalidano anche i callback delle vecchie viste. Il contatore mostra
-il tempo renderizzato, senza compensazione della latenza del dispositivo.
-
-Le righe associate agli eventi in ascolto si illuminano direttamente nell'editor,
-anche dentro le funzioni che generano note e automazioni. Non servono marcatori:
-si usa `lib/trace.janet` in entrambi i backend. I numeri di riga e le bande seguono
-lo scorrimento, senza spostare cursore o selezione. Le note restano evidenziate per
-la durata programmata, con un impulso minimo di 80 ms per note brevi e controlli.
-Il riferimento è il tempo renderizzato, quindi l'allineamento all'ascolto è approssimativo.
-Se testo o percorso differiscono dall'ultima esecuzione, il tracking si sospende;
-rieseguire applica le modifiche, ripristinare esattamente il buffer lo riattiva.
-Stop, fine del pezzo ed errori cancellano le evidenziazioni. Le origini nei file
-importati vengono conservate; nell’editor si illuminano quelle del file aperto.
-
-La sezione orizzontale sotto il codice proietta le note effettivamente programmate,
-con una corsia per traccia, strumento, catena di effetti e master esplicito. La larghezza
-di una nota indica la durata MIDI, l'altezza il pitch e l'opacità la velocity; le code
-sonore dei plugin possono proseguire oltre il rettangolo. Il cursore usa lo stesso
-orologio del tracking. Un clic mostra pitch, velocity e tempi e seleziona un'origine
-nel file aperto, se il buffer corrisponde ancora all'esecuzione. Le altre origini sono
-nel tooltip del dettaglio; non vengono aperti o sostituiti file automaticamente.
-
-La timeline è una vista dell'ultima esecuzione partita correttamente: rimane dopo
-Stop, fine del pezzo, modifica del buffer o preparazione fallita. Il divisore la
-ridimensiona. Le frecce e il campo in secondi spostano la finestra; +/− regolano lo
-zoom. Si può anche trascinare orizzontalmente, usare Maiusc+rotella per spostarsi
-e Ctrl/Command+rotella per lo zoom. La rotella normale scorre le tracce. «Segui»
-accompagna la riproduzione e si disattiva quando ci si sposta manualmente. Il canvas
-accetta anche frecce sinistra/destra e +/−; il divisore accetta frecce su/giù.
-
-La scala è indipendente dalla durata del pezzo: nessun canvas largo quanto l'intera
-partitura, nessuna necessità di conoscere la fine per navigare. Si richiedono al
-backend soltanto intervallo e corsie visibili, al massimo otto. Fino a 512 note per
-corsia si vedono gli eventi individuali; oltre, una vista di densità mostra conteggi
-e intervalli di pitch per al massimo 512 celle temporali. Include anche le note
-iniziate prima della finestra e ancora attive. Lo zoom torna automaticamente alle
-note individuali. Non è un editor MIDI e non visualizza ancora le curve dei parametri.
-
-`posix/editor.c` gestisce file, comandi WebUI e ciclo di vita sul thread principale;
-i callback WebUI attendono la risposta tramite un singolo posto protetto da mutex.
-Questa attesa non coinvolge il thread audio. `prepare_score` condivide preparazione
-da file e da buffer con la CLI e restituisce diagnostiche e, su richiesta, una
-`ScoreView` di proprietà del chiamante. `score_view.c` copia eventi e grafo della
-sessione e indicizza gli intervalli in un array; non dipende da Janet, DSP o WebUI.
-`score_view_json.c` implementa una sola volta metadati, intervalli, densità, origini
-e controllo delle revisioni; `json_write.c` contiene soltanto la scrittura JSON.
-Entrambi sono compilati per native e Wasm, senza codice di piattaforma. Le query e la
-serializzazione restano fuori dal thread audio.
-Le origini sono annotazioni facoltative, associate per nodo e ordine dell'evento:
-non vengono usate per ricostruire note o accoppiare note-on/off.
-
-Janet è già chiuso durante l'ascolto. Il browser riceve una volta i metadati del grafo,
-poi intervalli richiesti e righe attive, senza trasferire il rapporto completo né
-scandire tutta la partitura a ogni aggiornamento. Le richieste di una vecchia vista
-o esecuzione vengono scartate. Il tracking ha un budget di 8192 eventi attivi e 256
-frame distinti per risposta; il superamento è indicato come «origini parziali» e non
-tocca l'audio. Restano i limiti sperimentali su tail call e origini ambigue del tracciamento.
-
-Questo rende la **vista** indipendente da una durata finale, ma lo scheduler attuale
-prepara ancora l'intera sessione in memoria, richiede `daw/end` e accetta al massimo
-3600 secondi. La riproduzione virtualmente infinita richiederà la generazione e lo
-smaltimento degli eventi a finestre nel motore; non è introdotta da questa proiezione.
-
-`editor/index.html`, `main.js` e `timeline.js` sono condivisi. Il controller riceve
-l'adattatore e non conosce WebUI, Wasm o il filesystem. `editor/native.js` traduce le
-risposte WebUI; `web/editor.js` gestisce precaricamento, download e ciclo di vita del
-player web. `editor/native.html` carica WebUI prima di DOMContentLoaded, come richiesto
-dalla versione 2.4, poi riusa il corpo di `index.html` e lo stesso controller. Non
-esiste una seconda implementazione dell'interfaccia.
-
-Il backend web usa `score_prepare` per il buffer non salvato e trasferisce la
-proiezione al browser soltanto dopo l'avvio audio. Chiudere il player libera DSP,
-sessione e AudioContext; la proiezione ha un proprietario separato e resta disponibile
-per la timeline. Una preparazione fallita libera soltanto le risorse nuove. Il tempo
-proviene da `player_time` su entrambe le piattaforme.
-
-Il frontend mantiene una textarea con JavaScript senza framework e disegna solo i
-numeri e le bande visibili. La colorazione della sintassi resta assente: il supporto
-Janet pronto trovato per [CodeMirror 6](https://github.com/ianthehenry/codemirror-lang-janet)
-richiede dipendenze che per ora non introduciamo. La preparazione Janet è ancora
-sincrona: l'editor non interrompe uno script durante la valutazione e non
-sostituisce la musica in corso.
-
-## GUI web Perone
-
-L'editor usa il contratto `templates/perone-web` di Tibia, invariato: il bundle
-dichiara `product.ui.web = "ui/index.js"`; quel modulo esporta `create(element,
-callbacks)` e restituisce `free()`, con `set_parameter(index, value)` e `msg_in(bytes)`
-facoltativi. Le callback contengono il prodotto originale, `set_parameter_begin`,
-`set_parameter`, `set_parameter_end` e `msg_write(Uint8Array)`. La UI può usare DOM,
-canvas o un proprio Wasm: non passa dal loader dei DSP. Gli asset si risolvono
-rispetto a `import.meta.url`. Il packaging resta in Tibia: `make ui-web UI_WEB_DIR=...`.
-
-`editor/plugins.js` gestisce selezione, montaggio in uno Shadow DOM, aggiornamenti
-e smontaggio, identici per DSP nativo e Wasm. Il flusso DSP si collega soltanto quando
-`create` ha restituito la vista; eventuali gesti durante la creazione restano in attesa.
-Stop invalida anche una creazione ancora in corso, liberandone la vista quando arriva.
-Un callback non valido o un errore di comunicazione stacca la vista e segnala l'errore.
-I gesti rapidi vengono accorpati
-all'ultimo valore per parametro prima dell'invio: una sola richiesta UI alla volta
-lascia passare stato e feedback audio. I messaggi restano FIFO, al massimo 64 in attesa.
-`editor/perone-ui.js` riusa i controlli
-generici di Tibia: range lineari/logaritmici, interi, liste, toggle e meter. Una UI
-custom dichiarata ma non caricabile produce un errore; «Parametri» rimane selezionabile.
-Il prodotto viene letto, validato e serializzato da Janet durante la preparazione,
-poi conservato nella proiezione. Non ci sono descrittori C né wrapper Janet per plugin.
-
-`posix/controls.c` collega il pannello allo scambio atomico del loader nativo;
-`posix/assets.c` serve gli asset dei soli bundle della proiezione corrente, verificando
-revisione, percorsi e symlink. La copia di build di WebUI riceve una patch di due MIME
-type per `.mjs` e `.wasm`, necessari agli import ES e a `instantiateStreaming`.
-Nel browser, `web/worklet.js` riceve richieste identificate sul port dell'AudioWorklet;
-`web/perone.js` applica i controlli alla stessa istanza usata da miniaudio. I valori
-iniziali includono gli override dello score; seguono automazioni, modifiche manuali
-e parametri di uscita. Le modifiche manuali non vengono ancora scritte nello score.
-
-Per provare Tibia e A-SID senza cambiare la partitura:
-
-```sh
-make web-editor WEB_CONTENT="lib examples plugins ../asid/plugin/perone/build ../tibia/out/perone/c/build"
-node test/server.mjs
-# /editor/index.html?score=examples/gui.janet — Esegui, GUI, poi scegliere il modulo.
-# Sul desktop: ./build/editor examples/gui.janet
-make test-editor-ui
-```
-
-I bundle devono già contenere i DSP della piattaforma scelta. I bundle senza
-`ui.web` mostrano i controlli generici nel pannello. La UI Vinci originale di Tibia
-è disponibile nei nuovi bundle `../tibia/out/perone/ui/c/build/tibia-test.perone` e
-`../tibia/out/perone/ui/cxx/build/tibia-test.perone`: usare uno di questi percorsi
-al posto del bundle Tibia in `examples/gui.janet` e includere la relativa directory
-di build in `WEB_CONTENT`. Contengono `ui/index.js`, `ui/vinci-web.js` e
-`wasm32/tibia-test-ui.wasm`; rendering, slider, bypass, meter e reset girano dalla
-UI C/C++ compilata. Le build attuali di questi due bundle includono soltanto il DSP
-wasm32; per usarli col motore desktop occorre anche il DSP della piattaforma nativa.
-Il pannello lascia alla GUI la sua larghezza naturale, fino al 65% dello spazio
-disponibile; le UI più grandi rimangono scorribili. `test-editor-ui`
-usa invece una UI custom autonoma, con import relativo, CSS e Wasm grafico, su entrambi
-i backend: verifica automazioni, meter, gesti, messaggi binari, cambio vista, callback
-scaduti, Stop durante una creazione asincrona e riavvio. Le fixture non richiedono checkout esterni.
-
-## GUI native Perone
-
-`make gui` compila il player desktop opzionale e riproduce `examples/gui.janet`,
-aprendo le GUI originali di Tibia e A-SID. Serve Linux/X11, anche tramite XWayland,
-con le librerie di sviluppo X11 per compilare l'host. I plugin devono essere già
-compilati separatamente, incluse le librerie `*-ui.so`:
-
-```sh
-make gui
-# Oppure, per una partitura diversa:
-make build/daw-ui
-./build/daw-ui examples/gui.janet
-make test-ui
-```
-
-L'esempio dura 65 secondi: un synth Brickworks passa attraverso l'effetto di test
-Tibia e il filtro A-SID. Lo score automatizza gain, cutoff e tremolo di Tibia e
-cutoff, quantità e velocità LFO di A-SID, con cicli di 8, 16 e 32 secondi e 32 punti
-al secondo. I controlli si muovono automaticamente già dall'inizio. Le modifiche
-manuali vengono sovrascritte dal punto successivo dell'automazione: per provare
-liberamente un controllo, rimuovere la relativa curva dalla partitura.
-I parametri di uscita aggiornano la GUI e il pulsante reset di Tibia
-scambia messaggi con il DSP. Chiudere una finestra o premere Ctrl-C termina la prova.
-La partitura resta esportabile con la CLI ordinaria.
-
-I bundle usati sono `plugins/synth_mono/build/plugin.perone`,
-`../tibia/out/perone/c/build/tibia-test.perone` e
-`../asid/plugin/perone/build/asid.perone`. `TIBIA_PERONE` e `ASID_PERONE` possono
-scegliere altri percorsi; per esempio, la variante C++ di Tibia è in
-`../tibia/out/perone/cxx/build/tibia-test.perone`.
-
-`perone_ui.h` è il contratto UI ABI v1 copiato da Tibia. `posix/ui.c` legge i
-metadati tramite Janet, carica la libreria UI separata e gestisce finestre, idle e
-callback sul thread grafico. Apre una GUI per nodo quando il bundle contiene la
-libreria; gli effetti mono duplicati su stereo condividono la stessa GUI.
-Il widget viene mostrato e ridimensionato dopo la notifica di creazione del server
-X11, anche quando il plugin usa una connessione separata.
-`posix/ui_main.c` usa il player miniaudio comune. X11 è una dipendenza degli
-eseguibili desktop opzionali `daw-ui` ed `editor`; il DSP continua a usare Perone ABI v2.
-
-Il protocollo dei controlli vive nel loader nativo: la GUI richiede modifiche e legge
-valori e messaggi attraverso poche operazioni, senza gestire direttamente atomiche
-o code. Le modifiche dei parametri vengono accorpate all'ultimo valore e applicate
-dal thread audio in ordine di indice prima del blocco successivo, insieme alle
-eventuali copie L/R. Seguono i messaggi UI→DSP, in ordine FIFO: non esiste un ordine
-unico tra parametri e messaggi. Un messaggio non può quindi fare da separatore tra
-due modifiche dello stesso parametro. Gli eventi già programmati nello score
-possono poi sovrascrivere i valori della GUI, anche al medesimo campione.
-
-Il thread audio pubblica i valori e conferma ogni richiesta soltanto dopo averla
-applicata; una richiesta più recente rimane in attesa. La GUI legge i valori senza
-chiamare il DSP e senza rimandare al controllo un valore precedente alla modifica.
-Per un effetto duplicato, valori di uscita e messaggi visualizzati provengono
-dall'istanza sinistra. I tre callback di inizio, modifica e fine gesto applicano
-tutti il valore ricevuto; i gesti non vengono ancora registrati nella partitura.
-La GUI arrotonda i parametri interi e limita i valori al range del JSON; indici
-invalidi, parametri di uscita e valori non finiti sono errori. Negli script, invece,
-i valori fuori range o non interi vengono rifiutati per segnalare l'errore nello score.
-
-I messaggi usano due code con un produttore e un consumatore, 64 posti ciascuna,
-allocate prima della riproduzione secondo i limiti del JSON, fino a 4096 byte per
-messaggio. Il riempimento della coda o un messaggio fuori limite interrompe la prova
-con un errore. Senza una GUI i messaggi in uscita vengono scartati. I limiti sono
-uguali su native e Wasm: la coda assorbe anche i blocchi più corti del browser e
-i ritardi del collegamento WebUI. Il pannello web legge le risposte circa ogni 50 ms;
-un overflow stacca la vista e segnala l'errore. Una sola vista per nodo consuma i messaggi.
-Ogni collegamento scarta notifiche e overflow precedenti, conservando le modifiche
-già accettate in ingresso. I callback emessi durante lo smontaggio vengono ignorati.
-
-`make test-ui` richiede un display X11 e i bundle già compilati di Tibia C/C++ e
-A-SID. Verifica embedding, gesti reali del mouse, audio, sincronizzazione L/R,
-feedback delle automazioni, messaggi, creazione differita del widget, ridimensionamento e chiusura. `make test`
-verifica anche l'ordine dei controlli, le conferme concorrenti e le code tra thread,
-senza richiedere X11 o plugin esterni.
-
-## Portabilità e test web
-
-`make test-editor-web` verifica in Chromium riproduzione, timeline, tracking,
-buffer modificati, errori, ripresa e download; richiede i quattro bundle wasm32 di
-Polpo descritti sotto. `make test-trace` verifica la semantica del tracciamento con le
-fixture e il confronto PCM. I [dettagli dei test](test/README.md) descrivono anche il
-confronto delle query della proiezione fra native e Wasm.
-
-Il codice comune (`engine.c`, `session.c`, `score_view.c`, `score_view_json.c`, `json_write.c`, `daw.c`, `script.c`, `trace.c`, `player.c`) non usa
-direttamente API POSIX né contiene rami condizionali per piattaforma. Il Makefile
-seleziona i sorgenti nativi in `posix/` oppure quelli Wasm in `web/`.
-`posix/loader.c` conserva `dlopen` e `realpath`; `posix/export.c` gestisce il WAV,
-inclusi file temporanei, seek e sostituzione della destinazione. Le CLI in `posix/`
-gestiscono segnali e attesa. `PERONE_PLATFORM` e `PERONE_SUFFIX` selezionano directory e suffisso
-del binario (`.so` sul backend nativo attuale, `.wasm` sul web).
-`TARGET_OS=Darwin` esclude `-ldl`; Windows richiede ancora un backend nativo per loader,
-export e attesa della CLI. Le build native dei plugin devono essere fornite per ciascuna
-piattaforma. Sono verificati qui Linux e Wasm; gli altri sistemi non sono ancora certificati.
-Anche i test nativi in `test/` e la demo `examples/termux_synth/` usano API POSIX.
-
-La CLI può scegliere il sample rate senza modificare la partitura:
-
-```sh
-./build/daw examples/patterns.janet build/patterns-48k.wav 48000
-```
-
-Per Wasm serve Emscripten (verificato con 6.0.9), e `patch` per il player; i test richiedono anche Node.js
-(verificato con 24.18).
-Janet viene compilato da sorgente con Emscripten, separatamente dalla libreria nativa.
-I plugin restano moduli Perone wasm32 autonomi, compilati e distribuiti separatamente.
-Il player web usa miniaudio con AudioWorklet; il runtime offline rimane indipendente
-dal dispositivo audio. Nessuna build web collega l'export POSIX.
-
-```sh
-make web                         # Runtime offline daw.mjs e player miniaudio player.mjs in build/web/.
-make test-web                    # Fixture indipendenti da Tibia/Brickworks e confronto PCM nativo/Wasm.
-make test-browser                # Verifica anche l'uscita AudioWorklet in Chromium (CHROMIUM=/percorso opzionale).
-# Se emcc non è nel PATH: make test-web EMCC=/percorso/emsdk/upstream/emscripten/emcc
-node test/server.mjs
-# Aprire http://localhost:8000/test/web.html e premere Esegui test.
-```
-
-`test/web.html` è un banco di prova senza CSS. Riproduce `test/schedule.janet` e
-`test/playback.janet` tramite miniaudio, confrontando i campioni emessi dall'AudioWorklet
-con il render offline a 44,1 e 48 kHz. Verifica MIDI, effetti mono su stereo, silenzio
-nel blocco finale, arresto, riavvio ed errori. Include chiusura esterna del contesto,
-timeout del worklet, cancellazione durante l'inizializzazione e ritentativi dopo errori.
-Usa fixture e non richiede plugin esterni.
-La lettura di `product.json`, i pattern, la validazione, la schedulazione e il mix vengono
-eseguiti dal codice comune. `test-web` confronta anche un minuto di automazioni con il nativo.
-
-`test/polpo.html` esegue invece la partitura originale `examples/prog/polpo.janet`,
-con synth, waveshaper, echo e percussioni Perone: 34 istanze DSP, 30 secondi a 48 kHz.
-Il pulsante riproduce il pezzo tramite miniaudio e confronta tutti i campioni emessi
-dall'AudioWorklet con il mix offline Wasm, verificando anche il rilascio delle risorse.
-Il volume di ascolto del test è ridotto dopo il punto di acquisizione del PCM.
-
-```sh
-make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
-make test-polpo-web               # Prova completa in Chromium; richiede i bundle già compilati.
-node test/server.mjs
-# Aprire http://localhost:8000/test/polpo.html e premere Riproduci e verifica Polpo.
-```
-
-Il build Wasm dei plugin locali usa Emscripten anche per libc/libm, mantenendo
-moduli Perone autonomi. Se `emcc` non è nel `PATH`, passare `EMCC=/percorso/assoluto/emcc`
-ai comandi `make`; il [README dei plugin](plugins/README.md) descrive il build separato.
-
-Il player richiede HTTPS (oppure localhost), AudioWorklet e memoria condivisa.
-Il server di test imposta `Cross-Origin-Opener-Policy: same-origin` e
-`Cross-Origin-Embedder-Policy: require-corp`; un normale `python -m http.server`
-senza questi header non basta. La riproduzione è verificata in Chromium; Firefox e
-Safari restano da verificare. La build usa `MA_ENABLE_AUDIO_WORKLETS`, `AUDIO_WORKLET`,
-`WASM_WORKERS`, `ASYNCIFY` e `-pthread` per le primitive di sincronizzazione di miniaudio.
-
-`web/player.js` espone `createPlayerHost`, `preparePlayer(host, path, sampleRate, source?)` e
-`closePlayer(host)` per cancellare una preparazione o ritentarne la pulizia se fallisce.
-I file vengono precaricati con `addFile`, come nel runtime offline. Janet prepara la
-sessione prima dell'avvio; i moduli compilati e i parametri iniziali vengono poi passati
-all'AudioWorklet, che ricrea le istanze DSP dopo aver liberato quelle della preparazione.
-`releasePrepared` e `restorePrepared` usano configurazioni con campi nominati e conservano
-gli identificatori C. La ricostruzione riguarda soltanto lo stato iniziale: dopo rendering
-o MIDI viene rifiutata. Gli identificatori ceduti al worklet restano registrati sull'host
-fino al rilascio della sessione; un identificatore sconosciuto è un errore.
-La callback comune in `player.c` richiama `session_render`: il player produce i blocchi su
-richiesta senza conservare il PCM dell'intero pezzo. `web/worklet.js` gestisce soltanto
-preparazione, rilascio e messaggi dei plugin; il processore audio è quello di miniaudio.
-
-Passare `source` prepara il buffer e la sua proiezione, lasciando intatto il file nel
-filesystem virtuale. Il player espone `takeView()`, che trasferisce la proiezione una
-sola volta; chi la prende deve liberarla con `view_free`. Senza trasferimento viene
-liberata insieme allo score, anche in caso di avvio fallito.
-
-Il player restituito espone `start()`, `time`, `status` (0 in corso, 1 terminato, -1 errore) e
-`close()`, da attendere prima di riusare l'host. Un host gestisce un player alla volta;
-`close()` silenzia la callback, attende la sospensione, chiede il rilascio dei DSP e
-chiude il contesto prima di liberare la memoria C condivisa. Le risposte del worklet
-hanno un timeout di 10 secondi e gli errori di pulizia vengono riportati senza saltare
-i rilasci successivi. Se la chiusura del contesto non è confermata, la memoria e il blocco
-dell'host restano attivi: si può ritentare `close()` o `closePlayer(host)`. La cancellazione
-durante la preparazione attende l'inizializzazione asincrona di miniaudio; da quando inizia
-la chiusura, `start()` e `status` non sono più disponibili. `context` e `node` permettono
-di collegare l'uscita ad altri nodi Web Audio. La normalizzazione del
-picco si applica soltanto al rendering offline; il player riproduce il mix della sessione.
-Le partiture sono ancora preparate in anticipo; questo non introduce live coding.
-
-La copia generata `build/web/miniaudio.h` applica `web/miniaudio.patch` alla versione
-0.11.25: conserva e libera correttamente lo stack allineato dell'AudioWorklet, anche
-nei percorsi di errore. Il sorgente scaricato e la build nativa restano invariati.
-La patch andrà rimossa quando la correzione sarà disponibile nella dipendenza.
-`web/audio.js` corregge inoltre la deregistrazione del contesto in Emscripten 6.0.9:
-evita di chiamare `suspend()` su un contesto già chiuso, rendendo sicuro l'ordine di rilascio.
-
-`web/host.js` espone `createHost`, `addFile` e `renderScore`. Il chiamante precarica
-script, import e bundle nel filesystem virtuale mantenendo i relativi percorsi;
-`addFile` prepara anche i moduli `.wasm`. Janet continua a leggere e interpretare
-il JSON. `web/worker.js` gestisce una sola esecuzione, cancellabile terminando il Worker.
-Il risultato è PCM float stereo interleaved, con l'eventuale normalizzazione della
-partitura; `:format` riguarda l'export WAV nativo. Solo questa API offline raccoglie
-l'intero render in memoria; può continuare a essere eseguita in un normale Worker.
-
-Il collegamento Wasm segue il trasferimento dei buffer del template `web` di Tibia,
-usando però l'ABI Perone generica. Ogni istanza DSP usa una propria istanza WebAssembly;
-i buffer vengono allocati nella memoria del plugin e copiati da/verso quella del motore.
-Le callback delle directory usano funzioni Wasm tipizzate. Allocazioni e crescita della
-tabella avvengono durante la preparazione; la crescita della memoria DSP durante il
-processamento viene rifiutata. Le dimensioni iniziali delle memorie dipendono dai bundle
-(ad esempio, quelli Brickworks attuali riservano circa 8 MiB ciascuno).
-
-## Struttura e limiti
-
-`engine.c/h` gestisce istanze e scheduler, senza CLI né Janet.
-`session.c/h` contiene lo stato esplicito della sessione, le catene e il mixer.
-`daw.c` collega Janet alla sessione; `posix/daw_main.c` è la CLI di export e riproduzione.
-`posix/export.c` contiene la scrittura WAV e la pubblicazione del file.
-`player.c/h` gestisce il dispositivo miniaudio, la callback e lo stato di riproduzione,
-condivisi fra nativo e Wasm. Il player prende in prestito una sessione appena preparata
-e chiusa con `session_end`: il chiamante deve liberare il player prima della sessione,
-che durante la riproduzione è usata soltanto dalla callback audio.
-`web/player_api.c` adatta lo score web al player e restituisce gli identificatori di
-AudioContext e AudioWorklet; la gestione asincrona rimane in `web/player.js`.
-`posix/main.c` è la demo audio nativa. `posix/loader.c` implementa il backend DSP POSIX;
-`web/loader.c` e `web/perone.js` quello Wasm. Il motore chiama lo stesso piccolo
-insieme di operazioni per apertura, chiusura, parametri, reset, MIDI e processamento.
-Il contratto completo è in `loader.h`: `Engine` contiene configurazione e un puntatore
-opaco `DSP`, oltre allo scheduler. `posix/module.h` è privato al loader/UI POSIX e alle fixture
-che ne costruiscono istanze; memoria DSP, handle di libreria e API Perone non entrano
-nel motore comune. L'apertura fallita libera le risorse del backend e non modifica l'engine.
-`script.c` prepara Janet e trasferisce configurazioni numeriche al motore C.
-`trace.c` registra il ponte per il tracciamento opzionale; `lib/trace.janet` conserva
-la provenienza fuori dai valori musicali. `score_view.c` conserva la proiezione nativa
-degli eventi, con provenienza facoltativa; `editor/timeline.js` ne richiede e disegna
-soltanto la finestra visibile. Le fixture del tracciamento conservano il rapporto JSON completo come oracolo dei test.
-`lib/perone.janet` legge i bundle, interpreta bus, default e parametri;
-`lib/daw.janet` espone l'API delle partiture e conserva i metadati completi.
-`lib/music.janet` fornisce le funzioni musicali; le partiture in `examples/` scelgono
-arrangiamento, strumenti ed effetti.
-
-Il layout passato da Janet al C usa campi nominati per canali principali, bus MIDI
-e posizioni degli ingressi. `PluginConfig` conserva i valori iniziali del plugin,
-inclusi gli override, separati dai default originali esposti da `daw/info`.
-La sessione usa quella configurazione per preparare entrambe le istanze degli
-effetti mono su stereo; i mixer conservano soltanto i propri valori di gain e pan.
-`daw/end` chiude la preparazione: da quel momento i parametri cambiano attraverso
-gli eventi già programmati e i controlli delle GUI, sia native sia web.
-
-Gli eventi crescono durante la preparazione e vengono ordinati una volta sola.
-Janet viene chiuso prima del rendering; il motore non alloca memoria mentre processa
-i blocchi. Il mix occupa memoria indipendente dalla durata, più lo stato dei plugin
-e gli eventi. Limiti attuali: un export per esecuzione, 32 tracce, 128 nodi totali
-(plugin e mixer), 8 effetti per catena, 64 parametri per plugin, 3600 secondi.
-L'host accetta un bus audio principale di uscita mono/stereo, al massimo un bus
-principale di ingresso mono/stereo e un ingresso MIDI. Il sample rate viene fissato
-prima della preparazione (`Session.sample_rate`, zero sceglie 44100), fra 1 e 384000 Hz;
-non può essere cambiato durante la sessione. Le sidechain
-opzionali rimangono scollegate: il DSP riceve `NULL` nelle loro posizioni originali.
-Sono supportati fino a 8 canali di ingresso complessivi, inclusi quelli scollegati.
-CV, sidechain obbligatorie e bus principali aggiuntivi vengono rifiutati prima
-che il DSP venga caricato. Il transport sincronizzato obbligatorio viene rifiutato;
-se dichiarato opzionale, il plugin usa il proprio comportamento senza transport.
-Entrambi i backend gestiscono i messaggi della GUI entro i limiti descritti sopra.
-Il salvataggio dello stato personalizzato non è esposto dall'API delle partiture.
-
-Il contratto è Perone ABI v2, copiato senza modifiche in `perone.h`.
-L'host gestisce `alloc/init`, applica i valori iniziali, imposta il sample rate,
-fornisce la memoria richiesta da `mem_req/mem_set` e chiama `reset`.
-Alla chiusura chiama `fini`, libera la memoria DSP e poi l'istanza con `free`.
-Il motore riceve soltanto layout, default numerici e indici dei parametri di uscita;
-non contiene descrittori testuali e non legge JSON.
-
-`daw/info` include input e output nell'ordine originale, con `:index`, `:name`
-(ID simbolico), `:label`, `:direction`, `:map` e `:scale-points`, oltre a unità,
-range e default. `daw/product` conserva anche tutti gli altri campi del prodotto.
-I parametri di uscita sono descritti ma non possono essere impostati o automatizzati.
-Script e plugin devono essere fidati: nessuna sandbox o isolamento dei crash nativi.
-Le chiamate `daw/*` costruiscono la sessione in modo sincrono; thread e task asincroni
-che modificano la sessione non sono supportati.
-
-`make test` copre scheduler, ciclo di vita Perone, API, errori, catene, neutralità, automazione del
-mixer/master, separazione dei canali, effetti mono su stereo, effetti stereo
-con interazione L/R, conversioni dei canali, crescita degli eventi e formati WAV.
-Include `test/music.janet`, che prova le funzioni musicali senza dipendere da `daw/*`,
-e una curva della libreria collegata alla fixture tramite l'API reale. Verifica
-anche la conservazione del WAV precedente e la pulizia dei temporanei dopo errori
-di rendering, scrittura, finalizzazione e sostituzione del file.
-`test/player.c` confronta l'uscita della callback con il WAV a 44,1/48 kHz, usando
-blocchi variabili e un dispositivo simulato: verifica silenzio finale, attesa della
-coda, errori di inizializzazione/avvio/rendering, interruzione e CLI `--play`.
-Le opzioni di export non impediscono l'ascolto e non alterano il PCM del player;
-la stessa distinzione è verificata nell'AudioWorklet.
-Il test usa Janet e DSP reali delle fixture e non richiede un dispositivo audio.
-`make test-plugins` conserva le regressioni dei DSP reali: synth e pitch bend,
-inviluppo indipendente dai blocchi, filtro, delay, percussioni e waveshaper,
-oltre ai metadati Brickworks usati da una partitura Janet.
-
-`make run` suona la demo di otto secondi usando il synth già compilato con
-`make -C plugins/synth_mono`; `--input` elabora il microfono (usare cuffie).
-L'host autonomo usa i canali di ingresso/uscita del plugin e salva WAV mono o stereo
-secondo la sua uscita; il renderer Janet produce sempre WAV stereo.
-`make keys` avvia il synth autonomo a 16 voci, 48 kHz stereo:
-`a w s e d f t g y h u j k`, `q` per uscire. La demo audio usa Janet soltanto per
-leggere il bundle; il synth da terminale non dipende da Janet.
-I sorgenti e le dipendenze conservano le rispettive licenze.
+A mono 1→1 effect on stereo uses two independent instances. Mono is duplicated
+at equal amplitude for a 2→2 effect; a 1→2 effect accepts only mono input.
+Stereo-to-mono conversion requires a 2→1 plugin. The master always outputs stereo.
+Mono panning uses constant power (about −3 dB per channel at center); stereo uses
+linear balance, with unity at center and no channel mixing.
+
+The default export is stereo float32 WAV, preserving samples outside ±1.
+There is no implicit clipping, DC filter, fade or normalization.
+`(daw/end 30 {:format :pcm16 :normalize 0.94})` selects PCM16 (clipped to ±1)
+and a target peak. Normalization ranges from 0 to 1; zero disables it. Native
+normalization uses temporary disk storage. Export replaces the destination only
+after successful finalization, preserving an existing WAV on failure.
+
+`--play` streams the float mix through miniaudio and ignores export format and
+normalization. The common player pads the last block with silence and drains the
+device before completion; Ctrl-C or SIGTERM stops native playback. The default
+sample rate is 44100 Hz, configurable as the final CLI argument; editors use 48000 Hz.
+
+## Perone and plugin UIs
+
+Perone is the canonical plugin format. A bundle contains `product.json` and
+`<platform>/<bundleName>.so` or `wasm32/<bundleName>.wasm`, plus optional UI assets.
+The binary name comes from `product.bundleName`; the bundle directory may be renamed.
+`PERONE_PLATFORM` and `PERONE_SUFFIX` select the host target, normally
+`<uname -m>-<lowercase TARGET_OS>` and `.so` on native builds.
+
+Janet reads the JSON and passes numeric configuration to C. The DSP loader uses
+`perone_get_api(PERONE_ABI_VERSION)`; `perone.h` is an unchanged copy of Tibia's
+ABI v2. No internal `parameters.h`, C metadata tables or per-plugin Janet wrapper
+is needed. Native UIs use the separate ABI v1 in `perone_ui.h`.
+
+The editor's **GUI** panel shows one module at a time. **Plugin** loads its web UI
+or falls back to generated controls; **Parameters** always uses generated controls.
+On Linux/X11, **Native** opens the original plugin window from its `*-ui.so`.
+`make gui` runs `examples/gui.janet` with the original Tibia and A-SID windows;
+`build/daw-ui` accepts other scores. All DSP and UI binaries must be built separately.
+
+A web UI declares `product.ui.web = "ui/index.js"`. That ES module exports
+`create(element, callbacks)` and returns a view with mandatory `free()` and optional
+`set_parameter(index, value)` and `msg_in(bytes)`. Callbacks provide `product`,
+`set_parameter_begin`, `set_parameter`, `set_parameter_end` and `msg_write(Uint8Array)`.
+UI code runs in a Shadow DOM and may load its own Wasm; resolve assets relative to
+`import.meta.url`. Tibia packages it with `make ui-web UI_WEB_DIR=...`.
+
+Tibia's original Vinci UI is available in
+`../tibia/out/perone/ui/{c,cxx}/build/tibia-test.perone`. To try it, substitute one
+of those paths in `examples/gui.janet` and add its build directory to `WEB_CONTENT`.
+The C/C++ UI runs through `ui/index.js`, `ui/vinci-web.js` and
+`wasm32/tibia-test-ui.wasm`; desktop DSP playback also needs a native DSP binary
+in the same bundle.
+
+Both backends show initial overrides, automation and output parameters. UI gestures
+are clamped and rounded using JSON metadata; scheduled automation can overwrite
+them at the next event. Gestures are not written back into the score.
+Updates are coalesced to the latest value per parameter and applied before FIFO
+messages; there is no combined ordering between parameters and messages.
+Messages have 64 queue slots per direction and a maximum payload of 4096 bytes,
+subject to smaller product limits. One view per node consumes output messages;
+duplicated mono effects report from the left instance.
+
+Switching views, hiding the panel or stopping releases the UI and invalidates its
+callbacks. Asynchronous creation queues gestures until attachment; a view arriving
+after Stop is freed. Invalid callbacks or communication errors detach the web view.
+A new attachment clears old notifications and overflow while preserving accepted
+input changes. Native and web UI lifecycle tests are described in the [test guide](test/README.md).
+
+## Examples
+
+| Score | Content and required bundles |
+| --- | --- |
+| [hello](examples/hello.janet) | Minimal local synth score. |
+| [automation](examples/automation.janet) | One minute of effect and mixer automation; local plugins. |
+| [patterns](examples/patterns.janet) | Repetition, reversal, transposition, stretching and a filter curve; Brickworks synth. |
+| [brickworks](examples/brickworks.janet) | Original C/C++ synth, compressor, mono-to-stereo pan and reverb bundles. |
+| [Rame](examples/rame.janet) | About 57 seconds of electro, using only Brickworks bundles. |
+| [Il polpo a sette gomiti](examples/prog/polpo.janet) | 30 seconds; local `synth_mono`, `drums`, `shape` and `echo`. |
+| [Denti di vetro](examples/denti.janet) | About 63 seconds of irregular IDM; Polpo's plugins plus A-SID. |
+| [gui](examples/gui.janet) | 65 seconds of automation and UI feedback; local synth, Tibia and A-SID. |
+
+Scores read `BRICKWORKS_PERONE`, `TIBIA_PERONE` and `ASID_PERONE` where applicable.
+Defaults are `../brickworks/build/perone`, `../tibia/out/perone/c/build/tibia-test.perone`
+and `../asid/plugin/perone/build/asid.perone`. Include these bundles in the web
+catalog when needed. The [historical Polpo WAV](examples/prog/il_polpo_a_sette_gomiti.wav)
+is preserved; `make prog` writes the current arrangement to `build/`.
+
+`make run` plays an eight-second standalone synth demo. `build/host` accepts a
+bundle with `--wav output.wav` or `--input` for microphone processing.
+`make keys` runs the independent 16-voice terminal synth at 48 kHz:
+`a w s e d f t g y h u j k`, with `q` to quit.
+
+## Architecture and limits
+
+| Location | Responsibility |
+| --- | --- |
+| Root C files | Engine, session, player, Janet adapter, trace bridge and score projection. |
+| `lib/` | Perone metadata, score API, music, patterns and optional source tracking. |
+| `posix/` | Native loader, file export, CLI, X11 and WebUI backend. |
+| `web/` | Wasm loader, AudioWorklet lifecycle and browser editor backend. |
+| `editor/` | Shared HTML, controller, plugin panel and timeline. |
+| `plugins/`, `test/`, `examples/` | Separate plugin builds, verification and scores. |
+
+Core files contain no platform branches or direct POSIX calls. Native Linux and
+Wasm are verified. `TARGET_OS=Darwin` omits `-ldl`, but macOS remains unverified;
+Windows still needs native loader, export and CLI backends. Desktop UI hosts
+currently require X11. Each native platform needs matching plugin binaries.
+
+Preparation builds and sorts all events, then closes Janet before audio starts.
+The engine allocates no memory during processing; mixing buffers are independent
+of duration, while stored events are not. Current limits are 32 tracks, 128 nodes,
+8 effects per chain, 64 parameters per plugin, 3600 seconds and one export per run.
+Sample rates range from 1 to 384000 Hz and remain fixed for the session.
+
+Plugins may have one main mono/stereo audio output, at most one main mono/stereo
+input, and one MIDI input. Optional sidechains remain disconnected, with at most
+8 total input channels. CV, required sidechains, extra main buses and required
+synchronized transport are rejected. Optional transport is left unused.
+Custom plugin state persistence and asynchronous score mutation are not exposed.
+Scripts and plugins must be trusted; native crashes are not isolated.
+
+The browser uses the same miniaudio callback as native playback. Standalone DSP
+Wasm modules have separate memories; allocation and memory growth are confined to
+preparation. `web/host.js` provides `createHost`, `addFile` and `renderScore` for
+offline interleaved stereo PCM, including score normalization; this API collects
+the whole render in memory. `web/player.js` provides `createPlayerHost`,
+`preparePlayer(host, path, sampleRate, source?)` and `closePlayer(host)` for streaming.
+Preload scripts, imports and bundles with `addFile`, preserving their paths.
+
+A player exposes `start()`, `time`, `status` (0 running, 1 done, −1 failed),
+`context`, `node` and `close()`. Await closure before reusing its host. Cleanup
+retains shared memory if AudioContext closure cannot be confirmed and can be retried.
+Preparing from `source` also captures the immutable score projection; `takeView()`
+transfers it once, and the caller must release it with `view_free`. Projection
+queries and serialization stay outside the audio thread.
+
+Native objects are shared under `build/native/`, with compiler-generated header
+dependencies. `make clean` preserves renders; plugin cleanup is separate.
+Use English for prose, comments and UI text; keep musical names.
+Local C uses tabs displayed at four columns, Janet two spaces, and JavaScript
+four spaces. `.editorconfig` and `.clang-format` define formatting;
+`make format-check` uses clang-format 21 and excludes upstream/generated files.
+The build patches copies of WebUI (asset MIME types) and miniaudio (worklet stack
+cleanup); `web/audio.js` handles Emscripten's already-closed AudioContext case.
+Sources and dependencies retain their respective licenses.
+See the [test guide](test/README.md) for commands, prerequisites and coverage.

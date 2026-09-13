@@ -5,7 +5,7 @@ import {mkdtemp, readFile, writeFile, stat, chmod, rm} from "node:fs/promises";
 import {withBrowser} from "./chromium.mjs";
 
 const directory = await mkdtemp("build/editor-test-");
-const path = `${directory}/partitura "音".janet`;
+const path = `${directory}/score "音".janet`;
 const source = `# Unicode, "quotes", backslash \\ and <html> stay plain text.
 (import ./helper)
 (import ../../lib/pattern :as p)
@@ -108,7 +108,7 @@ try {
         assert.deepEqual(notes.map(note => note.slice(1)), [[0, 2, 60, 100], [0.25, 2.5, 64, 80]]);
         await set("code", "# new draft\n" + changed);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
-        assert((await evaluate('document.querySelector("#state").textContent')).includes("tracking sospeso"));
+        assert((await evaluate('document.querySelector("#state").textContent')).includes("tracking paused"));
         await set("code", changed);
         await waitFor(`document.querySelector('#marks [data-line="${producer}"]')`);
         await set("path", `${directory}/another.janet`);
@@ -134,11 +134,11 @@ try {
         assert.equal(await readFile(path, "utf8"), source, "Run must not save the draft");
         await click("views");
         await click("views");
-        await waitFor('document.querySelector("#state").textContent === "In ascolto"');
+        await waitFor('document.querySelector("#state").textContent === "Playing"');
         const screenshot = await call("Page.captureScreenshot", {format: "png"});
         await writeFile("build/editor.png", Buffer.from(screenshot.data, "base64"));
         await click("stop");
-        await waitFor('document.querySelector("#state").textContent === "Fermo"');
+        await waitFor('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert.equal(await evaluate('Number(document.querySelector("#notes").dataset.notes)'), 2, "Stop retains the prepared projection");
         const notePoint = await evaluate(`(() => {
@@ -183,7 +183,7 @@ try {
         await set("code", changed);
         await click("run");
         await waitFor('!document.querySelector("#stop").disabled');
-        await waitFor('document.querySelector("#state").textContent === "Fermo"');
+        await waitFor('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert.equal(await evaluate('statusHasTrace'), false, "Never transfer the complete source report");
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
@@ -196,7 +196,7 @@ try {
         await waitFor('document.querySelector("#errors").hidden && !document.querySelector("#run").disabled');
         const responses = await evaluate(`Promise.all(Array.from({length: 8}, () =>
             webui.call("command", "status").then(JSON.parse)))`);
-        assert(responses.every(response => !response.error || response.error.includes("occupato")));
+        assert(responses.every(response => !response.error || response.error.includes("busy")));
         const dense = `(def lead (daw/plugin "build/fixture.perone" {:gain 0.001}))
 (def fx (daw/plugin "build/effect.perone"))
 (daw/track lead {:effects [fx]})
@@ -245,7 +245,7 @@ try {
         const rpc = async args => {
             for (let i = 0; i < 30; ++i) {
                 const result = await evaluate(`webui.call("command", ...${JSON.stringify(args)}).then(JSON.parse)`);
-                if (!result.error?.includes("occupato")) return result;
+                if (!result.error?.includes("busy")) return result;
                 await new Promise(resolve => setTimeout(resolve, 20));
             }
             throw Error("RPC remained busy");

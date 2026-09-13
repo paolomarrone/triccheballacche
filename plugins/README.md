@@ -1,98 +1,58 @@
-# Plugin di esempio
+# Example plugins
 
-I plugin si generano con Tibia e si compilano separatamente dall'host.
-Servono compilatore C, make, Node.js, il modulo `dot` e un checkout Tibia
-con i target `perone` e `perone-make`. `synth_mono` e `fx_svf` richiedono anche
-Brickworks con l'API corrente (`plugin_init` restituisce `int`).
+Plugins are generated with Tibia and built separately from the host. They require
+a C compiler, make, Node.js and `dot` (for example, run `npm install dot` in Tibia).
+The generator must provide `perone` and `perone-make`; Brickworks must use the
+current plugin API, where `plugin_init` returns `int`.
 
-Per default i repository sono affiancati: `../tibia` e `../brickworks`, rispetto
-alla radice di triccheballacche. Nessuna dipendenza DSP viene scaricata o modificata.
+The default checkouts are `../tibia` and `../brickworks`, relative to the host root.
+No DSP dependency is downloaded or modified. From the host root:
 
 ```sh
 make -C plugins/echo
 make -C plugins
-make -C plugins TIBIA=/percorso/tibia BRICKWORKS=/percorso/brickworks
+make -C plugins TIBIA=/path/to/tibia BRICKWORKS=/path/to/brickworks
+make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
 make -C plugins clean
 ```
 
-Per compilare le versioni Wasm, con Emscripten nel `PATH`:
+Use `make -C plugins PERONE_PLATFORM=wasm32` for all local Wasm plugins.
+Emscripten supplies libc/libm; `EMCC` and `EMXX` select its compilers. Use absolute
+paths when they are outside `PATH`, since make enters generated build directories.
+Wasm modules are standalone, without JavaScript or WASI imports. Their initial
+memory is 1 MiB and may grow during preparation. Native binaries already in the
+bundle are preserved.
 
-```sh
-make -C plugins PERONE_PLATFORM=wasm32
-# Oppure soltanto i bundle usati da Polpo:
-make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
-```
-
-`EMCC` e `EMXX` configurano i compilatori; se non sono nel `PATH`, usare percorsi
-assoluti, perché il build entra nelle directory dei plugin e del codice generato.
-Il build locale usa la libreria C e matematica di Emscripten per i DSP che ne hanno
-bisogno, mantenendo il wrapper e l'ABI Perone di Tibia. Produce moduli `.wasm`
-autonomi, senza JavaScript o import WASI; la memoria iniziale è 1 MiB e può crescere
-durante la preparazione. I binari nativi già presenti nel bundle vengono conservati.
-L'host continua a caricare bundle precompilati e non partecipa a questo build.
-
-`TIBIA` indica il generatore, non la copia dell'header nel repository dell'host.
-Il modulo `dot` deve essere risolvibile da Node (ad esempio `npm install dot`
-nel checkout Tibia). I plugin non richiedono Janet, miniaudio o sorgenti dell'host.
-
-| Progetto | Sorgenti DSP | Parametri |
+| Project | DSP source | Controls |
 | --- | --- | --- |
-| `synth_mono` | `brickworks/examples/synth_mono/src/plugin.h`, originale | 38 input e meter `level` in output |
-| `fx_svf` | `brickworks/examples/fx_svf/src/plugin.h`, originale | Filtro a variabili di stato |
-| `drums` | `plugin.h` locale | Gain e seed delle percussioni |
-| `shape` | `plugin.h` locale | Waveshaper e filtri |
-| `echo` | `plugin.h` locale | Delay a tre tap |
-| `tibia_test` | `plugin.h` locale | Gain, filtro, delay, bypass e output |
+| `synth_mono` | Original Brickworks `examples/synth_mono/src/plugin.h` | 38 inputs and the `level` output meter. |
+| `fx_svf` | Original Brickworks `examples/fx_svf/src/plugin.h` | State-variable filter. |
+| `drums` | Local `plugin.h` | Percussion gain and seed. |
+| `shape` | Local `plugin.h` | Waveshaper drive/level and DC/low-pass filters. |
+| `echo` | Local `plugin.h` | Three delay taps in milliseconds, individual levels and dry signal. |
+| `tibia_test` | Local `plugin.h` | Gain, filter, delay, bypass and output. |
 
-Ogni progetto fornisce `plugin.h` e `product.json`, direttamente o tramite il
-percorso Brickworks. `plugin.mk` genera in `build/gen` l'API, il wrapper e il
-Makefile; quest'ultimo produce il bundle `build/plugin.perone` e segue le dipendenze degli header.
-Il JSON è la fonte dei default e dei metadati: non ci sono tabelle manuali parallele.
-I preset musicali restano nelle partiture Janet.
+`drums` has 32 voices; MIDI notes 0–6 select kick, snare, hat, open hat, crash,
+high tom and low tom. Velocity scales each hit, `:gain` scales the instance and
+`:seed` affects subsequent hits. Sounds decay naturally, ignore note-off and
+steal the oldest voice when full.
 
-`make test-plugins`, dalla radice dell'host, verifica i sei bundle già compilati.
-I test del synth verificano anche l'indipendenza dai blocchi e il pitch bend
-440/220/880/440 Hz. Queste correzioni devono essere presenti in Brickworks:
-il wrapper non applica patch DSP né altera i messaggi per compensare bug del synth.
+Each project supplies `plugin.h` and `product.json`, locally or through Brickworks.
+`plugin.mk` generates the wrapper, API and Makefile in `build/gen`, producing
+`build/plugin.perone/product.json` and `<platform>/<bundleName>.so` or
+`wasm32/<bundleName>.wasm` inside that bundle. The generated build tracks headers.
+JSON supplies defaults and metadata; musical presets remain in Janet scores.
+Plugins require no Janet, miniaudio or host sources.
 
-Il target `perone` esporta solo `perone_get_api(version)`. Il contratto è definito
-in `tibia/templates/perone/perone.h`; `triccheballacche/perone.h` ne contiene
-una copia identica per compilare l'host senza il generatore.
-Perone espone il ciclo di vita `plugin_*`: è l'host a inizializzare il DSP,
-applicare i default, fornire la memoria DSP e liberare le risorse.
+Pass the complete `.perone` directory to `build/host` or `daw/plugin`; JSON must
+travel with the binary. The host uses the unchanged Perone ABI from Tibia, with
+no DSP patches or pitch-bend compensation. See the [host contract and UI support](../README.md#perone-and-plugin-uis).
 
-Il bundle generato contiene:
+The original examples in `../brickworks/build/perone` can also be loaded directly,
+including C++ variants. `examples/brickworks.janet` demonstrates this; no local
+plugin project or Janet wrapper is needed per module.
 
-```text
-build/plugin.perone/
-  product.json
-  <architettura>-<sistema>/
-    <bundleName>.so
-  wasm32/
-    <bundleName>.wasm
-```
-
-Ogni directory di piattaforma è presente dopo averne eseguito il relativo build.
-
-Il JSON è esterno e va distribuito insieme al binario. Janet lo legge al caricamento
-per interpretare bus, parametri, mapping e scale points. Il C riceve soltanto
-configurazione numerica ed eventi; gli indici sono quelli degli array JSON originali.
-`daw/info` espone i parametri e `daw/product` restituisce il prodotto completo.
-Non servono sorgenti DSP, generatori o header interni durante l'esecuzione.
-
-Passa la directory `.perone` a `build/host` o `daw/plugin`. Puoi copiarla o
-rinominarla; il nome del binario al suo interno resta quello di `product.bundleName`.
-`PERONE_PLATFORM` seleziona la piattaforma di destinazione sia nel build dei plugin
-sia in quello dell'host; per default viene rilevata con `uname`.
-
-L'host supporta sorgenti ed effetti mono/stereo, un ingresso MIDI e sidechain
-opzionali scollegate. Le sidechain obbligatorie, i bus CV, i bus principali
-aggiuntivi e il transport sincronizzato obbligatorio non sono supportati.
-Le GUI native e web possono scambiare parametri e messaggi binari con il DSP;
-limiti e contratto sono descritti nel [README dell'host](../README.md#gui-web-perone).
-Le funzionalità Perone disponibili possono essere più ampie di quelle dell'host.
-
-Gli 80 esempi compilati in `../brickworks/build/perone` si possono caricare
-direttamente, senza copiarli in questi progetti. `make test-brickworks` nella radice
-di triccheballacche verifica tutti i bundle presenti. `examples/brickworks.janet`
-mostra una catena con esempi C e C++ originali.
+From the host root, `make test-plugins` checks the six local prebuilt bundles,
+including synth pitch bend at 440/220/880/440 Hz and block-size independence.
+`make test-brickworks` checks all bundles in `BRICKWORKS_PERONE` (default
+`../brickworks/build/perone`). Both commands test existing binaries without building them.

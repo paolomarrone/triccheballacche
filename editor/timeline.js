@@ -65,7 +65,7 @@ export function timeline(request, select, error) {
         hits = [];
         if (!score) {
             context.fillStyle = ink;
-            context.fillText("Esegui una partitura per vedere le note", 12, Math.min(height / 2, 45));
+            context.fillText("Run a score to see its notes", 12, Math.min(height / 2, 45));
             return;
         }
         const view = viewport(), rawStep = scale * 85, power = 10 ** Math.floor(Math.log10(rawStep));
@@ -123,7 +123,7 @@ export function timeline(request, select, error) {
                 });
                 context.globalAlpha = 1;
                 context.fillStyle = foreground;
-                context.fillText(`${lane.count} note · densità · doppio clic per avvicinare`, label + 8, y + 12);
+                context.fillText(`${lane.count} notes · density · double-click to zoom in`, label + 8, y + 12);
             }
             context.restore();
         }
@@ -139,7 +139,7 @@ export function timeline(request, select, error) {
         }
         canvas.dataset.notes = hits.length;
         canvas.dataset.dense = Boolean(data?.lanes.some(lane => lane.density));
-        canvas.setAttribute("aria-label", `Note da ${from.toFixed(2)} a ${view.to.toFixed(2)} secondi. Tracce ${score.tracks.length ? view.first + 1 : 0}–${Math.min(score.tracks.length, view.first + view.count)}.`);
+        canvas.setAttribute("aria-label", `Notes from ${from.toFixed(2)} to ${view.to.toFixed(2)} seconds. Tracks ${score.tracks.length ? view.first + 1 : 0}–${Math.min(score.tracks.length, view.first + view.count)}.`);
     }
 
     function resize() {
@@ -216,7 +216,7 @@ export function timeline(request, select, error) {
             const result = await request("note", revision, found.node, found.note[0]);
             if (revision !== score.revision || selected !== selection || result.stale) return;
             detail.title = result.frames.map(([file, line, column]) => `${file}:${line}:${column}`).join("\n");
-            if (result.truncated) detail.title += "\nOrigini parziali";
+            if (result.truncated) detail.title += "\nPartial origins";
             select(result.frames);
         } catch (cause) { error(cause); }
     };

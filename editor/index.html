@@ -1,18 +1,18 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>triccheballacche</title>
 <link rel="stylesheet" href="style.css">
 <script type="module" src="start.js"></script>
-<nav aria-label="Partitura e riproduzione">
-    <button id="run" title="Esegui dall’inizio · Ctrl+Invio" aria-label="Esegui" disabled>▶</button>
+<nav aria-label="Score and playback">
+    <button id="run" title="Run from the start · Ctrl+Enter" aria-label="Run" disabled>▶</button>
     <button id="stop" title="Stop · Esc" aria-label="Stop" disabled>■</button>
-    <input id="path" type="text" aria-label="Percorso della partitura" spellcheck="false" placeholder="examples/gui.janet" disabled>
-    <span id="modified" title="Modifiche non salvate" aria-label="Modifiche non salvate"></span>
-    <button id="open" title="Apri partitura" disabled>Apri</button>
-    <button id="save" title="Salva · Ctrl+S" disabled>Salva</button>
-    <label id="plugin-views" title="Mostra le GUI dei plugin"><input id="views" type="checkbox" disabled> GUI</label>
+    <input id="path" type="text" aria-label="Score path" spellcheck="false" placeholder="examples/gui.janet" disabled>
+    <span id="modified" title="Unsaved changes" aria-label="Unsaved changes"></span>
+    <button id="open" title="Open score" disabled>Open</button>
+    <button id="save" title="Save · Ctrl+S" disabled>Save</button>
+    <label id="plugin-views" title="Show plugin UIs"><input id="views" type="checkbox" disabled> GUI</label>
 </nav>
 <main>
     <div id="workspace">
@@ -20,39 +20,39 @@
         <div id="gutter" aria-hidden="true"><pre id="numbers"></pre></div>
         <div id="input">
             <div id="marks" aria-hidden="true"></div>
-            <textarea id="code" aria-label="Partitura Janet" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" disabled></textarea>
+            <textarea id="code" aria-label="Janet score" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" disabled></textarea>
         </div>
     </div>
-    <aside id="plugins" aria-label="GUI del plugin" hidden>
+    <aside id="plugins" aria-label="Plugin UI" hidden>
         <div id="plugin-tools">
-            <select id="plugin-node" aria-label="Modulo"></select>
-            <select id="plugin-kind" aria-label="Tipo di GUI">
+            <select id="plugin-node" aria-label="Module"></select>
+            <select id="plugin-kind" aria-label="UI type">
                 <option value="auto">Plugin</option>
-                <option value="generic">Parametri</option>
+                <option value="generic">Parameters</option>
             </select>
         </div>
         <div id="plugin-ui"></div>
     </aside>
     </div>
-    <div id="split" role="separator" aria-label="Altezza della timeline" aria-orientation="horizontal" tabindex="0"></div>
-    <section id="timeline" aria-label="Proiezione della partitura">
+    <div id="split" role="separator" aria-label="Timeline height" aria-orientation="horizontal" tabindex="0"></div>
+    <section id="timeline" aria-label="Score projection">
         <div id="timeline-tools">
-            <button id="pan-left" title="Indietro nella vista" aria-label="Indietro nella vista">‹</button>
-            <input id="view-start" type="number" min="0" step="any" value="0" aria-label="Inizio della vista in secondi" title="Inizio della vista in secondi">
+            <button id="pan-left" title="Pan left" aria-label="Pan left">‹</button>
+            <input id="view-start" type="number" min="0" step="any" value="0" aria-label="View start in seconds" title="View start in seconds">
             <span>s</span>
-            <button id="pan-right" title="Avanti nella vista" aria-label="Avanti nella vista">›</button>
-            <button id="zoom-out" title="Allontana" aria-label="Allontana">−</button>
-            <button id="zoom-in" title="Avvicina" aria-label="Avvicina">+</button>
-            <label><input id="follow" type="checkbox" checked> Segui</label>
+            <button id="pan-right" title="Pan right" aria-label="Pan right">›</button>
+            <button id="zoom-out" title="Zoom out" aria-label="Zoom out">−</button>
+            <button id="zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
+            <label><input id="follow" type="checkbox" checked> Follow</label>
             <output id="note-info"></output>
         </div>
-        <div id="roll"><canvas id="notes" tabindex="0" aria-label="Note della partitura"></canvas><div id="lanes-space" aria-hidden="true"></div></div>
+        <div id="roll"><canvas id="notes" tabindex="0" aria-label="Score notes"></canvas><div id="lanes-space" aria-hidden="true"></div></div>
     </section>
     <pre id="errors" role="alert" hidden></pre>
 </main>
 <footer>
-    <span id="state" role="status">Collegamento…</span>
-    <output id="time" title="Tempo renderizzato">0.00 s</output>
-    <span id="position" title="Riga:colonna">1:1</span>
+    <span id="state" role="status">Connecting…</span>
+    <output id="time" title="Rendered time">0.00 s</output>
+    <span id="position" title="Line:column">1:1</span>
 </footer>
 </html>
