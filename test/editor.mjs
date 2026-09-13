@@ -143,7 +143,7 @@ try {
         assert.equal(await evaluate('Number(document.querySelector("#notes").dataset.notes)'), 2, "Stop retains the prepared projection");
         const notePoint = await evaluate(`(() => {
             const canvas = document.querySelector('#notes'), rect = canvas.getBoundingClientRect();
-            const row = document.querySelector("#track-list button").getBoundingClientRect().height;
+            const row = document.querySelector("#track-list .track").getBoundingClientRect().height;
             return [rect.left + Math.min(230, Math.round(canvas.clientWidth * 0.3)) + 18,
                 rect.top + 24 + row - 8 - 8.5 * (row - 16) / 13];
         })()`);
@@ -243,12 +243,12 @@ try {
         await changeStart(0);
         await waitFor('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
         assert.equal(await evaluate('document.querySelector("#timeline-tools").querySelectorAll("button,input[type=number]").length'), 0);
-        const beforeZoom = await evaluate('[Number(document.querySelector("#notes").dataset.scale), document.querySelector("#track-list button").clientHeight]');
+        const beforeZoom = await evaluate('[Number(document.querySelector("#notes").dataset.scale), document.querySelector("#track-list .track").clientHeight]');
         await evaluate(`(() => {
             const c = document.querySelector("#notes"), r = c.getBoundingClientRect();
             c.dispatchEvent(new WheelEvent("wheel", {bubbles: true, cancelable: true, ctrlKey: true, deltaY: -100, clientX: r.left + 300, clientY: r.top + 40}));
         })()`);
-        const afterZoom = await evaluate('[Number(document.querySelector("#notes").dataset.scale), ...Array.from(document.querySelectorAll("#track-list button"), b => b.clientHeight)]');
+        const afterZoom = await evaluate('[Number(document.querySelector("#notes").dataset.scale), ...Array.from(document.querySelectorAll("#track-list .track"), b => b.clientHeight)]');
         assert.equal(afterZoom[0], beforeZoom[0], "Ctrl+wheel preserves the time scale");
         assert(afterZoom.slice(1).every(h => h > beforeZoom[1] && h === afterZoom[1]), "Ctrl+wheel expands every track equally");
         await evaluate(`(() => {
@@ -256,7 +256,7 @@ try {
             c.dispatchEvent(new WheelEvent("wheel", {bubbles: true, cancelable: true, deltaY: -30, clientX: r.left + 250, clientY: r.top + 40}));
         })()`);
         assert(await evaluate(`Number(document.querySelector("#notes").dataset.scale) < ${beforeZoom[0]}`), "Plain wheel zooms in time");
-        assert.equal(await evaluate('document.querySelector("#track-list button").clientHeight'), afterZoom[1]);
+        assert.equal(await evaluate('document.querySelector("#track-list .track").clientHeight'), afterZoom[1]);
         await changeStart(0);
         await waitFor('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
         await evaluate('window.holdRange = true; window.rangeHeld = false');

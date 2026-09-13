@@ -50,6 +50,7 @@ function dirty() {
 
 function update() {
     controls?.status(prepared, busy);
+    projection.status(prepared, busy);
     for (const id of ["open", "save", "run", "views"]) byId(id).disabled = !ready || busy;
     byId("stop").disabled = !ready || busy || !playing;
     byId("play").disabled = !ready || busy || !prepared;

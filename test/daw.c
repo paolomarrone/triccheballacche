@@ -253,6 +253,81 @@ static int session_bundle(Session *s, const char *path) {
 	return id;
 }
 
+static void listen_mix(Session *s, float left, float right) {
+	float audio[1024 * 2];
+	size_t n = s->sample_rate / 100; // Settle the 5 ms transition, including across internal blocks.
+	assert(n <= 1024 && !session_render(s, audio, n));
+	assert(fabsf(audio[2 * n - 2] - left) < 1e-6f);
+	assert(fabsf(audio[2 * n - 1] - right) < 1e-6f);
+}
+
+static void test_listen(void) {
+	for (unsigned rate = 44100; rate <= 48000; rate += 3900) {
+		Session s = {.sample_rate = rate};
+		int a = mock(&s, 0, .5f), fx = mock(&s, 1, .5f);
+		int mixer = session_track(&s, a, &fx, 1, 0);
+		assert(mixer >= 0 && !session_set(&s, mixer, 1, -1));
+		int b = mock(&s, 0, .5f), other = session_track(&s, b, NULL, 0, 0);
+		assert(other >= 0 && !session_set(&s, other, 1, 1));
+		int c = mock(&s, 3, .125f);
+		assert(session_track(&s, c, NULL, 0, 0) >= 0);
+		assert(!session_param(&s, a, rate / 2, 0, .8f));
+		assert(!session_param(&s, fx, rate / 2, 0, .25f));
+		assert(!session_param(&s, mixer, rate / 2, 0, .5f));
+		assert(session_listen(&s, 0, TRACK_MUTE) < 0); // No prepared project yet.
+		assert(!session_end(&s, rate));
+		listen_mix(&s, .375f, .4375f);
+		assert(session_listen(&s, -1, 0) < 0 && session_listen(&s, 3, 0) < 0);
+		assert(session_listen(&s, 0, -1) < 0 && session_listen(&s, 0, 4) < 0 && !s.error);
+		assert(!session_listen(&s, 0, TRACK_MUTE));
+		float previous = .375f;
+		for (unsigned i = 0; i < rate / 100; ++i) {
+			float audio[2];
+			assert(!session_render(&s, audio, 1));
+			assert(audio[0] <= previous && previous - audio[0] <= .25f / (.005f * rate) + 1e-6f);
+			previous = audio[0];
+		}
+		assert(fabsf(previous - .125f) < 1e-6f);
+		assert(!session_listen(&s, 0, TRACK_MUTE | TRACK_SOLO));
+		listen_mix(&s, 0, 0); // A muted solo remains excluded and still silences non-solo tracks.
+		assert(!session_listen(&s, 1, TRACK_SOLO));
+		listen_mix(&s, 0, .5f);
+		assert(!session_listen(&s, 0, TRACK_SOLO));
+		listen_mix(&s, .25f, .5f); // Multiple solos form the audible set.
+		assert(!session_listen(&s, 0, 0));
+		listen_mix(&s, 0, .5f);
+		assert(!session_listen(&s, 1, 0));
+		listen_mix(&s, .375f, .4375f);
+		assert(!session_listen(&s, 0, TRACK_MUTE));
+		while (s.time < rate * 3 / 4) {
+			float audio[128];
+			assert(!session_render(&s, audio, 64));
+		}
+		assert(s.nodes[a].dsp[0].time == s.time && s.nodes[fx].dsp[0].time == s.time);
+		assert(s.nodes[a].dsp[0].next == 1 && s.nodes[fx].dsp[0].next == 1 && s.nodes[mixer].next == 1);
+		assert(!session_listen(&s, 0, 0));
+		listen_mix(&s, .225f, .4375f); // Source, effect and mixer automation advanced while inaudible.
+		assert(!session_listen(&s, 2, TRACK_SOLO));
+		assert(!session_rewind(&s));
+		float audio[2];
+		assert(!session_render(&s, audio, 1) && audio[0] == .125f && audio[1] == -.0625f);
+		assert(!session_listen(&s, 2, TRACK_MUTE | TRACK_SOLO));
+		assert(!session_rewind(&s));
+		assert(!session_render(&s, audio, 1) && audio[0] == 0 && audio[1] == 0);
+		session_free(&s);
+	}
+	Session s = {0};
+	for (int i = 0; i < MAX_TRACKS; ++i) {
+		int source = mock(&s, 3, 1);
+		assert(session_track(&s, source, NULL, 0, 0) >= 0);
+	}
+	assert(!session_end(&s, 1) && !session_listen(&s, MAX_TRACKS - 1, TRACK_SOLO));
+	float audio[2];
+	assert(!session_render(&s, audio, 1) && audio[0] == 1 && audio[1] == -.5f);
+	session_free(&s);
+	puts("OK: mute/multiple solo, precedence, click-free fades, live automation, restart and track 32 at 44.1/48 kHz");
+}
+
 static void test_initial_parameters(void) {
 	Session s = {0};
 	float out[8];
@@ -521,6 +596,7 @@ int main(void) {
 	test_external_metadata();
 	test_pattern_schedule();
 	test_initial_parameters();
+	test_listen();
 	test_pipeline();
 	test_master();
 	test_stereo_pipeline();

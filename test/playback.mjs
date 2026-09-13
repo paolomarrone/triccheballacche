@@ -80,6 +80,55 @@ export async function testPlayerExportOptions(host, reference) {
     await testPlayback(host, reference, path, 48000, true);
 }
 
+export async function testListening(host) {
+    await addFile(host, "test/listening.janet", new TextEncoder().encode(
+        '(daw/track (daw/plugin "build/fixture.perone" {:gain 0.25})) ' +
+        '(daw/track (daw/plugin "build/fixture.perone" {:gain 0.5})) (daw/end 0.3)'));
+    const player = await preparePlayer(host, "test/listening.janet", 48000);
+    try {
+        await player.context.audioWorklet.addModule(new URL("./capture.js", import.meta.url));
+        for (const [pass, [a, b, expected]] of [[1, 0, .5], [2, 2, .75], [2, 0, .25], [3, 2, .5]].entries()) {
+            player.listen(0, a);
+            player.listen(1, b);
+            const capture = new AudioWorkletNode(player.context, "capture", {
+                outputChannelCount: [2], processorOptions: {frames: 14400}
+            });
+            const gain = player.context.createGain();
+            gain.gain.value = 0.01;
+            player.node.disconnect();
+            player.node.connect(capture).connect(gain).connect(player.context.destination);
+            if (pass) await player.restart(); else await player.start();
+            if (pass === 3) {
+                await sleep(50);
+                player.listen(1, 3); // Deliver the mute from the main thread during worklet rendering.
+            }
+            const deadline = performance.now() + 3000;
+            while (!player.status && performance.now() < deadline) await sleep(20);
+            check(player.status === 1, "Track audition playback did not finish");
+            await player.stop();
+            const received = new Promise(resolve => { capture.port.onmessage = ({data}) => resolve(data); });
+            capture.port.postMessage("read");
+            const {audio, reused} = await received;
+            capture.port.close(); capture.disconnect(); gain.disconnect();
+            check(reused, "Mute/solo replaced a DSP instance");
+            check(audio[0] === expected && audio[1] === -expected, "Restart lost mute/solo or leaked its first sample");
+            if (pass < 3) {
+                for (let i = 0; i < 14400; ++i)
+                    check(audio[2 * i] === expected && audio[2 * i + 1] === -expected, "Wrong solo/mute mix");
+            } else {
+                let fading = false;
+                for (let i = 1; i < 14400; ++i) {
+                    const previous = audio[2 * i - 2], value = audio[2 * i];
+                    check(value >= 0 && value <= previous && previous - value < .0021, "Live mute clicked or reversed");
+                    check(audio[2 * i + 1] === -value, "Stereo mute diverged");
+                    fading ||= value > 0 && value < expected;
+                }
+                check(fading && audio[28798] === 0, "Live mute did not reach silence");
+            }
+        }
+    } finally { await player.close(); }
+}
+
 export async function testPlayerErrors(host) {
     for (const source of ['(error "intentional Janet error")',
         '(daw/plugin "build/fixture.perone") (daw/end 1)']) {

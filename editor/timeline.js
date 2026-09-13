@@ -6,7 +6,41 @@ export function timeline(request, select, selectTrack, error) {
     let score, data, from = 0, scale = 0.02, time = 0, playing = false;
     let width = 0, height = 0, row = 60, label = 220, version = 0, pending = false, scheduled = false;
     let hits = [], drag, selected, rowHeight = 60, trackIndex = 0;
+    let listening = [], enabled = false;
+    const changing = new Set();
     const ruler = 24;
+
+    function audible(index) {
+        return !(listening[index] & 1) && (!listening.some(flags => flags & 2) || (listening[index] & 2));
+    }
+
+    function buttons() {
+        for (const [index, track] of Array.from(tracks.children).entries()) {
+            track.classList.toggle("inaudible", score.tracks[index][0] >= 0 && !audible(index));
+            for (const button of track.querySelectorAll("[data-listen]")) {
+                button.setAttribute("aria-pressed", Boolean(listening[index] & Number(button.dataset.listen)));
+                button.disabled = !enabled || changing.has(index);
+            }
+        }
+    }
+
+    async function listen(index, bit) {
+        if (!enabled || changing.has(index)) return;
+        const revision = score.revision, flags = listening[index] ^ bit;
+        changing.add(index);
+        buttons();
+        try {
+            await request("listen", revision, index, flags);
+            if (revision === score?.revision) listening[index] = flags;
+        } catch (cause) { error(cause); }
+        finally {
+            if (revision === score?.revision) {
+                changing.delete(index);
+                buttons();
+                draw();
+            }
+        }
+    }
 
     function viewport() {
         return {from, to: from + Math.max(1, width - label) * scale,
@@ -90,13 +124,14 @@ export function timeline(request, select, selectTrack, error) {
             context.fillStyle = grid; context.fillRect(0, y + row - 1, width, 1);
             context.beginPath(); context.rect(label, ruler, width - label, height - ruler); context.clip();
             const color = `hsl(${(i * 57 + 190) % 360} 58% ${dark ? 63 : 43}%)`;
+            const opacity = track[0] < 0 || audible(i) ? 1 : 0.25;
             if (lane?.notes) for (const note of lane.notes) {
                 const [order, a, b, pitch, velocity] = note;
                 if (b <= from || a >= view.to) continue;
                 const x = Math.max(label, label + (a - from) / scale), right = Math.min(width, label + (b - from) / scale);
                 const top = pitchY(pitch) - noteHeight;
                 context.fillStyle = color;
-                context.globalAlpha = 0.4 + 0.6 * velocity / 127;
+                context.globalAlpha = opacity * (0.4 + 0.6 * velocity / 127);
                 context.fillRect(x, top, Math.max(1, right - x), noteHeight);
                 context.globalAlpha = 1;
                 if (selected?.node === track[0] && selected?.order === order) {
@@ -111,7 +146,7 @@ export function timeline(request, select, selectTrack, error) {
                 lane.density.forEach(([count, min, max], bin) => {
                     if (!count) return;
                     context.fillStyle = color;
-                    context.globalAlpha = Math.min(0.9, 0.2 + Math.log2(count + 1) / 12);
+                    context.globalAlpha = opacity * Math.min(0.9, 0.2 + Math.log2(count + 1) / 12);
                     context.fillRect(label + (data.from + bin * binSeconds - from) / scale, pitchY(max) - noteHeight, Math.max(1, binWidth),
                         Math.max(noteHeight, pitchY(min) - pitchY(max) + noteHeight));
                 });
@@ -244,12 +279,21 @@ export function timeline(request, select, selectTrack, error) {
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
 
     return {
+        status(prepared, busy) {
+            enabled = prepared && !busy;
+            buttons();
+        },
         score(value) {
             score = value; data = selected = undefined; from = 0; roll.scrollTop = 0;
+            listening = score.tracks.map(() => 0);
+            changing.clear();
             detail.textContent = ""; detail.title = "";
             trackIndex = Math.min(trackIndex, Math.max(0, score.tracks.length - 1));
             tracks.replaceChildren(...score.tracks.map((track, index) => {
+                const lane = document.createElement("div");
+                lane.className = "track";
                 const button = document.createElement("button"), name = document.createElement("span"), effects = document.createElement("small");
+                button.className = "track-select";
                 name.textContent = `${index + 1}  ${track[0] < 0 ? "Master" : score.nodes[track[0]].name}`;
                 effects.textContent = track.length > 2 ? track.slice(2).map(id => score.nodes[id].name).join(" → ") : "→ out";
                 button.title = chain(track);
@@ -258,11 +302,27 @@ export function timeline(request, select, selectTrack, error) {
                 button.append(name, effects);
                 button.onclick = () => {
                     trackIndex = index;
-                    for (const child of tracks.children) child.setAttribute("aria-pressed", child === button);
+                    for (const child of tracks.querySelectorAll(".track-select")) child.setAttribute("aria-pressed", child === button);
                     selectTrack(index);
                 };
-                return button;
+                lane.append(button);
+                if (track[0] >= 0) {
+                    const controls = document.createElement("div");
+                    controls.className = "track-listen";
+                    for (const [label, bit, title] of [["M", 1, "Mute"], ["S", 2, "Solo"]]) {
+                        const toggle = document.createElement("button");
+                        toggle.textContent = label;
+                        toggle.dataset.listen = bit;
+                        toggle.title = `${title} track ${index + 1}`;
+                        toggle.setAttribute("aria-label", toggle.title);
+                        toggle.onclick = () => listen(index, bit);
+                        controls.append(toggle);
+                    }
+                    lane.append(controls);
+                }
+                return lane;
             }));
+            buttons();
             resize();
         },
         position(seconds, active) {

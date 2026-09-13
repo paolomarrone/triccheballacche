@@ -71,3 +71,7 @@ int score_render(Score *score) {
 DSP *score_dsp(Score *score, int node) {
 	return node >= 0 && node < score->session.nnodes ? score->session.nodes[node].dsp[0].dsp : NULL;
 }
+
+int score_listen(Score *score, int track, int flags) {
+	return session_listen(&score->session, track, flags);
+}

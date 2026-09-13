@@ -47,8 +47,13 @@ footer { color: var(--muted); font-size: 12px; }
 .plugin summary button[aria-pressed=true] { color: var(--accent); background: var(--active); }
 .plugin-body { padding: 6px; overflow: auto; }
 #track-headers { position: sticky; top: 24px; overflow: hidden; background: Canvas; }
-#track-list button { display: flex; flex-direction: column; justify-content: center; gap: 5px; width: 100%; height: var(--track-height); padding: 4px 8px; border: 0; border-bottom: 1px solid var(--border); text-align: left; background: Canvas; color: CanvasText; }
+#track-list .track { display: flex; height: var(--track-height); border-bottom: 1px solid var(--border); }
+#track-list .track-select { display: flex; flex: 1; min-width: 0; flex-direction: column; justify-content: center; gap: 5px; padding: 4px 8px; border: 0; text-align: left; background: Canvas; color: CanvasText; }
 #track-list button:hover, #track-list button[aria-pressed=true] { background: var(--active); }
+#track-list .track-listen { display: flex; align-items: center; gap: 2px; padding-right: 4px; }
+#track-list .track-listen button { padding: 2px 4px; min-width: 22px; }
+#track-list .track-listen button[aria-pressed=true] { color: var(--accent); }
+#track-list .inaudible .track-select { color: var(--muted); }
 #track-list span, #track-list small { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 #track-list small { color: var(--muted); font-size: 12px; }
 [hidden] { display: none !important; }

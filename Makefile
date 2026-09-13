@@ -195,9 +195,10 @@ WEB_DEPS = $(WEB_SOURCES) $(SCORE_HEADERS) web/host.h build/daw.inc build/perone
 WEB_LINK = -lm --no-entry -sMODULARIZE -sEXPORT_ES6 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=2097152
 WEB_METHODS = "FS","UTF8ToString","ccall","HEAPU8","HEAPU32","HEAPF32"
 VIEW_EXPORTS = "_score_prepare","_score_take_view","_view_free","_score_view_json","_free"
-WEB_EXPORTS = '[$(VIEW_EXPORTS),"_score_new","_score_free","_score_frames","_score_buffer","_score_render","_score_normalize"]'
+SCORE_EXPORTS = "_score_new","_score_free","_score_listen"
+WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sAUDIO_WORKLET -sWASM_WORKERS -sASYNCIFY -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
-PLAYER_EXPORTS = '[$(VIEW_EXPORTS),"_score_dsp","_player_time","_score_new","_score_free","_score_player","_player_free","_player_start","_player_stop","_player_pause","_player_rewind","_player_sync","_player_status","_player_context","_player_node"]'
+PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_player_time","_score_player","_player_free","_player_start","_player_stop","_player_pause","_player_rewind","_player_sync","_player_status","_player_context","_player_node"]'
 WEB_CONTENT ?= lib examples plugins
 .PHONY: web-editor
 web-editor: web

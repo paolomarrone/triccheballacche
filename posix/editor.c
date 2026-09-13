@@ -204,6 +204,18 @@ static void reply(
 
 static void command(Editor *editor, webui_event_t *event) {
 	const char *op = webui_get_string_at(event, 0);
+	if (!strcmp(op, "listen")) {
+		double revision = decimal(event, 1), track = decimal(event, 2), flags = decimal(event, 3);
+		const char *error = NULL;
+		if (!editor->session.sealed || revision != editor->revision)
+			error = "Stale track view";
+		else if (!isfinite(track) || track < 0 || track >= editor->session.ntracks || track != floor(track) ||
+		    !isfinite(flags) || flags < 0 || flags > (TRACK_MUTE | TRACK_SOLO) || flags != floor(flags) ||
+		    session_listen(&editor->session, track, flags))
+			error = "Invalid track state";
+		reply(event, editor, error, NULL, "", 0);
+		return;
+	}
 	if (!strcmp(op, "watch") || !strcmp(op, "controls") || !strcmp(op, "parameter") || !strcmp(op, "message")) {
 		controls_command(&editor->controls, &editor->session, &editor->score, editor->revision, event);
 		return;

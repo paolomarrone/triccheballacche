@@ -95,9 +95,13 @@ function checkedText(text) {
 
 // The shared controller serializes commands, including asynchronous player cleanup.
 export async function command(op, ...args) {
-    let result = {}, error = "", path = op === "range" || op === "note" ? "" : args[0] || entry;
+    let result = {}, error = "", path = ["range", "note", "listen"].includes(op) ? "" : args[0] || entry;
     try {
-        if (["watch", "controls", "parameter", "message"].includes(op)) {
+        if (op === "listen") {
+            const [version, track, flags] = args;
+            if (!player || version !== revision) throw Error("Stale track view");
+            player.listen(track, flags);
+        } else if (["watch", "controls", "parameter", "message"].includes(op)) {
             const [version, node, ...values] = args;
             if (!player || version !== revision) throw Error("Stale plugin view");
             if (op === "watch") {

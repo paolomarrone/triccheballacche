@@ -7,7 +7,7 @@
 <script type="module">
 import {createPlayerHost} from "../web/player.js";
 import {createHost, addFile} from "../web/host.js";
-import {testPlayback, testPlayerExportOptions, testPlayerErrors} from "./playback.mjs";
+import {testPlayback, testPlayerExportOptions, testPlayerErrors, testListening} from "./playback.mjs";
 import {testPlayerLifecycle} from "./player-lifecycle.mjs";
 
 const button = document.querySelector("#run"), status = document.querySelector("#status");
@@ -34,6 +34,7 @@ try {
                     await testPlayback(host, reference, path, rate, true);
             }
             await testPlayerExportOptions(host, reference);
+            await testListening(host);
             await testPlayerErrors(host);
             status.textContent = "Checking worklet cleanup, errors and timeouts…";
             await testPlayerLifecycle(host);

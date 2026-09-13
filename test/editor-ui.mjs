@@ -29,6 +29,7 @@ try {
 (def f (daw/plugin "${directory}/effect.perone" {:gain 0.4}))
 (daw/track s {:effects [f]})
 (daw/track (daw/plugin "${directory}/synth.perone" {:gain 0.01}))
+(daw/master)
 (daw/param f 1.5 :gain 0.2)
 (daw/end 40)
 `);
@@ -78,6 +79,25 @@ try {
             await click("views");
             await click("run");
             await wait(`${synthRoot}?.querySelectorAll(".perone-controls label").length === 3`);
+            const toggle = async (track, bit, pressed) => {
+                const button = `document.querySelector('#track-list .track:nth-child(${track + 1}) [data-listen="${bit}"]')`;
+                await wait(`${button} && !${button}.disabled`);
+                await evaluate(`${button}.click()`);
+                await wait(`${button}.getAttribute('aria-pressed') === '${pressed}'`);
+            };
+            const inaudible = () => evaluate(`Array.from(document.querySelectorAll('#track-list .track'), t => t.classList.contains('inaudible'))`);
+            assert.equal(await evaluate('document.querySelectorAll("#track-list [data-listen]").length'), 4, "The master has no track audition buttons");
+            await toggle(0, 1, true);
+            assert.deepEqual(await inaudible(), [true, false, false]);
+            await toggle(1, 2, true);
+            await toggle(0, 2, true);
+            assert.deepEqual(await inaudible(), [true, false, false], "Mute takes precedence over solo");
+            await toggle(0, 1, false);
+            assert.deepEqual(await inaudible(), [false, false, false], "Multiple solos remain audible together");
+            await toggle(1, 2, false);
+            assert.deepEqual(await inaudible(), [false, true, false]);
+            assert.equal(await evaluate('document.querySelector(".track-select[aria-pressed=true]").dataset.track'), "0",
+                "Mute/solo must not select another plugin chain");
             const geometry = () => evaluate(`(() => {
                 const sheet = document.querySelector("#sheet").getBoundingClientRect();
                 const timeline = document.querySelector("#timeline").getBoundingClientRect();
@@ -140,11 +160,30 @@ try {
             await wait(`Math.abs(Number(${fixture}.dataset.meter) - .6) < .0001`);
             await click("play");
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .4) < .0001`);
+            assert.equal(await evaluate(`document.querySelector('#track-list [data-listen="2"]').getAttribute('aria-pressed')`), "true");
+            assert.deepEqual(await inaudible(), [false, true, false], "Stop/Play preserves audition state");
             assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
             assert(await evaluate(`${fixture} === retainedUI`), "Play preserves the GUI object");
             assert.equal(await evaluate("fixtureFreed"), 1);
             await click("run");
             await wait(`${synthRoot}?.querySelector(".perone-controls")`);
+            assert.equal(await evaluate('document.querySelectorAll("#track-list [data-listen][aria-pressed=true]").length'), 0,
+                "A newly prepared score clears mute/solo");
+            assert.deepEqual(await inaudible(), [false, false, false]);
+            const trackCommand = async args => {
+                for (let i = 0; i < 30; ++i) {
+                    const response = await evaluate(`import(${JSON.stringify(mode === "web" ? "../web/editor.js" : "./native.js")})
+                        .then(adapter => adapter.command("listen", ...${JSON.stringify(args)}))`);
+                    if (!response.error?.includes("busy")) return response;
+                    await new Promise(resolve => setTimeout(resolve, 20));
+                }
+                throw Error("Track command remained busy");
+            };
+            assert.match((await trackCommand([Number(revision), 0, 1])).error, /Stale track view/);
+            await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${Number(revision)}`);
+            const current = Number(await evaluate('document.querySelector("#timeline").dataset.revision'));
+            for (const [track, flags] of [[-1, 0], [2, 0], [0.5, 0], [0, 4], [0, 0.5]])
+                assert.match((await trackCommand([current, track, flags])).error, /Invalid track state/);
             await openEffect();
             await wait(`${fixture}?.dataset.helper === "7"`);
             await click("views");

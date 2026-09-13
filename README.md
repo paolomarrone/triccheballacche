@@ -84,6 +84,12 @@ remain visible during navigation, with density replacing individual notes when
 needed. Clicking a note selects its source when available. Timing follows
 rendered audio, without compensating for device latency or plugin release tails.
 
+**M** mutes a track; **S** solos it. Multiple solos play together, and mute takes
+precedence. Dimmed lanes remain scheduled: instruments, effects and volume
+automation keep advancing. Switching uses a 5 ms fade. These listening controls
+survive Stop/Play; a successful Run clears them for the new score. They do not
+change the Janet source or a separate offline export.
+
 The editor uses a textarea and plain JavaScript. It does not yet provide syntax
 highlighting, MIDI editing, parameter curves or live replacement of a running
 score. Janet preparation is synchronous and cannot be interrupted by the editor.
@@ -316,7 +322,7 @@ currently require X11. Each native platform needs matching plugin binaries.
 Preparation builds and sorts all events, then closes Janet before audio starts.
 The editor owns a cache of loaded modules; each prepared session owns its DSP
 instances, and the player owns the audio device. Stop retains all three.
-Play restores initial input parameters and mixer settings, resets DSPs and event
+Play restores initial input parameters and mixer gain/pan, resets DSPs and event
 cursors, and discards pending host messages and edits. UI gestures are temporary;
 put lasting changes in the score. Plugin reset semantics govern internal state,
 including random generators; replay does not restore a serialized plugin snapshot.
@@ -347,8 +353,11 @@ Preload scripts, imports and bundles with `addFile`, preserving their paths.
 A player exposes `start()`, `stop()`, `restart()`, `time`, `status` (0 ready/running,
 1 done, −1 failed, 2 stopped), `context`, `node` and `close()`. Stop suspends the
 context; restart rewinds the existing score and resumes it. Await closure before
-attaching another score to its host. `prepareScore` evaluates a draft while the
-old player is stopped; `attachPlayer` takes ownership after closing the old player.
+attaching another score to its host. `listen(track, flags)` sets audition state
+for a zero-based track index (`1` mute, `2` solo, `3` both, `0` neither), also while
+playing or stopped. The state is independent of plugin parameters.
+`prepareScore` evaluates a draft while the old player is stopped; `attachPlayer`
+takes ownership after closing the old player.
 Cleanup retains shared memory if AudioContext closure cannot be confirmed and can
 be retried.
 Preparing from `source` also captures the immutable score projection; `takeView()`

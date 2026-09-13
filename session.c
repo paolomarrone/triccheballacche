@@ -94,7 +94,8 @@ int session_track(Session *s, int source, const int *effects, int count, int mas
 			}
 		}
 	Track *t = master ? &s->master : &s->tracks[s->ntracks++];
-	*t = (Track){.source = source, .mixer = s->nnodes, .count = count};
+	*t = (Track){.source = source, .mixer = s->nnodes, .count = count, .level = 1};
+	atomic_init(&t->listen, 0);
 	for (int i = 0; i < count; ++i)
 		t->effects[i] = effects[i];
 	for (int i = 0; i < total; ++i)
@@ -187,6 +188,25 @@ int session_end(Session *s, size_t frames) {
 	return session_rewind(s);
 }
 
+int session_listen(Session *s, int track, int flags) {
+	if (!s->sealed || track < 0 || track >= s->ntracks || flags < 0 || flags > (TRACK_MUTE | TRACK_SOLO))
+		return -1;
+	atomic_store_explicit(&s->tracks[track].listen, flags, memory_order_relaxed);
+	return 0;
+}
+
+static unsigned audible_tracks(const Session *s) {
+	unsigned audible = 0, solo = 0;
+	for (int i = 0; i < s->ntracks; ++i) {
+		int flags = atomic_load_explicit(&s->tracks[i].listen, memory_order_relaxed);
+		if (!(flags & TRACK_MUTE))
+			audible |= 1u << i;
+		if (flags & TRACK_SOLO)
+			solo |= 1u << i;
+	}
+	return solo ? audible & solo : audible;
+}
+
 int session_rewind(Session *s) {
 	if (!s->sealed)
 		return fail(s, "rewind requires a prepared session");
@@ -257,6 +277,8 @@ int session_render(Session *s, float *out, size_t frames) {
 		return fail(s, "render outside session");
 	while (frames) {
 		size_t n = frames < BLOCK ? frames : BLOCK;
+		unsigned audible = audible_tracks(s);
+		float step = 1.f / (.005f * s->sample_rate);
 		session_sync(s);
 		memset(out, 0, 2 * n * sizeof(float));
 		for (int tr = 0; tr < s->ntracks; ++tr) {
@@ -266,9 +288,16 @@ int session_render(Session *s, float *out, size_t frames) {
 			Engine *source = s->nodes[t->source].dsp;
 			render(source, audio, NULL, n);
 			int channels = chain(s, t, audio, source->config.output, n);
+			float target = !!(audible & (1u << tr));
+			if (!s->time)
+				t->level = target;
 			for (size_t i = 0; i < n; ++i) {
 				controls(m, s->time + i);
-				float pan = m->values[1], gain = m->values[0];
+				if (t->level < target)
+					t->level = fminf(target, t->level + step);
+				else if (t->level > target)
+					t->level = fmaxf(target, t->level - step);
+				float pan = m->values[1], gain = m->values[0] * t->level;
 				if (channels == 1) {
 					float angle = (pan + 1) * .7853981633974483f, x = audio[i] * gain;
 					out[2 * i] += x * cosf(angle);

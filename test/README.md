@@ -38,12 +38,14 @@ silence, draining and export options without requiring audio hardware. Replays
 after partial and complete playback must match the original PCM, retain the device
 and DSPs, restore automation/defaults and discard stale edits and messages.
 Loader tests check canonical module reuse and cache/instance lifetime ordering.
+Mixer tests cover mute/solo precedence, multiple solos, 5 ms fades, automation
+and DSP advancement while inaudible, restart persistence and the last track slot.
 
 `view-json.mjs` compares native and Wasm projection replies, including density,
 overlapping notes, imported origins, stale revisions and invalid queries. It frees
 the audio score before querying to verify independent projection ownership.
 `playback.mjs` and `player-lifecycle.mjs` cover real AudioWorklet output, stop/restart,
-context closure, timeouts, cancellation during preparation and cleanup retries.
+live mute/solo, context closure, timeouts, cancellation during preparation and cleanup retries.
 
 Editor tests cover Unicode paths, unsaved relative imports, Run/Play/Stop, atomic saves
 or downloads, diagnostics and recovery, source tracking, scrolling and selection.
@@ -91,6 +93,8 @@ and restart. Stop/Play must retain the GUI object and allow parameter edits whil
 stopped; Run replaces it. Asynchronous creation must preserve early gestures
 across Stop and free a view that arrives after disposal. Screenshots are saved as
 `build/editor-ui-{native,web}.png`.
+The same test checks track audition buttons on both backends: independent chain
+selection, mute/solo precedence, Stop/Play persistence and reset on a new Run.
 
 `loader.c` and `perone-controls.mjs` test parameter coalescing, FIFO messages,
 concurrent acknowledgements, stereo copies, automation precedence, overflow and

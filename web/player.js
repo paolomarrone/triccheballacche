@@ -83,6 +83,11 @@ export async function attachPlayer(host, score) {
         prepared();
         return {
             context, node,
+            listen(track, flags) {
+                if (stopping) throw Error("Player closing or closed");
+                if (!Number.isInteger(track) || !Number.isInteger(flags) || track < 0 || track >= 32 || flags < 0 || flags > 3 ||
+                    host._score_listen(score, track, flags)) throw Error("Invalid track state");
+            },
             control(op, id, ...args) {
                 if (stopping) throw Error("Player closing or closed");
                 const dsp = host._score_dsp(score, id);
