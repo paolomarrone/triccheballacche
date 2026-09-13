@@ -16,7 +16,7 @@ typedef struct {
 int message_push(Messages *queue, size_t size, const void *data);
 int message_pop(Messages *queue, size_t *size, void *data);
 
-// One UI thread per DSP. Attach before playback; detach after stopping the player.
+// One UI consumer per DSP. The DSP must outlive every attachment.
 void watch_dsp(DSP *dsp, int watching);
 // Validated input values only. Latest value wins; sync_dsp applies parameters in index order,
 // then messages in FIFO order. There is no combined parameter/message event order.
@@ -33,7 +33,7 @@ struct DSP {
 	char *bindir, *datadir;
 	int initialized;
 	PluginConfig config;
-	atomic_int viewing, overflow;
+	atomic_int viewing, overflow, pending;
 	atomic_uint requested[MAX_PARAMS], applied[MAX_PARAMS];
 	_Atomic float wanted[MAX_PARAMS], values[MAX_PARAMS];
 	Messages to_ui, to_dsp;

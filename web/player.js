@@ -66,6 +66,12 @@ export async function preparePlayer(host, path, sampleRate, source) {
         prepared();
         return {
             context, node,
+            control(op, id, ...args) {
+                if (stopping) throw Error("Player closing or closed");
+                const dsp = host._score_dsp(score, id);
+                if (!dsp) throw Error("Invalid plugin node");
+                return workletReply(setup, "control", {send: true, payload: {args: [op, dsp, ...args]}});
+            },
             // Transfer only the immutable projection; closing this player still owns all audio resources.
             takeView() {
                 if (stopping) throw Error("Player closing or closed");

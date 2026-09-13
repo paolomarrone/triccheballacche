@@ -10,17 +10,23 @@ try {
     const ready = workletReply(node, "ready");
     port2.postMessage({type: "ready"});
     await ready;
-    port2.onmessage = ({data}) => port2.postMessage({type: data.type});
+    port2.onmessage = ({data}) => port2.postMessage({type: data.type, id: data.id});
     await request("prepare");
 
-    port2.onmessage = ({data}) => port2.postMessage({type: data.type, error: "DSP initialization failed"});
+    port2.onmessage = ({data}) => port2.postMessage({type: data.type, id: data.id, error: "DSP initialization failed"});
     await assert.rejects(request("prepare"), /DSP initialization failed/);
 
     // An old/malformed response must not acknowledge the current operation.
     port2.onmessage = () => { port2.postMessage(null); port2.postMessage({type: "prepare"}); };
     await assert.rejects(request("close", {timeout: 20}), /timed out/);
-    port2.onmessage = ({data}) => port2.postMessage({type: data.type});
+    port2.onmessage = ({data}) => port2.postMessage({type: data.type, id: data.id});
     await request("close");
+
+    let previous;
+    port2.onmessage = ({data}) => { previous = data; };
+    await assert.rejects(request("control", {timeout: 20}), /timed out/);
+    port2.onmessage = () => port2.postMessage(previous);
+    await assert.rejects(request("control", {timeout: 20}), /timed out/);
 
     port2.onmessage = () => {};
     const failed = request("close");

@@ -34,7 +34,7 @@ try {
         await wait('document.querySelector("#run")?.disabled === false');
         assert(await evaluate('crossOriginIsolated && !globalThis.webui'));
         assert.equal(await evaluate('document.querySelector("#save").textContent'), "Scarica");
-        assert.equal(await evaluate('document.querySelector("#plugin-views").getBoundingClientRect().width'), 0);
+        assert(await evaluate('document.querySelector("#plugin-views").getBoundingClientRect().width > 0'));
         assert.equal(await evaluate('getComputedStyle(document.querySelector("#sheet")).display'), "flex");
         const source = await evaluate('document.querySelector("#code").value');
         await click("run");

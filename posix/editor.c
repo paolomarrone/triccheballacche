@@ -1,6 +1,7 @@
 #include "daw.h"
 #include "player.h"
-#include "ui.h"
+#include "controls.h"
+#include "assets.h"
 #include "util.h"
 #include "json_write.h"
 #include "score_view_json.h"
@@ -28,7 +29,7 @@ typedef struct {
 	ScoreView score;
 	unsigned revision;
 	Player *player;
-	UI *views[MAX_NODES];
+	Controls controls;
 	const char *entry;
 	char *error;
 	double time;
@@ -56,10 +57,7 @@ static void finish(Editor *editor) {
 		editor->time = player_time(editor->player);
 	player_free(editor->player);
 	editor->player = NULL;
-	for (int i = 0; i < editor->session.nnodes; ++i) {
-		ui_close(editor->views[i]);
-		editor->views[i] = NULL;
-	}
+	controls_close(&editor->controls, &editor->session);
 	session_free(&editor->session);
 }
 
@@ -159,6 +157,10 @@ static void reply(
 
 static void command(Editor *editor, webui_event_t *event) {
 	const char *op = webui_get_string_at(event, 0);
+	if (!strcmp(op, "watch") || !strcmp(op, "controls") || !strcmp(op, "parameter") || !strcmp(op, "message")) {
+		controls_command(&editor->controls, &editor->session, &editor->score, editor->revision, event);
+		return;
+	}
 	if (!strcmp(op, "range") || !strcmp(op, "note")) {
 		reply(event, editor, NULL, NULL, "", 0);
 		return;
@@ -186,13 +188,6 @@ static void command(Editor *editor, webui_event_t *event) {
 		if (prepare_score(&editor->session, &output, path, source, &diagnostics, &score)) {
 			error = diagnostics ? diagnostics : editor->session.error ? editor->session.error : "Preparazione fallita";
 		} else {
-			for (int i = 0; i < editor->session.nnodes; ++i) {
-				if (ui_open(editor->views + i, editor->session.nodes + i)) {
-					error = "Impossibile aprire la GUI di un plugin";
-					break;
-				}
-				ui_show(editor->views[i], webui_get_bool_at(event, 3));
-			}
 			if (!error && (!(editor->player = player_new(&editor->session)) || player_start(editor->player)))
 				error = editor->session.error ? editor->session.error : "Avvio audio fallito";
 		}
@@ -205,13 +200,11 @@ static void command(Editor *editor, webui_event_t *event) {
 			editor->score = score;
 			editor->time = 0;
 			++editor->revision;
+			assets_set(&editor->score, editor->revision);
 			changed = 1;
 		}
 	} else if (!strcmp(op, "stop")) {
 		finish(editor);
-	} else if (!strcmp(op, "views")) {
-		for (int i = 0; i < editor->session.nnodes; ++i)
-			ui_show(editor->views[i], webui_get_bool_at(event, 3));
 	} else if (!strcmp(op, "status")) {
 		error = editor->error;
 	} else {
@@ -226,13 +219,12 @@ static void poll_player(Editor *editor) {
 	if (!editor->player)
 		return;
 	const char *error = NULL;
-	for (int i = 0; i < editor->session.nnodes; ++i) {
-		int status = ui_poll(editor->views[i]);
-		if (status == 1)
-			ui_show(editor->views[i], 0);
-		if (status < 0)
-			error = "Errore nei controlli della GUI di un plugin";
-	}
+
+	int ui_status = ui_poll(editor->controls.native);
+	if (ui_status == 1)
+		ui_show(editor->controls.native, 0);
+	if (ui_status < 0)
+		error = "Errore nei controlli della GUI di un plugin";
 	int status = player_status(editor->player);
 	if (status < 0)
 		error = editor->session.error ? editor->session.error : "Errore audio";
@@ -251,7 +243,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Usage: %s [--serve] [score.janet]\n", argv[0]);
 		return 1;
 	}
-	Editor editor = {.entry = argc > arg ? argv[arg] : "examples/gui.janet"};
+	Editor editor = {.controls = {.node = -1}, .entry = argc > arg ? argv[arg] : "examples/gui.janet"};
 	size_t window = webui_new_window();
 	webui_set_timeout(0);
 	webui_set_public(window, false);
@@ -260,6 +252,7 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 	webui_bind(window, "command", request);
+	webui_set_file_handler(window, assets_read);
 	webui_set_size(window, 1000, 760);
 	signal(SIGINT, stop);
 	signal(SIGTERM, stop);
@@ -299,5 +292,6 @@ int main(int argc, char **argv) {
 	free(editor.error);
 	webui_exit();
 	webui_clean();
+	assets_set(NULL, 0);
 	return !serve && !shown;
 }

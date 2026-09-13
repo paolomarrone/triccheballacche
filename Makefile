@@ -142,11 +142,20 @@ $(WEBUI)/include/webui.h:
 	git clone --depth 1 --branch 2.4.2 https://github.com/webui-dev/webui.git $(WEBUI)
 	git -C $(WEBUI) checkout $(WEBUI_REV)
 
-$(WEBUI)/dist/libwebui-2-static.a: $(WEBUI)/include/webui.h
-	$(MAKE) -C $(WEBUI) CC=gcc
+# WebUI 2.4's HTTP server lacks Wasm/ES-module MIME types. Patch a build copy only.
+build/webui/GNUmakefile: $(WEBUI)/include/webui.h posix/webui.patch
+	mkdir -p build/webui
+	cp -R $(WEBUI)/src $(WEBUI)/include $(WEBUI)/bridge build/webui/
+	patch --silent build/webui/src/civetweb/civetweb.c posix/webui.patch
+	cp $(WEBUI)/GNUmakefile $@
 
-build/editor: posix/editor.c posix/ui.c posix/ui.h perone_ui.h player.c player.h $(SCORE_SOURCES) $(SCORE_HEADERS) posix/loader.c $(NATIVE_HEADERS) build/audio.o $(SCRIPT) build/daw.inc $(WEBUI)/dist/libwebui-2-static.a Makefile | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(WEBUI)/include -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) posix/editor.c posix/ui.c player.c $(SCORE_SOURCES) posix/loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(WEBUI)/dist/libwebui-2-static.a $(LDLIBS) -lX11 -o $@
+build/webui/dist/libwebui-2-static.a: build/webui/GNUmakefile
+	$(MAKE) -C build/webui CC=gcc
+
+EDITOR_SOURCES = posix/editor.c posix/controls.c posix/assets.c
+
+build/editor: $(EDITOR_SOURCES) posix/controls.h posix/assets.h posix/ui.c posix/ui.h perone_ui.h player.c player.h $(SCORE_SOURCES) $(SCORE_HEADERS) posix/loader.c $(NATIVE_HEADERS) build/audio.o $(SCRIPT) build/daw.inc build/webui/dist/libwebui-2-static.a Makefile | build
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(WEBUI)/include -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) $(EDITOR_SOURCES) posix/ui.c player.c $(SCORE_SOURCES) posix/loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) build/webui/dist/libwebui-2-static.a $(LDLIBS) -lX11 -o $@
 
 .PHONY: editor test-editor
 editor: build/editor
@@ -164,7 +173,7 @@ test-prog: prog
 
 clean:
 	rm -f build/audio.o build/json.o build/perone.inc build/daw.inc build/host build/test build/termux_synth build/termux_test build/daw build/daw-ui build/editor build/daw_test build/plugins_test build/player_test build/ui_test
-	rm -rf build/fixture.perone build/effect.perone build/web
+	rm -rf build/fixture.perone build/effect.perone build/web build/webui
 
 # Read-only audit of the bundles built in Brickworks; no plugin compilation here.
 BRICKWORKS_PERONE ?= ../brickworks/build/perone
@@ -183,7 +192,7 @@ WEB_METHODS = "FS","UTF8ToString","ccall","HEAPU8","HEAPU32","HEAPF32"
 VIEW_EXPORTS = "_score_prepare","_score_take_view","_view_free","_score_view_json","_free"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),"_score_new","_score_free","_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sAUDIO_WORKLET -sWASM_WORKERS -sASYNCIFY -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
-PLAYER_EXPORTS = '[$(VIEW_EXPORTS),"_player_time","_score_new","_score_free","_score_player","_player_free","_player_start","_player_stop","_player_status","_player_context","_player_node"]'
+PLAYER_EXPORTS = '[$(VIEW_EXPORTS),"_score_dsp","_player_time","_score_new","_score_free","_score_player","_player_free","_player_start","_player_stop","_player_status","_player_context","_player_node"]'
 WEB_CONTENT ?= lib examples plugins
 .PHONY: web-editor
 web-editor: web
@@ -237,6 +246,7 @@ $(TEST_EFFECT)/wasm32/fixture.wasm: test/perone/plugin.c perone.h
 test-web: web build/daw build/view_json_test $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/product.json $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/wasm32/fixture.wasm $(TEST_EFFECT)/wasm32/fixture.wasm
 	node test/request.mjs
 	node test/web.mjs
+	node test/perone-controls.mjs
 	node test/view-json.mjs
 
 .PHONY: test-browser
@@ -249,9 +259,13 @@ test-polpo-web: web
 	node test/browser.mjs test/polpo.html
 
 # Trace semantics and the shared editor; the editor test uses prebuilt production Wasm bundles.
-.PHONY: test-trace test-editor-web
+.PHONY: test-trace test-editor-web test-editor-ui
 test-trace: test-web
 	node test/trace.mjs
 
 test-editor-web: web-editor
 	node test/editor-web.mjs
+
+# Self-contained UI fixture: the exact same ES module drives native and Wasm DSPs.
+test-editor-ui: build/editor test-web
+	node test/editor-ui.mjs

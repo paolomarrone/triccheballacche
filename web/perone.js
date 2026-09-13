@@ -8,6 +8,37 @@ const callbackModule = new WebAssembly.Module(new Uint8Array([
     2, 7, 1, 1, 104, 1, 102, 0, 0, 7, 5, 1, 1, 102, 0, 0
 ]));
 
+const messageModule = new WebAssembly.Module(new Uint8Array([
+    0, 97, 115, 109, 1, 0, 0, 0, 1, 7, 1, 0x60, 3, 0x7f, 0x7f, 0x7f, 0,
+    2, 7, 1, 1, 104, 1, 102, 0, 0, 7, 5, 1, 1, 102, 0, 0
+]));
+const slots = 64;
+
+// Fixed storage: DSP callbacks never allocate or post unbounded streams to the page.
+class Messages {
+    constructor(limit = 0) {
+        this.limit = limit;
+        this.data = new Uint8Array(limit * slots);
+        this.sizes = new Uint32Array(slots);
+        this.read = this.write = 0;
+    }
+    push(bytes) {
+        if (!this.limit || bytes.length > this.limit || this.write - this.read === slots)
+            throw Error("Perone message queue full or message too large");
+        const i = this.write++ % slots;
+        this.data.set(bytes, i * this.limit);
+        this.sizes[i] = bytes.length;
+    }
+    drain() {
+        const result = [];
+        while (this.read !== this.write) {
+            const i = this.read++ % slots;
+            result.push(Array.from(this.data.subarray(i * this.limit, i * this.limit + this.sizes[i])));
+        }
+        return result;
+    }
+}
+
 export class Perone {
     constructor(host) {
         this.host = host;
@@ -36,7 +67,7 @@ export class Perone {
         if (this.instances.has(id) || this.remote.has(id)) throw Error("Perone handle already in use");
         const config = {...configuration, path: this.path(configuration.path),
             parameters: new Float32Array(configuration.parameters)};
-        const {path, sampleRate, inputChannels, outputChannels, midiBus, parameters, outputMask, capacity} = config;
+        const {path, sampleRate, inputChannels, outputChannels, midiBus, parameters, outputMask, capacity, toDsp = 0, toUi = 0} = config;
         const module = this.modules.get(path);
         if (!module) throw Error("Wasm module not preloaded: " + path);
         const wasm = new WebAssembly.Instance(module).exports;
@@ -49,11 +80,14 @@ export class Perone {
         const isOutput = i => (outputMask[i < 32 ? 0 : 1] >>> (i % 32)) & 1;
         const required = names.slice(0, 9);
         if (midiBus >= 0) required.push("midi_msg_in");
+        if (toDsp) required.push("msg_in");
         parameters.forEach((_, i) => required.push(isOutput(i) ? "get_parameter" : "set_parameter"));
         for (const name of required) if (!api[name]) throw Error("Missing Perone function: " + name);
 
         const owned = [];
-        const p = {wasm, api, owned, config, instance: 0, initialized: false, rendered: false};
+        const p = {wasm, api, owned, config, instance: 0, initialized: false, rendered: false,
+            watching: false, pending: false, dirty: new Uint8Array(parameters.length), wanted: new Float32Array(parameters.length),
+            toUi: new Messages(toUi), toDsp: new Messages(toDsp), overflow: false};
         const allocate = size => {
             const pointer = wasm.malloc(size) >>> 0;
             if (!pointer) throw Error("Perone allocation failed");
@@ -78,7 +112,14 @@ export class Perone {
         };
         try {
             const bin = path.slice(0, path.lastIndexOf("/")), data = bin.slice(0, bin.lastIndexOf("/"));
-            const callbacks = words([0, directory(bin), directory(data), 0]);
+            const bridge = new WebAssembly.Instance(messageModule, {h: {f: (_, size, pointer) => {
+                if (!p.watching) return;
+                try { p.toUi.push(new Uint8Array(wasm.memory.buffer, pointer, size)); }
+                catch { p.overflow = true; }
+            }}});
+            const callback = table.grow(1);
+            table.set(callback, bridge.exports.f);
+            const callbacks = words([0, directory(bin), directory(data), callback]);
             p.instance = api.alloc() >>> 0;
             if (!p.instance || api.init(p.instance, callbacks)) throw Error("Perone initialization failed");
             p.initialized = true;
@@ -93,6 +134,7 @@ export class Perone {
             p.inputs = inputChannels ? words(x) : 0;
             p.outputs = words(y);
             const midi = allocate(3);
+            p.messagePointer = toDsp ? allocate(toDsp) : 0;
             p.memory = wasm.memory.buffer;
             p.x = x.map(pointer => new Float32Array(p.memory, pointer, capacity));
             p.y = y.map(pointer => new Float32Array(p.memory, pointer, capacity));
@@ -100,6 +142,7 @@ export class Perone {
             p.addresses = x;
             p.midi = new Uint8Array(p.memory, midi, 3);
             p.midiPointer = midi;
+            p.message = new Uint8Array(p.memory, p.messagePointer, toDsp);
             this.next = Math.max(this.next, id + 1);
             this.instances.set(id, p);
             return id;
@@ -162,6 +205,58 @@ export class Perone {
         const p = this.instances.get(id);
         p.config.parameters[parameter] = value;
         p.api.set_parameter(p.instance, parameter, value);
+    }
+
+    control(op, id, index, value) {
+        const p = this.instances.get(id);
+        if (!p) throw Error("Unknown Perone instance");
+        if (op === "watch") {
+            p.watching = Boolean(index);
+            p.toUi.read = p.toUi.write;
+            p.overflow = false;
+        } else if (!p.watching) throw Error("Perone UI is not attached");
+        else if (op === "parameter") {
+            if (!Number.isInteger(index) || index < 0 || index >= p.config.parameters.length ||
+                (p.config.outputMask[index < 32 ? 0 : 1] >>> (index % 32)) & 1 || !Number.isFinite(Math.fround(value)))
+                throw Error("Invalid Perone parameter");
+            p.wanted[index] = value;
+            p.dirty[index] = 1;
+            p.pending = true;
+        } else if (op === "message") {
+            if (!Array.isArray(index) || index.some(x => !Number.isInteger(x) || x < 0 || x > 255))
+                throw Error("Invalid Perone message");
+            p.toDsp.push(index);
+            p.pending = true;
+        } else if (op === "controls") {
+            if (p.overflow) throw Error("Perone DSP message queue overflow");
+            return {values: Array.from(p.config.parameters, (value, i) => p.dirty[i] ? null :
+                ((p.config.outputMask[i < 32 ? 0 : 1] >>> (i % 32)) & 1) ? p.api.get_parameter(p.instance, i) : value),
+                messages: p.toUi.drain()};
+        } else throw Error("Unknown Perone control");
+        return {};
+    }
+
+    // The scheduler calls this at the same boundary on native and Wasm, before score automation.
+    sync(id, paired) {
+        const p = this.instances.get(id);
+        if (!p?.pending) return;
+        p.pending = false;
+        for (let i = 0; i < p.dirty.length; ++i) if (p.dirty[i]) {
+            this.set(id, i, p.wanted[i]);
+            if (paired) this.set(paired, i, p.wanted[i]);
+            p.dirty[i] = 0;
+        }
+        while (p.toDsp.read !== p.toDsp.write) {
+            const i = p.toDsp.read++ % slots, size = p.toDsp.sizes[i];
+            const bytes = p.toDsp.data.subarray(i * p.toDsp.limit, i * p.toDsp.limit + size);
+            p.message.set(bytes);
+            p.api.msg_in(p.instance, size, p.messagePointer);
+            if (paired) {
+                const other = this.instances.get(paired);
+                other.message.set(bytes);
+                other.api.msg_in(other.instance, size, other.messagePointer);
+            }
+        }
     }
 
     reset(id) {

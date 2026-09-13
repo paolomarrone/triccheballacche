@@ -1,10 +1,11 @@
 import {createPlayerHost, preparePlayer, closePlayer} from "./player.js";
 import {addFile} from "./host.js";
 
-export const views = false, saveLabel = "Scarica", saveTitle = "Scarica una copia della partitura · Ctrl+S";
+export const nativeViews = false, views = true, saveLabel = "Scarica", saveTitle = "Scarica una copia della partitura · Ctrl+S";
 const options = new URLSearchParams(location.search);
 const entry = options.get("score") || "examples/prog/polpo.janet";
-let host, player, view = 0, revision = 0, time = 0, failure = "", log = [];
+const assets = new Map();
+let host, player, view = 0, revision = 0, time = 0, watched = -1, failure = "", log = [];
 
 export async function connect() {
     if (!crossOriginIsolated) throw Error("Servono gli header COOP/COEP: avvia node test/server.mjs.");
@@ -17,9 +18,11 @@ export async function connect() {
         const path = host.perone.path(file.path);
         if (paths.has(path)) throw Error("Percorso duplicato nel catalogo: " + file.path);
         paths.add(path);
+        assets.set(path, new URL(file.url, url).href);
     }
     // Finish every preload before exposing the runtime, including on failure.
     const loaded = await Promise.allSettled(files.map(async file => {
+        if (file.asset) return;
         const response = await fetch(new URL(file.url, url), {cache: "no-store"});
         if (!response.ok) throw Error("Impossibile caricare " + file.path);
         await addFile(host, file.path, new Uint8Array(await response.arrayBuffer()));
@@ -41,6 +44,7 @@ async function stop() {
     if (player) time = player.time;
     // Clear the JS player even on failure; closePlayer retains its host lock and permits cleanup retries.
     player = undefined;
+    watched = -1;
     await closePlayer(host);
 }
 
@@ -79,7 +83,21 @@ function checkedText(text) {
 export async function command(op, ...args) {
     let result = {}, error = "", path = op === "range" || op === "note" ? "" : args[0] || entry;
     try {
-        if (op === "range" || op === "note") result = query(op, args);
+        if (["watch", "controls", "parameter", "message"].includes(op)) {
+            const [version, node, ...values] = args;
+            if (!player || version !== revision) throw Error("Vista plugin scaduta");
+            if (op === "watch") {
+                if (watched >= 0) await player.control("watch", watched, false);
+                watched = -1;
+                if (node >= 0) {
+                    await player.control("watch", node, true);
+                    watched = node;
+                }
+            } else {
+                if (node !== watched) throw Error("Vista plugin non collegata");
+                result = await player.control(op, node, ...values);
+            }
+        } else if (op === "range" || op === "note") result = query(op, args);
         else if (op === "open") {
             try { result.text = checkedText(host.FS.readFile(host.perone.path(path), {encoding: "utf8"})); }
             catch { throw Error("File non presente nel progetto web: " + path); }
@@ -115,4 +133,10 @@ export async function close() {
     if (!host) return;
     try { await stop(); }
     finally { host._view_free(view); view = 0; }
+}
+
+export function uiUrl(node) {
+    const url = assets.get(host.perone.path(node.bundle + "/" + node.product.ui.web));
+    if (!url) throw Error("UI assente dal catalogo: rigenera con make web-editor");
+    return url;
 }

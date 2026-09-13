@@ -1,4 +1,5 @@
-# Native Perone UIs: the original Tibia and A-SID effects, built in their own repositories.
+# Perone UIs: Tibia and A-SID effects, built in their own repositories.
+# The editor hosts web/custom or generic controls; native GUI libraries remain optional.
 (import ../lib/pattern :as p)
 (import ../lib/music)
 

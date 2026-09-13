@@ -1,17 +1,19 @@
 import {Perone} from "./perone.js";
 
-// Only prepares/disposes Perone instances. Miniaudio owns the audio processor.
+// Perone lifecycle and bounded UI exchange. Miniaudio owns the audio processor.
 registerProcessor("perone-setup", class extends AudioWorkletProcessor {
     constructor(options) {
         super();
         const host = globalThis.peroneHost;
         this.port.onmessage = ({data}) => {
             try {
-                if (data.type !== "close") throw Error("Unknown worklet request");
-                host.perone?.closeAll();
-                this.port.postMessage({type: data.type});
+                let result;
+                if (data.type === "close") host.perone?.closeAll();
+                else if (data.type === "control") result = host.perone.control(...data.args);
+                else throw Error("Unknown worklet request");
+                this.port.postMessage({type: data.type, id: data.id, result});
             } catch (error) {
-                this.port.postMessage({type: data.type, error: String(error)});
+                this.port.postMessage({type: data.type, id: data.id, error: String(error)});
             }
         };
         try {

@@ -117,7 +117,7 @@ static Janet event_count(int32_t argc, Janet *argv) {
 
 // Copy optional script annotations while Janet is alive. Event identity and timing come from Session.
 static Janet project(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 2);
+	janet_fixarity(argc, 4);
 	ScoreView *view = projection;
 	if (!view || view->nnodes || !current->sealed)
 		janet_panic("Score view requires a sealed session and an empty destination");
@@ -127,6 +127,23 @@ static Janet project(int32_t argc, Janet *argv) {
 		Janet product = janet_get(argv[1], janet_wrap_integer(i));
 		if (janet_checktype(product, JANET_NIL))
 			continue;
+		ScoreNode *node = view->nodes + i;
+		Janet encoded = janet_get(argv[3], janet_wrap_integer(i));
+		node->product = copy_string(janet_getcstring(&encoded, 0));
+		if (!node->product)
+			janet_panic("Cannot copy product metadata");
+		Janet parameters = janet_get(argv[2], janet_wrap_integer(i));
+		JanetView controls = janet_getindexed(&parameters, 0);
+		if (controls.len != current->nodes[i].dsp[0].config.nparams)
+			janet_panic("Plugin parameter metadata changed during preparation");
+		for (int j = 0; j < controls.len; ++j) {
+			Janet p = controls.items[j], low = janet_get(p, janet_ckeywordv("min")),
+			      high = janet_get(p, janet_ckeywordv("max"));
+			node->minimum[j] = janet_getnumber(&low, 0);
+			node->maximum[j] = janet_getnumber(&high, 0);
+			if (janet_truthy(janet_get(p, janet_ckeywordv("integer"))))
+				node->integers |= UINT64_C(1) << j;
+		}
 		Janet name = janet_get(product, janet_ckeywordv("name"));
 		if (janet_checktype(name, JANET_STRING)) {
 			char *copy = copy_string(janet_getcstring(&name, 0));
@@ -264,7 +281,10 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 		result = 1;
 	}
 	if (!result && view)
-		result = janet_dostring(env, "(native/project (host/trace-report) daw/products)", "<prepare-score>", NULL);
+		result = janet_dostring(env,
+		    "(native/project (host/trace-report) daw/products daw/nodes "
+		    "(tabseq [[id p] :pairs daw/products] id (string (json/encode p))))",
+		    "<prepare-score>", NULL);
 	if (result && view)
 		score_view_free(view);
 	if (errors && errors->count)

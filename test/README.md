@@ -163,3 +163,19 @@ e tracciati sullo stesso host. Scrive un rapporto in `build/trace-fixture.json`.
 `test-editor-web` osserva nel DOM il tracking di Polpo e il comportamento della
 proiezione condivisa: modificare il testo sospende le evidenziazioni, Stop conserva
 le note, un errore non sostituisce l'ultima esecuzione e la successiva può ripartire.
+
+
+## UI Perone condivise
+
+`make test-editor-ui` prepara bundle di fixture temporanei e usa la stessa UI ES
+in Chromium con entrambi i backend dell'editor. La UI importa un altro modulo JS,
+un CSS e un Wasm con import esterni tramite `instantiateStreaming`: questi asset
+devono mantenere percorsi e MIME corretti, senza entrare nel loader DSP standalone.
+Il test verifica valori iniziali/automatizzati, meter, modifiche manuali, messaggi
+binari, passaggio ai controlli generici, callback scaduti, smontaggio, Stop durante una creazione asincrona e riavvio.
+Non richiede Tibia o A-SID; lascia le catture in `build/editor-ui-{web,native}.png`.
+
+`make test-web` include `perone-controls.mjs`: verifica anche l'audio delle due copie
+di un effetto mono dopo una modifica, la precedenza delle automazioni, conferme dei
+valori, code FIFO limitate, messaggi vuoti/binari, overflow e riattacco della vista.
+`request.mjs` controlla che una risposta tardiva non confermi una richiesta successiva.

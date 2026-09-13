@@ -25,7 +25,9 @@ typedef struct {
 } ScoreEvent;
 
 typedef struct {
-	char *name;
+	char *name, *bundle, *product; // Product JSON is encoded by Janet before teardown.
+	float minimum[MAX_PARAMS], maximum[MAX_PARAMS];
+	uint64_t integers;
 	ScoreEvent *events;
 	size_t *by_order, count, raw_count;
 } ScoreNode;

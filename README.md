@@ -90,7 +90,7 @@ Servono i quattro bundle locali di Polpo (`synth_mono`, `drums`, `shape`, `echo`
 e `../asid/plugin/perone/build/asid.perone`, configurabile con `ASID_PERONE`.
 
 ```sh
-./build/editor examples/denti.janet  # Attivare GUI per le due interfacce A-SID.
+./build/editor examples/denti.janet  # GUI: scegliere il modulo; «Nativa» apre la GUI A-SID originale.
 ./build/daw examples/denti.janet build/denti.wav 48000
 ```
 
@@ -378,7 +378,9 @@ make test-editor-web
 
 `make web-editor` genera anche `build/web/project.json`: un catalogo e una copia dei
 file `.janet`, `.json` e `.wasm` nelle directory indicate da `WEB_CONTENT` (default:
-`lib examples plugins`). Il browser li precarica prima di abilitare l'editor; Janet
+`lib examples plugins`), più tutti gli asset sotto `ui/` dei bundle Perone. I percorsi
+relativi dentro ogni bundle restano intatti per import, CSS e Wasm della UI. Il browser
+precarica partiture, metadati e DSP prima di abilitare l'editor; Janet
 risolve gli import e legge i metadati come nel native. Non si analizza il sorgente per
 indovinare le dipendenze e non c'è una lista di plugin per ciascun pezzo. Rigenerare
 il catalogo dopo modifiche ai file o nuove compilazioni. I file copiati non più elencati
@@ -393,12 +395,14 @@ make web-editor WEB_CONTENT="lib examples plugins ../asid/plugin/perone/build ..
 ```
 
 `?score=...` sceglie il file iniziale (default Polpo); `?project=...` sceglie un altro
-catalogo, relativo all'URL della pagina. Il catalogo usa record `{path, url}`, con URL
+catalogo, relativo all'URL della pagina. Il catalogo usa record `{path, url}`, con
+`asset: true` per i file UI caricati su richiesta, esclusi dal loader DSP, e URL
 relativi al catalogo. I percorsi appartengono al filesystem virtuale del runtime:
 non danno accesso al disco del visitatore. Sul web **Apri** legge questo progetto e
 **Scarica** salva una copia locale e aggiorna il filesystem della sessione, senza
 scrivere sul server; ricaricare la pagina ripristina i file pubblicati nel catalogo.
-Il controllo delle GUI native è nascosto. Servono un browser con AudioWorklet e gli
+Le GUI web funzionano anche qui; la scelta «Nativa» è disponibile solo sul desktop.
+Servono un browser con AudioWorklet e gli
 header COOP/COEP, già forniti dal server di test; i dettagli sono nella sezione web.
 
 Sul desktop, il campo del percorso accetta nomi relativi al repository o assoluti. Apri legge la
@@ -410,10 +414,12 @@ durante l'ascolto; le modifiche si applicano alla successiva esecuzione.
 Ctrl+Invio esegue, Ctrl+S salva ed Esc ferma; su macOS vale anche il tasto Command.
 Errori Janet di parsing, compilazione ed esecuzione vengono mostrati nell'editor.
 
-GUI mostra o nasconde le interfacce originali dei bundle della sessione.
-Le istanze vengono create prima della riproduzione; nascondere o chiudere una loro
-finestra conserva DSP e scambio dei controlli. Stop, fine del pezzo o chiusura
-dell'editor liberano player, GUI e sessione in quest'ordine. Il contatore mostra
+GUI apre un pannello laterale: si sceglie il modulo e si vede una UI alla volta.
+«Plugin» carica la UI web dichiarata dal bundle, oppure controlli generici se manca;
+«Parametri» forza i controlli generici. Sul desktop «Nativa» apre invece la finestra
+originale del modulo selezionato. Cambiare modulo o tipo di vista libera la precedente;
+nascondere il pannello stacca la UI senza fermare il DSP. Stop, fine del pezzo e
+riesecuzione invalidano anche i callback delle vecchie viste. Il contatore mostra
 il tempo renderizzato, senza compensazione della latenza del dispositivo.
 
 Le righe associate agli eventi in ascolto si illuminano direttamente nell'editor,
@@ -496,6 +502,48 @@ richiede dipendenze che per ora non introduciamo. La preparazione Janet è ancor
 sincrona: il prototipo non interrompe uno script durante la valutazione e non
 sostituisce la musica in corso.
 
+## GUI web Perone
+
+L'editor usa il contratto `templates/perone-web` di Tibia, invariato: il bundle
+dichiara `product.ui.web = "ui/index.js"`; quel modulo esporta `create(element,
+callbacks)` e restituisce `free()`, con `set_parameter(index, value)` e `msg_in(bytes)`
+facoltativi. Le callback contengono il prodotto originale, `set_parameter_begin`,
+`set_parameter`, `set_parameter_end` e `msg_write(Uint8Array)`. La UI può usare DOM,
+canvas o un proprio Wasm: non passa dal loader dei DSP. Gli asset si risolvono
+rispetto a `import.meta.url`. Il packaging resta in Tibia: `make ui-web UI_WEB_DIR=...`.
+
+`editor/plugins.js` gestisce selezione, montaggio in uno Shadow DOM, aggiornamenti
+e smontaggio, identici per DSP nativo e Wasm. `editor/perone-ui.js` riusa i controlli
+generici di Tibia: range lineari/logaritmici, interi, liste, toggle e meter. Una UI
+custom dichiarata ma non caricabile produce un errore; «Parametri» rimane selezionabile.
+Il prodotto viene letto, validato e serializzato da Janet durante la preparazione,
+poi conservato nella proiezione. Non ci sono descrittori C né wrapper Janet per plugin.
+
+`posix/controls.c` collega il pannello allo scambio atomico del loader nativo;
+`posix/assets.c` serve gli asset dei soli bundle della proiezione corrente, verificando
+revisione, percorsi e symlink. La copia di build di WebUI riceve una patch di due MIME
+type per `.mjs` e `.wasm`, necessari agli import ES e a `instantiateStreaming`.
+Nel browser, `web/worklet.js` riceve richieste identificate sul port dell'AudioWorklet;
+`web/perone.js` applica i controlli alla stessa istanza usata da miniaudio. I valori
+iniziali includono gli override dello score; seguono automazioni, modifiche manuali
+e parametri di uscita. Le modifiche manuali non vengono ancora scritte nello score.
+
+Per provare Tibia e A-SID senza cambiare la partitura:
+
+```sh
+make web-editor WEB_CONTENT="lib examples plugins ../asid/plugin/perone/build ../tibia/out/perone/c/build"
+node test/server.mjs
+# /editor/index.html?score=examples/gui.janet — Esegui, GUI, poi scegliere il modulo.
+# Sul desktop: ./build/editor examples/gui.janet
+make test-editor-ui
+```
+
+I bundle devono già contenere i DSP della piattaforma scelta. Quelli attuali di Tibia
+e A-SID senza `ui.web` mostrano i controlli generici nel pannello. `test-editor-ui`
+usa invece una UI custom autonoma, con import relativo, CSS e Wasm grafico, su entrambi
+i backend: verifica automazioni, meter, gesti, messaggi binari, cambio vista, callback
+scaduti, Stop durante una creazione asincrona e riavvio. Le fixture non richiedono checkout esterni.
+
 ## GUI native Perone
 
 `make gui` compila il player desktop opzionale e riproduce `examples/gui.janet`,
@@ -558,9 +606,11 @@ i valori fuori range o non interi vengono rifiutati per segnalare l'errore nello
 I messaggi usano due code con un produttore e un consumatore, 16 posti ciascuna,
 allocate prima della riproduzione secondo i limiti del JSON, fino a 4096 byte per
 messaggio. Il riempimento della coda o un messaggio fuori limite interrompe la prova
-con un errore. Senza una GUI i messaggi in uscita vengono scartati. Il web mantiene
-il limite a zero: le GUI native `.so` non si eseguono nel browser; questi bundle
-attualmente non includono un modulo UI web.
+con un errore. Senza una GUI i messaggi in uscita vengono scartati. Il web supporta
+lo stesso limite di 4096 byte, con 64 posti per coda per assorbire i blocchi audio più
+corti del browser. Le risposte UI si leggono circa ogni 50 ms; un overflow stacca la
+vista e segnala l'errore. Una sola vista per nodo consuma i messaggi; le copie L/R
+ricevono gli stessi controlli e restituiscono il flusso dell'istanza sinistra.
 
 `make test-ui` richiede un display X11 e i bundle già compilati di Tibia C/C++ e
 A-SID. Verifica embedding, gesti reali del mouse, audio, sincronizzazione L/R,
@@ -733,7 +783,7 @@ inclusi gli override, separati dai default originali esposti da `daw/info`.
 La sessione usa quella configurazione per preparare entrambe le istanze degli
 effetti mono su stereo; i mixer conservano soltanto i propri valori di gain e pan.
 `daw/end` chiude la preparazione: da quel momento i parametri cambiano attraverso
-gli eventi già programmati e, nel player desktop, i controlli delle GUI.
+gli eventi già programmati e i controlli delle GUI, sia native sia web.
 
 Gli eventi crescono durante la preparazione e vengono ordinati una volta sola.
 Janet viene chiuso prima del rendering; il motore non alloca memoria mentre processa
@@ -749,8 +799,8 @@ Sono supportati fino a 8 canali di ingresso complessivi, inclusi quelli scollega
 CV, sidechain obbligatorie e bus principali aggiuntivi vengono rifiutati prima
 che il DSP venga caricato. Il transport sincronizzato obbligatorio viene rifiutato;
 se dichiarato opzionale, il plugin usa il proprio comportamento senza transport.
-Il backend nativo gestisce i messaggi della GUI entro i limiti descritti sopra;
-il backend web rifiuta ancora bundle che dichiarano messaggistica. Il salvataggio dello
+Entrambi i backend gestiscono i messaggi della GUI entro i limiti descritti sopra.
+Il salvataggio dello
 stato personalizzato non è esposto dall'API delle partiture.
 
 Il contratto è Perone ABI v2, copiato senza modifiche in `perone.h`.

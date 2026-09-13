@@ -15,7 +15,10 @@ static void metadata(Json *json, const ScoreView *view, unsigned revision) {
 		ScoreSummary summary = node->count ? node->events[node->count / 2].summary : (ScoreSummary){0};
 		json_print(json, "%s{\"name\":", i ? "," : "");
 		json_string(json, node->name);
-		json_print(json, ",\"low\":%d,\"high\":%d}", summary.low, summary.high);
+		json_print(json, ",\"bundle\":");
+		json_string(json, node->bundle);
+		json_print(json, ",\"product\":%s,\"low\":%d,\"high\":%d}", node->product ? node->product : "null", summary.low,
+		    summary.high);
 	}
 	json_print(json, "],\"tracks\":[");
 	for (int i = 0; i < view->ntracks; ++i) {

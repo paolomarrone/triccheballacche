@@ -13,6 +13,9 @@ typedef struct {
 	perone_callbacks callbacks;
 	float gain, control, rate, gate, state, *memory;
 	int initialized;
+	unsigned char message[16];
+	size_t message_size;
+	int pending_message;
 } Instance;
 
 static int live, initialized;
@@ -99,6 +102,10 @@ static float get(void *p, size_t index) {
 static void process(void *p, const float **in, float **out, size_t n) {
 	Instance *i = p;
 	assert(i->initialized && *i->memory == 123);
+	if (i->pending_message) {
+		i->callbacks.msg_write(i->callbacks.handle, i->message_size, i->message);
+		i->pending_message = 0;
+	}
 	const char *bin = i->callbacks.get_bindir(i->callbacks.handle),
 	           *data = i->callbacks.get_datadir(i->callbacks.handle);
 	assert(!strncmp(bin, data, strlen(data)) && bin[strlen(data)] == '/');
@@ -116,6 +123,14 @@ static void process(void *p, const float **in, float **out, size_t n) {
 		out[1][k] = -out[0][k];
 #endif
 	}
+}
+
+static void message(void *p, size_t size, const void *data) {
+	Instance *i = p;
+	assert(size <= sizeof(i->message));
+	memcpy(i->message, data, size);
+	i->message_size = size;
+	i->pending_message = 1;
 }
 
 #ifndef PERONE_TEST_EFFECT
@@ -138,6 +153,7 @@ __attribute__((visibility("default"))) const perone_api *perone_get_api(uint32_t
 	    .process = process,
 	    .set_parameter = set,
 	    .get_parameter = get,
+	    .msg_in = message,
 #ifndef PERONE_TEST_EFFECT
 	    .midi_msg_in = midi,
 #endif

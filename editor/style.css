@@ -37,3 +37,11 @@ footer { color: var(--muted); font-size: 12px; }
 #notes { display: block; position: sticky; top: 0; touch-action: none; }
 #lanes-space { pointer-events: none; }
 #plugin-views[hidden] { display: none; }
+
+#workspace { display: flex; flex: 1; min-height: 0; gap: 5px; }
+#plugins { display: flex; flex-direction: column; flex: 0 0 330px; max-width: 45%; min-width: 0; border: 1px solid var(--border); }
+#plugin-tools { display: flex; gap: 4px; padding: 4px; border-bottom: 1px solid var(--border); }
+#plugin-tools select { min-width: 0; font: inherit; }
+#plugin-node { flex: 1; }
+#plugin-ui { overflow: auto; min-height: 0; padding: 6px; }
+[hidden] { display: none !important; }

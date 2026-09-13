@@ -5,7 +5,9 @@ import {resolve, extname, sep} from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const types = {".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript",
-    ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json"};
+    ".css": "text/css", ".wasm": "application/wasm", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif",
+    ".woff": "font/woff", ".woff2": "font/woff2"};
 
 export function serve(port = 8000) {
     return createServer(async (request, response) => {

@@ -5,6 +5,8 @@
 void score_view_free(ScoreView *view) {
 	for (int i = 0; i < view->nnodes; ++i) {
 		free(view->nodes[i].name);
+		free(view->nodes[i].bundle);
+		free(view->nodes[i].product);
 		free(view->nodes[i].events);
 		free(view->nodes[i].by_order);
 	}
@@ -29,6 +31,18 @@ int score_view_init(ScoreView *view, const Session *session) {
 		ScoreNode *node = view->nodes + i;
 		const char *name = source->path ? strrchr(source->path, '/') : NULL;
 		node->name = copy_string(name ? name + 1 : source->path ? source->path : "Mixer");
+		if (source->path) {
+			node->bundle = copy_string(source->path);
+			if (!node->bundle)
+				return -1;
+			// Perone binaries occupy exactly one platform directory inside the bundle.
+			for (int j = 0; j < 2; ++j) {
+				char *slash = strrchr(node->bundle, '/');
+				if (!slash)
+					return -1;
+				*slash = 0;
+			}
+		}
 		node->raw_count = node->count = source->count;
 		if (!node->name || source->count > SIZE_MAX / sizeof(ScoreEvent))
 			return -1;

@@ -42,10 +42,14 @@ void watch_dsp(DSP *dsp, int watching) {
 void edit_dsp(DSP *dsp, size_t parameter, float value) {
 	atomic_store(&dsp->wanted[parameter], value);
 	atomic_fetch_add(&dsp->requested[parameter], 1);
+	atomic_store(&dsp->pending, 1);
 }
 
 int send_dsp(DSP *dsp, size_t size, const void *data) {
-	return message_push(&dsp->to_dsp, size, data);
+	int result = message_push(&dsp->to_dsp, size, data);
+	if (!result)
+		atomic_store(&dsp->pending, 1);
+	return result;
 }
 
 int read_dsp(DSP *dsp, size_t parameter, float *value) {
@@ -74,6 +78,7 @@ DSP *open_dsp(const char *path, const PluginConfig *config, unsigned sample_rate
 		return NULL;
 	m->config = *config;
 	atomic_init(&m->viewing, 0);
+	atomic_init(&m->pending, 0);
 	atomic_init(&m->overflow, 0);
 	for (int i = 0; i < MAX_PARAMS; ++i) {
 		atomic_init(&m->requested[i], 0);
@@ -182,8 +187,9 @@ void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message) {
 }
 
 void sync_dsp(DSP *dsp, DSP *paired) {
-	if (!dsp || !atomic_load(&dsp->viewing))
+	if (!dsp || !atomic_load(&dsp->pending))
 		return;
+	atomic_store(&dsp->pending, 0);
 	for (int i = 0; i < dsp->config.nparams; ++i) {
 		unsigned request = atomic_load(&dsp->requested[i]);
 		if (request == atomic_load(&dsp->applied[i]))

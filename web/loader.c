@@ -1,27 +1,24 @@
 #include "loader.h"
 #include <emscripten.h>
 
-const size_t dsp_max_message = 0;
-
-void sync_dsp(DSP *dsp, DSP *paired) {
-	(void)dsp;
-	(void)paired;
-}
+const size_t dsp_max_message = 4096;
 
 // clang-format off
 EM_JS(int, wasm_open,
     (const char *path, unsigned rate, int inputs, int output, int midi, int nparams, const float *defaults,
-        uint32_t outputs_low, uint32_t outputs_high, size_t capacity), {
+        uint32_t outputs_low, uint32_t outputs_high, size_t capacity, size_t to_ui, size_t to_dsp), {
 	try {
 		return Module.perone.open({path: UTF8ToString(path), sampleRate: rate,
 		    inputChannels: inputs, outputChannels: output, midiBus: midi,
 		    parameters: HEAPF32.subarray(defaults / 4, defaults / 4 + nparams),
-		    outputMask: [outputs_low, outputs_high], capacity});
+		    outputMask: [outputs_low, outputs_high], capacity, toUi: to_ui, toDsp: to_dsp});
 	} catch (error) {
 		(Module.printErr || console.error)(String(error));
 		return 0;
 	}
 });
+
+EM_JS(void, sync_dsp, (DSP *id, DSP *paired), { Module.perone.sync(id, paired); });
 
 EM_JS(void, wasm_close, (void *id), { Module.perone.close(id); });
 EM_JS(void, wasm_set, (void *id, size_t parameter, float value), { Module.perone.set(id, parameter, value); });
@@ -34,7 +31,7 @@ EM_JS(void, wasm_process, (void *id, const float **inputs, float **outputs, size
 
 DSP *open_dsp(const char *path, const PluginConfig *c, unsigned sample_rate, size_t capacity) {
 	return (DSP *)(uintptr_t)wasm_open(path, sample_rate, c->inputs, c->output, c->midi, c->nparams, c->defaults,
-	    (uint32_t)c->outputs, (uint32_t)(c->outputs >> 32), capacity);
+	    (uint32_t)c->outputs, (uint32_t)(c->outputs >> 32), capacity, c->to_ui, c->to_dsp);
 }
 
 void close_dsp(DSP *dsp) {

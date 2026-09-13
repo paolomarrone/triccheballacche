@@ -15,12 +15,24 @@
     <label id="plugin-views" title="Mostra le GUI dei plugin" hidden><input id="views" type="checkbox" disabled> GUI</label>
 </nav>
 <main>
+    <div id="workspace">
     <div id="sheet">
         <div id="gutter" aria-hidden="true"><pre id="numbers"></pre></div>
         <div id="input">
             <div id="marks" aria-hidden="true"></div>
             <textarea id="code" aria-label="Partitura Janet" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" disabled></textarea>
         </div>
+    </div>
+    <aside id="plugins" aria-label="GUI del plugin" hidden>
+        <div id="plugin-tools">
+            <select id="plugin-node" aria-label="Modulo"></select>
+            <select id="plugin-kind" aria-label="Tipo di GUI">
+                <option value="auto">Plugin</option>
+                <option value="generic">Parametri</option>
+            </select>
+        </div>
+        <div id="plugin-ui"></div>
+    </aside>
     </div>
     <div id="split" role="separator" aria-label="Altezza della timeline" aria-orientation="horizontal" tabindex="0"></div>
     <section id="timeline" aria-label="Proiezione della partitura">

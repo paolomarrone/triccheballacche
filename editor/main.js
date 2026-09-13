@@ -1,9 +1,10 @@
 import {timeline} from "./timeline.js";
+import {plugins} from "./plugins.js";
 
 const byId = id => document.getElementById(id);
 const path = byId("path"), code = byId("code"), views = byId("views"), errors = byId("errors");
 const numbers = byId("numbers"), marks = byId("marks");
-let backend, ready = false, busy = false, playing = false, saved = "", savedPath = "", queue = Promise.resolve();
+let backend, controls, ready = false, busy = false, playing = false, saved = "", savedPath = "", queue = Promise.resolve();
 let revision = 0, frames = [], partial = false, tracedSource, tracedPath, seconds = 0, displayedSource, lineCount = 1, painted = "";
 
 function tracking() {
@@ -48,6 +49,7 @@ function dirty() {
 }
 
 function update() {
+    controls?.status(playing, busy);
     for (const id of ["open", "save", "run", "views"]) byId(id).disabled = !ready || busy;
     byId("stop").disabled = !ready || busy || !playing;
     path.disabled = !ready || busy;
@@ -101,12 +103,14 @@ async function action(op) {
     showError("");
     update();
     try {
+        if (op === "run" || op === "stop") controls.dispose();
         const result = await request(op, path.value, ["save", "run"].includes(op) ? code.value : "", views.checked);
         if (op === "run") {
             revision = result.score.revision;
             projection.score(result.score);
             tracedSource = code.value;
             tracedPath = result.path;
+            await controls.score(result.score);
         }
         if (op === "open") code.value = result.text;
         if (op === "open" || op === "save") {
@@ -134,11 +138,11 @@ const projection = timeline(request, origins => {
 new ResizeObserver(paint).observe(code);
 
 for (const op of ["open", "save", "run", "stop"]) byId(op).addEventListener("click", () => action(op));
-views.addEventListener("change", () => action("views"));
+views.addEventListener("change", () => controls?.show(views.checked).catch(showError));
 for (const event of ["input", "click", "keyup", "select"]) code.addEventListener(event, update);
 code.addEventListener("scroll", paint);
 window.addEventListener("resize", paint);
-window.addEventListener("pagehide", () => { backend?.close?.().catch(showError); });
+window.addEventListener("pagehide", () => { controls?.dispose(); backend?.close?.().catch(showError); });
 path.addEventListener("input", update);
 document.addEventListener("keydown", event => {
     let op;
@@ -161,7 +165,7 @@ function beforeUnload(event) {
 
 async function poll() {
     if (ready && !busy) {
-        try { await request("status", "", "", false); }
+        try { await request("status", "", "", false); await controls.poll(); }
         catch (error) { showError(error); }
     }
     setTimeout(poll, 50);
@@ -169,6 +173,7 @@ async function poll() {
 
 export async function startEditor(adapter) {
     backend = adapter;
+    controls = plugins(request, adapter, showError);
     byId("plugin-views").hidden = !backend.views;
     byId("save").textContent = backend.saveLabel;
     byId("save").title = backend.saveTitle;

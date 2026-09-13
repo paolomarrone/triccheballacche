@@ -67,3 +67,7 @@ int score_render(Score *score) {
 		n = BLOCK;
 	return session_render(s, score->buffer, n) ? -1 : (int)n;
 }
+
+DSP *score_dsp(Score *score, int node) {
+	return node >= 0 && node < score->session.nnodes ? score->session.nodes[node].dsp[0].dsp : NULL;
+}
