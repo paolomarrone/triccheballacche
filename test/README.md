@@ -169,9 +169,11 @@ le note, un errore non sostituisce l'ultima esecuzione e la successiva può ripa
 
 `make test-editor-ui` prepara bundle di fixture temporanei e usa la stessa UI ES
 in Chromium con entrambi i backend dell'editor. La UI importa un altro modulo JS,
-un CSS e un Wasm con import esterni tramite `instantiateStreaming`: questi asset
+un CSS e un Wasm con import esterni tramite `instantiateStreaming`, collocato
+in `wasm32/` accanto al DSP come nel template Vinci di Tibia: questi asset
 devono mantenere percorsi e MIME corretti, senza entrare nel loader DSP standalone.
-Il test verifica valori iniziali/automatizzati, meter, modifiche manuali, messaggi
+Il test verifica valori iniziali/automatizzati, meter, modifiche manuali anche in
+raffiche di 400 valori, messaggi
 binari, passaggio ai controlli generici, callback scaduti, smontaggio, Stop durante una creazione asincrona e riavvio.
 Non richiede Tibia o A-SID; lascia le catture in `build/editor-ui-{web,native}.png`.
 

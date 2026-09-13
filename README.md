@@ -378,8 +378,10 @@ make test-editor-web
 
 `make web-editor` genera anche `build/web/project.json`: un catalogo e una copia dei
 file `.janet`, `.json` e `.wasm` nelle directory indicate da `WEB_CONTENT` (default:
-`lib examples plugins`), più tutti gli asset sotto `ui/` dei bundle Perone. I percorsi
-relativi dentro ogni bundle restano intatti per import, CSS e Wasm della UI. Il browser
+`lib examples plugins`), più tutti gli asset sotto `ui/` dei bundle Perone. Tra i
+Wasm del bundle soltanto quelli che esportano `perone_get_api` sono precaricati come DSP: il Wasm della UI
+può vivere anche accanto al DSP, in `wasm32/`. Il catalogo ispeziona gli export senza
+eseguire i moduli. I percorsi relativi dentro ogni bundle restano intatti per import, CSS e Wasm della UI. Il browser
 precarica partiture, metadati e DSP prima di abilitare l'editor; Janet
 risolve gli import e legge i metadati come nel native. Non si analizza il sorgente per
 indovinare le dipendenze e non c'è una lista di plugin per ciascun pezzo. Rigenerare
@@ -513,7 +515,9 @@ canvas o un proprio Wasm: non passa dal loader dei DSP. Gli asset si risolvono
 rispetto a `import.meta.url`. Il packaging resta in Tibia: `make ui-web UI_WEB_DIR=...`.
 
 `editor/plugins.js` gestisce selezione, montaggio in uno Shadow DOM, aggiornamenti
-e smontaggio, identici per DSP nativo e Wasm. `editor/perone-ui.js` riusa i controlli
+e smontaggio, identici per DSP nativo e Wasm. I gesti rapidi vengono accorpati
+all'ultimo valore per parametro prima dell'invio: una sola richiesta UI alla volta
+lascia passare stato e feedback audio. I messaggi restano FIFO, al massimo 64 in attesa. `editor/perone-ui.js` riusa i controlli
 generici di Tibia: range lineari/logaritmici, interi, liste, toggle e meter. Una UI
 custom dichiarata ma non caricabile produce un errore; «Parametri» rimane selezionabile.
 Il prodotto viene letto, validato e serializzato da Janet durante la preparazione,
@@ -538,8 +542,17 @@ node test/server.mjs
 make test-editor-ui
 ```
 
-I bundle devono già contenere i DSP della piattaforma scelta. Quelli attuali di Tibia
-e A-SID senza `ui.web` mostrano i controlli generici nel pannello. `test-editor-ui`
+I bundle devono già contenere i DSP della piattaforma scelta. I bundle senza
+`ui.web` mostrano i controlli generici nel pannello. La UI Vinci originale di Tibia
+è disponibile nei nuovi bundle `../tibia/out/perone/ui/c/build/tibia-test.perone` e
+`../tibia/out/perone/ui/cxx/build/tibia-test.perone`: usare uno di questi percorsi
+al posto del bundle Tibia in `examples/gui.janet` e includere la relativa directory
+di build in `WEB_CONTENT`. Contengono `ui/index.js`, `ui/vinci-web.js` e
+`wasm32/tibia-test-ui.wasm`; rendering, slider, bypass, meter e reset girano dalla
+UI C/C++ compilata. Le build attuali di questi due bundle includono soltanto il DSP
+wasm32; per usarli col motore desktop occorre anche il DSP della piattaforma nativa.
+Il pannello lascia alla GUI la sua larghezza naturale, fino al 65% dello spazio
+disponibile; le UI più grandi rimangono scorribili. `test-editor-ui`
 usa invece una UI custom autonoma, con import relativo, CSS e Wasm grafico, su entrambi
 i backend: verifica automazioni, meter, gesti, messaggi binari, cambio vista, callback
 scaduti, Stop durante una creazione asincrona e riavvio. Le fixture non richiedono checkout esterni.
@@ -603,12 +616,12 @@ La GUI arrotonda i parametri interi e limita i valori al range del JSON; indici
 invalidi, parametri di uscita e valori non finiti sono errori. Negli script, invece,
 i valori fuori range o non interi vengono rifiutati per segnalare l'errore nello score.
 
-I messaggi usano due code con un produttore e un consumatore, 16 posti ciascuna,
+I messaggi usano due code con un produttore e un consumatore, 64 posti ciascuna,
 allocate prima della riproduzione secondo i limiti del JSON, fino a 4096 byte per
 messaggio. Il riempimento della coda o un messaggio fuori limite interrompe la prova
-con un errore. Senza una GUI i messaggi in uscita vengono scartati. Il web supporta
-lo stesso limite di 4096 byte, con 64 posti per coda per assorbire i blocchi audio più
-corti del browser. Le risposte UI si leggono circa ogni 50 ms; un overflow stacca la
+con un errore. Senza una GUI i messaggi in uscita vengono scartati. I limiti sono
+uguali su native e Wasm: la coda assorbe anche i blocchi più corti del browser e
+i ritardi del collegamento WebUI. Le risposte UI si leggono circa ogni 50 ms; un overflow stacca la
 vista e segnala l'errore. Una sola vista per nodo consuma i messaggi; le copie L/R
 ricevono gli stessi controlli e restituiscono il flusso dell'istanza sinistra.
 

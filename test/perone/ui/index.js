@@ -5,7 +5,7 @@ export async function create(element, callbacks) {
     const css = document.createElement("link");
     css.rel = "stylesheet";
     css.href = new URL("./style.css", import.meta.url);
-    const {instance} = await WebAssembly.instantiateStreaming(fetch(new URL("./helper.wasm", import.meta.url)),
+    const {instance} = await WebAssembly.instantiateStreaming(fetch(new URL("../wasm32/fixture-ui.wasm", import.meta.url)),
         {helper: {value: () => 7}});
     if (globalThis.fixtureWait) await new Promise(resolve => { globalThis.fixtureResume = resolve; });
     const root = document.createElement("div");

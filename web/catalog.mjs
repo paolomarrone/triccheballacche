@@ -1,4 +1,4 @@
-import {readdir, stat, mkdir, copyFile, writeFile} from "node:fs/promises";
+import {readdir, readFile, stat, mkdir, copyFile, writeFile} from "node:fs/promises";
 import {dirname, basename, extname, join} from "node:path";
 import {createHash} from "node:crypto";
 
@@ -23,7 +23,13 @@ for (const path of [...files].sort()) {
     const url = `${assets}/${name}`;
     await mkdir(dirname(join(dirname(output), url)), {recursive: true});
     await copyFile(path, join(dirname(output), url));
-    manifest.push({path, url, ...(bundle?.[2].startsWith("ui/") ? {asset: true} : {})});
+    let asset = bundle?.[2].startsWith("ui/");
+    if (bundle && !asset && extname(path) === ".wasm") {
+        // A UI can live beside the DSP. Recognize the DSP's ABI without executing either module.
+        const module = new WebAssembly.Module(await readFile(path));
+        asset = !WebAssembly.Module.exports(module).some(e => e.name === "perone_get_api" && e.kind === "function");
+    }
+    manifest.push({path, url, ...(asset ? {asset: true} : {})});
 }
 await writeFile(output, JSON.stringify(manifest, null, 2) + "\n");
 console.log(`${output}: ${manifest.length} files`);

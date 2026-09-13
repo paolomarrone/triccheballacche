@@ -17,7 +17,7 @@ try {
             metadata.product.messaging = {uiToDspSize: 16, dspToUiSize: 16};
             await cp("test/perone/ui", `${bundle}/ui`, {recursive: true});
             // Imported helper function: this UI Wasm must never enter the standalone DSP loader.
-            await writeFile(`${bundle}/ui/helper.wasm`, new Uint8Array([
+            await writeFile(`${bundle}/wasm32/fixture-ui.wasm`, new Uint8Array([
                 0,97,115,109,1,0,0,0,1,5,1,96,0,1,127,
                 2,16,1,6,104,101,108,112,101,114,5,118,97,108,117,101,0,0,
                 7,9,1,5,118,97,108,117,101,0,0
@@ -84,6 +84,13 @@ try {
             await evaluate(`${root}.querySelector('#set-gain').click()`);
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .3) < .0001`);
             await wait(`Math.abs(Number(${fixture}.dataset.meter) - .3) < .0001`);
+            // Rapid gestures must converge without building hundreds of serialized host requests.
+            await evaluate(`(() => { const callbacks = fixtureCallbacks.at(-1);
+                for (let i = 1; i <= 400; ++i) callbacks.set_parameter(1, i / 1000);
+            })()`);
+            await wait(`Math.abs(Number(${fixture}.dataset.gain) - .4) < .0001`);
+            await evaluate(`${root}.querySelector('#set-gain').click()`);
+            await wait(`Math.abs(Number(${fixture}.dataset.gain) - .3) < .0001`);
             await evaluate(`${root}.querySelector('#send-message').click()`);
             await wait(`${root}.querySelector('output').textContent === "0,127,255"`);
             await select("plugin-kind", "generic");

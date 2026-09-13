@@ -40,8 +40,32 @@ export function plugins(request, adapter, fail) {
         const element = document.createElement("div");
         shadow.append(style, element);
         container.append(host);
+        const edits = new Map(), messages = [];
+        let sending = false;
+        async function flush() {
+            sending = true;
+            try {
+                while (current === token && (edits.size || messages.length)) {
+                    const batch = [...edits].map(args => ["parameter", ...args]);
+                    edits.clear();
+                    batch.push(...messages.splice(0).map(bytes => ["message", bytes]));
+                    for (const [op, ...args] of batch) {
+                        if (current !== token) break;
+                        // One request in flight leaves room for status and DSP feedback between edits.
+                        await request(op, token.revision, id, ...args);
+                    }
+                }
+            } catch (error) {
+                edits.clear(); messages.length = 0;
+                if (current === token) fail(error);
+            } finally { sending = false; }
+        }
         const send = (op, ...args) => {
-            if (current === token) request(op, token.revision, id, ...args).catch(error => { if (current === token) fail(error); });
+            if (current !== token) return;
+            if (op === "parameter") edits.set(args[0], args[1]);
+            else if (messages.length < 64) messages.push(args[0]);
+            else { fail(Error("Coda messaggi GUI piena")); return; }
+            if (!sending) flush();
         };
         const parameter = (index, value) => {
             if (current !== token) return;
@@ -57,6 +81,7 @@ export function plugins(request, adapter, fail) {
         const callbacks = {product: node.product, set_parameter_begin: parameter,
             set_parameter: parameter, set_parameter_end: parameter,
             msg_write(bytes) {
+                if (current !== token) return;
                 if (!(bytes instanceof Uint8Array) || bytes.length > (node.product.messaging?.uiToDspSize || 0)) {
                     fail(Error("Messaggio della GUI non valido")); return;
                 }

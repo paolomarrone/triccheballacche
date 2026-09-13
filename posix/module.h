@@ -4,7 +4,7 @@
 #include "perone.h"
 #include <stdatomic.h>
 
-enum { MESSAGE_SLOTS = 16, MAX_MESSAGE = 4096 };
+enum { MESSAGE_SLOTS = 64, MAX_MESSAGE = 4096 };
 
 // One producer and one consumer. Storage is allocated before processing.
 typedef struct {

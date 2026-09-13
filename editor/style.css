@@ -39,7 +39,7 @@ footer { color: var(--muted); font-size: 12px; }
 #plugin-views[hidden] { display: none; }
 
 #workspace { display: flex; flex: 1; min-height: 0; gap: 5px; }
-#plugins { display: flex; flex-direction: column; flex: 0 0 330px; max-width: 45%; min-width: 0; border: 1px solid var(--border); }
+#plugins { display: flex; flex-direction: column; flex: 0 1 auto; width: max-content; max-width: 65%; min-width: min(330px, 45%); border: 1px solid var(--border); }
 #plugin-tools { display: flex; gap: 4px; padding: 4px; border-bottom: 1px solid var(--border); }
 #plugin-tools select { min-width: 0; font: inherit; }
 #plugin-node { flex: 1; }
