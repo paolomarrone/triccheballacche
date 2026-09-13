@@ -246,6 +246,45 @@ static void test_lifecycle(void) {
 	puts("OK: Perone allocation/init/memory/ABI failures, cleanup, callbacks and output-first defaults");
 }
 
+static void test_notifications(void) {
+	Engine e = {0};
+	PluginConfig config;
+	char *binary;
+	assert(!read_bundle("build/fixture.perone", &binary, &config));
+	config.to_ui = config.to_dsp = 16;
+	assert(!open_engine(&e, binary, &config, DEFAULT_SAMPLE_RATE));
+	free(binary);
+	DSP *dsp = e.dsp;
+	unsigned char sent = 7, received[16];
+	size_t size;
+	float audio[2], value;
+	watch_dsp(dsp, 1);
+	for (int i = 0; i <= MESSAGE_SLOTS; ++i) {
+		assert(!send_dsp(dsp, 1, &sent));
+		sync_dsp(dsp, NULL);
+		render(&e, audio, NULL, 1);
+	}
+	assert(receive_dsp(dsp, &size, received) == -1);
+	watch_dsp(dsp, 0);
+	watch_dsp(dsp, 1);
+	assert(!receive_dsp(dsp, &size, received));
+	assert(!send_dsp(dsp, 1, &sent));
+	sync_dsp(dsp, NULL);
+	render(&e, audio, NULL, 1);
+	assert(receive_dsp(dsp, &size, received) == 1 && size == 1 && received[0] == sent);
+	// Detaching discards notifications, without cancelling edits already accepted by the DSP.
+	edit_dsp(dsp, 1, .25f);
+	assert(!send_dsp(dsp, 1, &sent));
+	watch_dsp(dsp, 0);
+	sync_dsp(dsp, NULL);
+	render(&e, audio, NULL, 1);
+	watch_dsp(dsp, 1);
+	assert(!receive_dsp(dsp, &size, received));
+	assert(read_dsp(dsp, 1, &value) && value == .25f && audio[0] == .25f);
+	close_engine(&e);
+	puts("OK: DSP notifications, overflow recovery, fresh attachment and pending edits after detach");
+}
+
 static void test_bundle(const char *path) {
 	Engine e = {0};
 	assert(!open_bundle(&e, path, DEFAULT_SAMPLE_RATE));
@@ -286,6 +325,7 @@ int main(int argc, char **argv) {
 	test_stereo_scheduler();
 	test_disconnected_inputs();
 	test_lifecycle();
+	test_notifications();
 	Engine missing = {0};
 	assert(open_bundle(&missing, "build/nonexistent.so", DEFAULT_SAMPLE_RATE) != 0);
 	close_engine(&missing);

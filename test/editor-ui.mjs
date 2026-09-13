@@ -115,13 +115,33 @@ try {
             assert.equal(await evaluate("fixtureFreed"), 3);
             await click("views");
             await wait(`${fixture}?.dataset.helper === "7"`);
+            // Creation-time gestures and replies survive an asynchronous factory spanning several polls.
+            await wait('parseFloat(document.querySelector("#time").textContent) > 2');
+            await select("plugin-kind", "generic");
+            await wait(`${root}?.querySelector(".perone-controls")`);
+            await evaluate("fixtureWait = true; fixtureResume = undefined");
+            await select("plugin-kind", "auto");
+            await wait('typeof fixtureResume === "function"');
+            await new Promise(resolve => setTimeout(resolve, 400));
+            await evaluate("fixtureWait = false; fixtureResume()");
+            await wait(`${root}?.querySelector('output')?.textContent === "13,0,255"`);
+            await wait(`Math.abs(Number(${fixture}.dataset.gain) - .45) < .0001`);
+            // Bad callbacks detach the view; audio continues and a new view can attach cleanly.
+            await evaluate("fixtureCallbacks.at(-1).set_parameter(0, .9)");
+            await wait('document.querySelector("#plugin-ui").childElementCount === 0');
+            assert.match(await evaluate('document.querySelector("#errors").textContent'), /Parametro della GUI/);
+            assert.equal(await evaluate('document.querySelector("#stop").disabled'), false);
+            await select("plugin-kind", "generic");
+            await wait(`${root}?.querySelector(".perone-controls")`);
+            await select("plugin-kind", "auto");
+            await wait(`${fixture}?.dataset.helper === "7"`);
             await click("stop");
             await wait('document.querySelector("#stop").disabled');
             // An asynchronous factory can complete after Stop; its returned UI must still be freed.
             const freed = await evaluate("fixtureFreed");
             await click("run");
             await wait(`${root}?.querySelector(".perone-controls")`);
-            await evaluate("fixtureWait = true");
+            await evaluate("fixtureWait = true; fixtureResume = undefined");
             await select("plugin-node", 1);
             await wait('typeof fixtureResume === "function"');
             await click("stop");

@@ -87,11 +87,12 @@ sia in quello dell'host; per default viene rilevata con `uname`.
 
 L'host supporta sorgenti ed effetti mono/stereo, un ingresso MIDI e sidechain
 opzionali scollegate. Le sidechain obbligatorie, i bus CV, i bus principali
-aggiuntivi, il transport sincronizzato e la messaggistica non sono supportati.
+aggiuntivi e il transport sincronizzato obbligatorio non sono supportati.
+Le GUI native e web possono scambiare parametri e messaggi binari con il DSP;
+limiti e contratto sono descritti nel [README dell'host](../README.md#gui-web-perone).
 Le funzionalità Perone disponibili possono essere più ampie di quelle dell'host.
 
 Gli 80 esempi compilati in `../brickworks/build/perone` si possono caricare
 direttamente, senza copiarli in questi progetti. `make test-brickworks` nella radice
 di triccheballacche verifica tutti i bundle presenti. `examples/brickworks.janet`
 mostra una catena con esempi C e C++ originali.
-I vecchi `.so` con ABI Tibia/shared o Perone v1 vanno rigenerati e ricompilati.

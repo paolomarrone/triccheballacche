@@ -16,6 +16,14 @@ export function plugins(request, adapter, fail) {
         container.replaceChildren();
     }
 
+    function failed(token, error) {
+        if (current !== token) return;
+        dispose();
+        fail(error);
+        // Teardown may race Stop; its reply must not hide the original failure.
+        request("watch", token.revision, -1).catch(() => {});
+    }
+
     async function mount() {
         dispose();
         fail("");
@@ -25,10 +33,12 @@ export function plugins(request, adapter, fail) {
         await request("watch", score.revision, -1);
         if (serial !== generation || !visible || !select.options.length) return;
         const id = Number(select.value), node = score.nodes[id], native = kind.value === "native";
-        await request("watch", score.revision, id, native);
-        if (serial !== generation) return;
-        const token = current = {id, revision: score.revision, native};
-        if (native) return;
+        const token = current = {id, revision: score.revision, ready: false};
+        if (native) {
+            try { await request("watch", token.revision, id, true); }
+            catch (error) { failed(token, error); }
+            return;
+        }
         const host = document.createElement("div"), shadow = host.attachShadow({mode: "open"});
         const style = document.createElement("style");
         style.textContent = `:host { display: block; font: inherit; }
@@ -46,32 +56,31 @@ export function plugins(request, adapter, fail) {
             sending = true;
             try {
                 while (current === token && (edits.size || messages.length)) {
-                    const batch = [...edits].map(args => ["parameter", ...args]);
-                    edits.clear();
-                    batch.push(...messages.splice(0).map(bytes => ["message", bytes]));
-                    for (const [op, ...args] of batch) {
-                        if (current !== token) break;
+                    for (const index of [...edits.keys()]) {
+                        if (current !== token) return;
+                        const value = edits.get(index);
+                        edits.delete(index);
                         // One request in flight leaves room for status and DSP feedback between edits.
-                        await request(op, token.revision, id, ...args);
+                        await request("parameter", token.revision, id, index, value);
                     }
+                    if (current === token && messages.length)
+                        await request("message", token.revision, id, messages.shift());
                 }
-            } catch (error) {
-                edits.clear(); messages.length = 0;
-                if (current === token) fail(error);
-            } finally { sending = false; }
+            } catch (error) { failed(token, error); }
+            finally { sending = false; }
         }
         const send = (op, ...args) => {
             if (current !== token) return;
             if (op === "parameter") edits.set(args[0], args[1]);
             else if (messages.length < 64) messages.push(args[0]);
-            else { fail(Error("Coda messaggi GUI piena")); return; }
-            if (!sending) flush();
+            else { failed(token, Error("Coda messaggi GUI piena")); return; }
+            if (token.ready && !sending) flush();
         };
         const parameter = (index, value) => {
             if (current !== token) return;
             const p = node.product.parameters[index];
             if (!Number.isInteger(index) || !p || p.direction !== "input" || !Number.isFinite(value)) {
-                fail(Error("Parametro della GUI non valido")); return;
+                failed(token, Error("Parametro della GUI non valido")); return;
             }
             const low = p.isBypass ? 0 : p.minimum, high = p.isBypass ? 1 : p.maximum;
             const integer = p.integer || p.toggled || p.isBypass;
@@ -82,47 +91,45 @@ export function plugins(request, adapter, fail) {
             set_parameter: parameter, set_parameter_end: parameter,
             msg_write(bytes) {
                 if (current !== token) return;
-                if (!(bytes instanceof Uint8Array) || bytes.length > (node.product.messaging?.uiToDspSize || 0)) {
-                    fail(Error("Messaggio della GUI non valido")); return;
+                const limit = node.product.messaging?.uiToDspSize;
+                if (!(bytes instanceof Uint8Array) || !limit || bytes.length > limit) {
+                    failed(token, Error("Messaggio della GUI non valido")); return;
                 }
                 send("message", Array.from(bytes));
             }};
         try {
             const create = kind.value !== "generic" && node.product.ui?.web ?
-                (await import(adapter.uiUrl(node, score.revision, id))).create : generic;
+                (await import(adapter.uiUrl(node, token.revision, id))).create : generic;
             if (current !== token) return;
             const ui = await create(element, callbacks);
             if (!ui || typeof ui.free !== "function") throw Error("La GUI Perone deve restituire free()");
             if (current !== token) { ui.free(); return; }
             token.ui = ui;
+            // No DSP stream until the factory is ready to receive it. Creation-time gestures stay queued.
+            await request("watch", token.revision, id, false);
+            if (current !== token) return;
+            token.ready = true;
+            if (edits.size || messages.length) flush();
             // The first poll supplies current values, including initial host overrides.
             await poll();
-        } catch (error) {
-            if (current === token) {
-                dispose();
-                await request("watch", token.revision, -1);
-                throw error;
-            }
-        }
+        } catch (error) { failed(token, error); }
     }
 
     async function poll() {
         const token = current;
-        if (!token || token.native) return;
+        if (!token?.ready) return;
         try {
             const data = await request("controls", token.revision, token.id);
             if (current !== token) return;
-            data.values.forEach((value, index) => {
-                if (Number.isFinite(value)) token.ui?.set_parameter?.(index, value);
-            });
-            for (const bytes of data.messages) token.ui?.msg_in?.(new Uint8Array(bytes));
-        } catch (error) {
-            if (current !== token) return;
-            dispose();
-            // The player may already have ended; cleanup errors must not hide the UI failure.
-            await request("watch", token.revision, -1).catch(() => {});
-            fail(error);
-        }
+            for (const [index, value] of data.values.entries()) {
+                if (current !== token) return;
+                if (Number.isFinite(value)) token.ui.set_parameter?.(index, value);
+            }
+            for (const bytes of data.messages) {
+                if (current !== token) return;
+                token.ui.msg_in?.(new Uint8Array(bytes));
+            }
+        } catch (error) { failed(token, error); }
     }
 
     for (const input of [select, kind]) input.addEventListener("change", () => mount().catch(fail));

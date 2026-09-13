@@ -23,7 +23,7 @@ struct UI {
 	char *path, *name;
 	unsigned width, height;
 	float low[MAX_PARAMS], high[MAX_PARAMS], shown[MAX_PARAMS];
-	int integer[MAX_PARAMS], resizable, ready, error;
+	int integer[MAX_PARAMS], resizable, ready, closing, error;
 };
 
 static const char *bindir(void *handle) {
@@ -36,6 +36,8 @@ static const char *datadir(void *handle) {
 
 static void parameter(void *handle, size_t index, float value) {
 	UI *ui = handle;
+	if (ui->closing)
+		return;
 	const PluginConfig *config = &ui->node->dsp[0].config;
 	if (index >= (size_t)config->nparams || (config->outputs & (UINT64_C(1) << index)) || !isfinite(value)) {
 		ui->error = 1;
@@ -49,7 +51,7 @@ static void parameter(void *handle, size_t index, float value) {
 
 static void message(void *handle, size_t size, const void *data) {
 	UI *ui = handle;
-	if (send_dsp(ui->node->dsp[0].dsp, size, data))
+	if (!ui->closing && send_dsp(ui->node->dsp[0].dsp, size, data))
 		ui->error = 1;
 }
 
@@ -71,6 +73,8 @@ static Janet configure(int32_t argc, Janet *argv) {
 		janet_panic("out of memory");
 	ui->resizable = janet_truthy(janet_get(metadata, janet_ckeywordv("userResizable")));
 	JanetView parameters = janet_getindexed(&argv[2], 0);
+	if (parameters.len != ui->node->dsp[0].config.nparams)
+		janet_panic("plugin parameter metadata changed after preparation");
 	for (int i = 0; i < parameters.len; ++i) {
 		Janet p = parameters.items[i];
 		ui->integer[i] = janet_truthy(janet_get(p, janet_ckeywordv("integer")));
@@ -227,6 +231,7 @@ int ui_poll(UI *ui) {
 void ui_close(UI *ui) {
 	if (!ui)
 		return;
+	ui->closing = 1;
 	watch_dsp(ui->node->dsp[0].dsp, 0);
 	if (ui->instance)
 		ui->api->free(ui->instance);

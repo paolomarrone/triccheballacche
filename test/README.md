@@ -21,7 +21,8 @@ richiede un display X11 e i bundle compilati nei repository adiacenti. I dettagl
 e i percorsi sono nel [README principale](../README.md#gui-native-perone).
 Le prove del protocollo di controllo e delle code concorrenti sono in `loader.c`,
 eseguite da `make test` anche senza display: ultimo valore dei parametri, ordine dei
-messaggi, copie stereo, conferme durante un setter sospeso e riporto dei contatori.
+messaggi, copie stereo, conferme durante un setter sospeso, riporto dei contatori
+e riattacco dopo un overflow, senza perdere le modifiche già accettate.
 
 ## Editor web e provenienza Janet
 
@@ -108,29 +109,23 @@ le funzioni utente passate a `map` e `curve` vengono eseguite una volta sola.
 nel nodo (letto tramite `native/event-count`); le chiamate dirette a `daw/note`
 e `daw/param` sono intercettate allo stesso modo. Il rapporto vive separatamente
 dagli eventi audio e dai plugin. Niente introspezione durante il rendering.
-Le tabelle del prototipo vengono conservate fino alla fine della preparazione.
+Le tabelle del tracciatore vengono conservate fino alla fine della preparazione.
 
 Il rapporto contiene `:locations`, una lista di stack con file/riga/colonna, e
-`:events`, con record `[inizio fine origini tipo nodo]` in secondi assoluti.
+`:events`, con record `[inizio fine origini tipo nodo ordine]` in secondi assoluti.
 Le origini sono indici in `:locations`. Gli stack descrivono la costruzione degli
 eventi: durante l'ascolto Janet è già chiuso.
 
-La pagina usa l'orologio dell'AudioContext, con `getOutputTimestamp()` quando
-disponibile, per stimare la posizione in ascolto. È un allineamento visivo, non una
-misura della latenza acustica. Le note illuminano le righe per la durata programmata,
+Entrambi gli editor usano `player_time`: la posizione pubblicata dalla callback audio,
+senza sottrarre la latenza del dispositivo. Le note illuminano le righe per la durata programmata,
 con un minimo visivo di 80 ms anche per i controlli e le percussioni di pochi campioni,
 che altrimenti possono cadere interamente fra due aggiornamenti dello schermo. Release e riverberi non
 prolungano l'evidenziazione. Più righe possono essere attive contemporaneamente.
 
 ## Risultati e limiti
 
-- Polpo produce 1.795 eventi, tutti con origine raccolta durante la costruzione
-  delle liste: il rapporto include le righe dei produttori, i chiamanti dentro le
-  sezioni e le cinque chiamate a `section`. Le catture dello stack sono 1.804.
-  La partitura non contiene marcatori e l'export nativo con/senza tracciamento è identico.
-- Lo stack descrive le chiamate ancora attive. Osservare soltanto `p/events`, come
-  nella prima versione, mostrava quasi solo le cinque chiamate a `section`.
-  Per la granularità interna bisogna raccogliere le posizioni durante la costruzione
+- Lo stack descrive le chiamate ancora attive. Per la granularità interna bisogna
+  raccogliere le posizioni durante la costruzione
   dei singoli eventi. Non tutte le righe di calcolo producono un evento osservabile.
 - Le chiamate in coda fra funzioni Janet possono ancora eliminare frame intermedi.
   La fixture perde la posizione interna del suo `tail-helper` basato su `p/steps`,
@@ -138,7 +133,7 @@ prolungano l'evidenziazione. Più righe possono essere attive contemporaneamente
 - Janet può riunire costanti immutabili uguali durante la compilazione. Due pattern
   identici, costruiti su righe diverse, possono quindi diventare lo stesso oggetto
   quando vengono usati insieme. Una tabella basata sull'indirizzo darebbe attribuzioni
-  errate. Il prototipo raccoglie invece le possibili origini dei pattern uguali,
+  errate. Il tracciatore raccoglie le possibili origini dei pattern uguali,
   evidenzia tutte le candidate e riporta quanti eventi hanno origine ambigua.
 - Un pattern costruito direttamente come struct non attraversa i costruttori:
   il punto di scheduling diventa l'origine di ripiego, conteggiata nel rapporto.
@@ -164,7 +159,6 @@ e tracciati sullo stesso host. Scrive un rapporto in `build/trace-fixture.json`.
 proiezione condivisa: modificare il testo sospende le evidenziazioni, Stop conserva
 le note, un errore non sostituisce l'ultima esecuzione e la successiva può ripartire.
 
-
 ## UI Perone condivise
 
 `make test-editor-ui` prepara bundle di fixture temporanei e usa la stessa UI ES
@@ -173,8 +167,10 @@ un CSS e un Wasm con import esterni tramite `instantiateStreaming`, collocato
 in `wasm32/` accanto al DSP come nel template Vinci di Tibia: questi asset
 devono mantenere percorsi e MIME corretti, senza entrare nel loader DSP standalone.
 Il test verifica valori iniziali/automatizzati, meter, modifiche manuali anche in
-raffiche di 400 valori, messaggi
-binari, passaggio ai controlli generici, callback scaduti, smontaggio, Stop durante una creazione asincrona e riavvio.
+raffiche di 400 valori, messaggi binari, passaggio ai controlli generici, callback
+scaduti o invalidi e riavvio. Verifica anche che i gesti emessi durante una creazione
+asincrona ricevano le risposte dopo il collegamento, e che Stop liberi una vista
+la cui creazione termina in ritardo.
 Non richiede Tibia o A-SID; lascia le catture in `build/editor-ui-{web,native}.png`.
 
 `make test-web` include `perone-controls.mjs`: verifica anche l'audio delle due copie

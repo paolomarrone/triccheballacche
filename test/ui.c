@@ -14,6 +14,27 @@ static void idle(void *instance) {
 	(void)instance;
 }
 
+static void end_gesture(void *instance) {
+	parameter(instance, 0, .5f);
+	message(instance, 1, "x");
+}
+
+static void test_close_callbacks(void) {
+	const perone_ui_api api = {.free = end_gesture};
+	unsigned char data[MESSAGE_SLOTS];
+	DSP dsp = {.to_dsp = {.limit = 1, .data = data}};
+	Node node = {.dsp = {{.dsp = &dsp, .config = {.nparams = 1}}}};
+	UI *ui = calloc(1, sizeof(*ui));
+	assert(ui);
+	ui->node = &node;
+	ui->instance = ui;
+	ui->api = &api;
+	ui->high[0] = 1;
+	ui_close(ui);
+	assert(!atomic_load(&dsp.pending));
+	puts("OK: callbacks emitted during native UI destruction cannot edit the DSP");
+}
+
 static void test_delayed_widget(void) {
 	DSP dsp = {0};
 	Node node = {0};
@@ -180,6 +201,7 @@ static void test_view(const char *bundle, int tibia) {
 }
 
 int main(void) {
+	test_close_callbacks();
 	test_delayed_widget();
 	test_view("../tibia/out/perone/c/build/tibia-test.perone", 1);
 	test_view("../tibia/out/perone/cxx/build/tibia-test.perone", 1);

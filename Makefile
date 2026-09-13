@@ -8,7 +8,6 @@ endif
 MINIAUDIO ?= $(firstword $(wildcard ../miniaudio.h) .deps/miniaudio.h)
 JANET ?= .deps/janet
 JANET_INCLUDES = -I$(JANET)/src/include -I$(JANET)/src/conf
-JANET_LIBS = $(JANET)/build/libjanet.a
 SPORK ?= .deps/spork
 SPORK_REV = 0667f96b74de52747ffe5e19e185563ebf53816b
 WEBUI ?= .deps/webui
@@ -17,16 +16,16 @@ PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
 SCRIPT_SOURCES = script.c trace.c
-SCRIPT = $(SCRIPT_SOURCES) script.h build/perone.inc build/json.o
-SCRIPT_LIBS = build/json.o $(JANET_LIBS)
 ifeq ($(shell uname -o 2>/dev/null),Android)
-JANET_LIBS += -landroid-spawn
+LDLIBS += -landroid-spawn
 endif
 TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
-NATIVE_SOURCES = engine.c posix/loader.c
 SCORE_SOURCES = daw.c score_view.c score_view_json.c json_write.c session.c engine.c $(SCRIPT_SOURCES)
 SCORE_HEADERS = daw.h score_view.h score_view_json.h json_write.h session.h engine.h script.h loader.h util.h
-NATIVE_HEADERS = engine.h loader.h posix/module.h perone.h util.h
+ENGINE_OBJECTS = $(addprefix build/native/,engine.o posix/loader.o script.o trace.o)
+SCORE_OBJECTS = $(SCORE_SOURCES:%.c=build/native/%.o) build/native/posix/loader.o
+NATIVE_PROGRAMS = build/host build/daw build/daw-ui build/editor
+NATIVE_TESTS = build/test $(addprefix build/,$(addsuffix _test,daw player score_view plugins ui view_json))
 FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h examples/termux_synth/src/*.c))
 
 .PHONY: all test test-plugins test-prog test-brickworks check-plugins run keys prog clean format format-check
@@ -52,7 +51,7 @@ $(JANET)/Makefile:
 $(JANET)/build/libjanet.a: $(JANET)/build/c/janet.c
 	$(MAKE) -C $(JANET) CC="$(CC)" CFLAGS="$(CFLAGS)" build/libjanet.a
 
-build/audio.o: audio.c audio.h $(MINIAUDIO) | build
+build/audio.o: audio.c audio.h $(MINIAUDIO) Makefile | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) -c audio.c -o $@
 
 $(SPORK)/src/json.c:
@@ -66,11 +65,25 @@ build/json.o: $(SPORK)/src/json.c $(JANET)/build/libjanet.a | build
 build/%.inc: lib/%.janet | build
 	sed -e 's/[\\"]/\\&/g' -e 's/^/"/' -e 's/$$/\\n"/' $< > $@
 
-build/host: posix/main.c $(NATIVE_SOURCES) $(NATIVE_HEADERS) $(SCRIPT) audio.h build/audio.o Makefile | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) posix/main.c $(NATIVE_SOURCES) $(SCRIPT_SOURCES) build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+# Share compiled native code between programs and tests; headers are tracked by the compiler.
+build/native/%.o: %.c Makefile | $(JANET)/build/libjanet.a
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) -MMD -MP -c $< -o $@
 
-build/test: test/loader.c $(NATIVE_SOURCES) $(NATIVE_HEADERS) $(SCRIPT) Makefile | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. $(SCRIPT_FLAGS) test/loader.c $(NATIVE_SOURCES) $(SCRIPT_SOURCES) $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+build/native/test/%.o: CFLAGS += -UNDEBUG
+build/native/script.o: build/perone.inc
+build/native/daw.o: build/daw.inc
+build/native/player.o build/native/posix/main.o build/native/posix/daw_main.o build/native/posix/export.o build/native/posix/ui_main.o build/native/posix/editor.o build/native/test/player.o: $(MINIAUDIO)
+build/native/posix/editor.o build/native/posix/controls.o build/native/posix/assets.o: CPPFLAGS += -I$(WEBUI)/include
+build/native/posix/editor.o build/native/posix/controls.o build/native/posix/assets.o: $(WEBUI)/include/webui.h
+
+-include $(wildcard build/native/*.d build/native/*/*.d)
+
+$(NATIVE_PROGRAMS) $(NATIVE_TESTS): build/json.o $(JANET)/build/libjanet.a
+	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(filter %.a,$^) $(LDLIBS) -o $@
+
+build/host: build/native/posix/main.o $(ENGINE_OBJECTS) build/audio.o
+build/test: build/native/test/loader.o $(ENGINE_OBJECTS)
 
 build/termux_synth: examples/termux_synth/src/termux_synth.c $(MINIAUDIO) | build
 	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $< $(LDFLAGS) $(LDLIBS) -o $@
@@ -117,24 +130,19 @@ run: build/host
 keys: build/termux_synth
 	./build/termux_synth --keys
 
-build/daw: posix/daw_main.c player.c player.h posix/export.c $(SCORE_SOURCES) $(SCORE_HEADERS) posix/loader.c $(NATIVE_HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc Makefile | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) posix/daw_main.c player.c posix/export.c $(SCORE_SOURCES) posix/loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
+build/daw: build/native/posix/daw_main.o build/native/player.o build/native/posix/export.o $(SCORE_OBJECTS) build/audio.o
 
-build/%_test: test/%.c posix/export.c $(SCORE_SOURCES) $(SCORE_HEADERS) posix/loader.c $(NATIVE_HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc Makefile | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) $< posix/export.c $(SCORE_SOURCES) posix/loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -o $@
-
-build/player_test: player.c player.h posix/daw_main.c
+$(filter-out build/test,$(NATIVE_TESTS)): build/%_test: build/native/test/%.o $(SCORE_OBJECTS)
+build/daw_test build/player_test: build/native/posix/export.o build/audio.o
 
 # Optional desktop host: X11 and UI libraries are not dependencies of the ordinary player.
-build/daw-ui: posix/ui_main.c posix/ui.c posix/ui.h perone_ui.h player.c player.h $(SCORE_SOURCES) $(SCORE_HEADERS) posix/loader.c $(NATIVE_HEADERS) audio.h build/audio.o $(SCRIPT) build/daw.inc Makefile | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) posix/ui_main.c posix/ui.c player.c $(SCORE_SOURCES) posix/loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) $(LDLIBS) -lX11 -o $@
+build/daw-ui: build/native/posix/ui_main.o build/native/posix/ui.o build/native/player.o $(SCORE_OBJECTS) build/audio.o
+build/daw-ui build/editor build/ui_test: LDLIBS += -lX11
 
 .PHONY: gui test-ui
 gui: build/daw-ui
 	./build/daw-ui examples/gui.janet
 
-build/ui_test: posix/ui.c posix/ui.h perone_ui.h
-build/ui_test: LDLIBS += -lX11
 test-ui: build/ui_test
 	./build/ui_test
 
@@ -152,10 +160,7 @@ build/webui/GNUmakefile: $(WEBUI)/include/webui.h posix/webui.patch
 build/webui/dist/libwebui-2-static.a: build/webui/GNUmakefile
 	$(MAKE) -C build/webui CC=gcc
 
-EDITOR_SOURCES = posix/editor.c posix/controls.c posix/assets.c
-
-build/editor: $(EDITOR_SOURCES) posix/controls.h posix/assets.h posix/ui.c posix/ui.h perone_ui.h player.c player.h $(SCORE_SOURCES) $(SCORE_HEADERS) posix/loader.c $(NATIVE_HEADERS) build/audio.o $(SCRIPT) build/daw.inc build/webui/dist/libwebui-2-static.a Makefile | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(WEBUI)/include -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) $(EDITOR_SOURCES) posix/ui.c player.c $(SCORE_SOURCES) posix/loader.c build/audio.o $(LDFLAGS) $(SCRIPT_LIBS) build/webui/dist/libwebui-2-static.a $(LDLIBS) -lX11 -o $@
+build/editor: $(addprefix build/native/,posix/editor.o posix/controls.o posix/assets.o posix/ui.o player.o) $(SCORE_OBJECTS) build/audio.o build/webui/dist/libwebui-2-static.a
 
 .PHONY: editor test-editor
 editor: build/editor
@@ -172,8 +177,8 @@ test-prog: prog
 	cmp build/polpo-repeat.wav build/il_polpo_a_sette_gomiti.wav
 
 clean:
-	rm -f build/audio.o build/json.o build/perone.inc build/daw.inc build/host build/test build/termux_synth build/termux_test build/daw build/daw-ui build/editor build/daw_test build/plugins_test build/player_test build/ui_test
-	rm -rf build/fixture.perone build/effect.perone build/web build/webui
+	rm -f $(NATIVE_PROGRAMS) $(NATIVE_TESTS) build/audio.o build/json.o build/perone.inc build/daw.inc build/termux_synth build/termux_test
+	rm -rf build/native build/fixture.perone build/effect.perone build/web build/webui
 
 # Read-only audit of the bundles built in Brickworks; no plugin compilation here.
 BRICKWORKS_PERONE ?= ../brickworks/build/perone

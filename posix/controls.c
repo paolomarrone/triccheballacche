@@ -53,15 +53,8 @@ void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned r
 				error = "GUI nativa non disponibile";
 			} else
 				ui_show(c->native, 1);
-		} else {
-			// Discard messages from the previous attachment, then start a fresh stream.
-			size_t size;
-			unsigned char bytes[MAX_MESSAGE];
-			while (message_pop(&dsp->to_ui, &size, bytes)) {
-			}
-			atomic_store(&dsp->overflow, 0);
+		} else
 			watch_dsp(dsp, 1);
-		}
 	} else if (c->node != id || c->native) {
 		error = "Vista web non collegata";
 	} else if (!strcmp(op, "parameter")) {

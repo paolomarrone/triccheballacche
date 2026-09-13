@@ -195,7 +195,7 @@ try {
         await click("open");
         await waitFor('document.querySelector("#errors").hidden && !document.querySelector("#run").disabled');
         const responses = await evaluate(`Promise.all(Array.from({length: 8}, () =>
-            webui.call("command", "status", "", "", false).then(JSON.parse)))`);
+            webui.call("command", "status").then(JSON.parse)))`);
         assert(responses.every(response => !response.error || response.error.includes("occupato")));
         const dense = `(def lead (daw/plugin "build/fixture.perone" {:gain 0.001}))
 (def fx (daw/plugin "build/effect.perone"))

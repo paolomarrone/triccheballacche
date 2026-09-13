@@ -36,6 +36,9 @@ static void message(void *handle, size_t size, const void *data) {
 }
 
 void watch_dsp(DSP *dsp, int watching) {
+	// A new attachment starts a fresh output stream; accepted input edits remain pending.
+	atomic_store(&dsp->to_ui.read, atomic_load(&dsp->to_ui.write));
+	atomic_store(&dsp->overflow, 0);
 	atomic_store(&dsp->viewing, watching);
 }
 

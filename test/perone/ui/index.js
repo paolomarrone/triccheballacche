@@ -7,7 +7,11 @@ export async function create(element, callbacks) {
     css.href = new URL("./style.css", import.meta.url);
     const {instance} = await WebAssembly.instantiateStreaming(fetch(new URL("../wasm32/fixture-ui.wasm", import.meta.url)),
         {helper: {value: () => 7}});
-    if (globalThis.fixtureWait) await new Promise(resolve => { globalThis.fixtureResume = resolve; });
+    if (globalThis.fixtureWait) {
+        callbacks.set_parameter(1, .45);
+        callbacks.msg_write(new Uint8Array([13, 0, 255]));
+        await new Promise(resolve => { globalThis.fixtureResume = resolve; });
+    }
     const root = document.createElement("div");
     root.className = "fixture-ui";
     root.dataset.helper = instance.exports.value();

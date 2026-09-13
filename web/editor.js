@@ -1,7 +1,7 @@
 import {createPlayerHost, preparePlayer, closePlayer} from "./player.js";
 import {addFile} from "./host.js";
 
-export const nativeViews = false, views = true, saveLabel = "Scarica", saveTitle = "Scarica una copia della partitura · Ctrl+S";
+export const nativeViews = false, saveLabel = "Scarica", saveTitle = "Scarica una copia della partitura · Ctrl+S";
 const options = new URLSearchParams(location.search);
 const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();

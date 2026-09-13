@@ -16,7 +16,8 @@ typedef struct {
 int message_push(Messages *queue, size_t size, const void *data);
 int message_pop(Messages *queue, size_t *size, void *data);
 
-// One UI consumer per DSP. The DSP must outlive every attachment.
+// One UI consumer per DSP. Attachment clears old notifications/overflow, preserving pending input.
+// The DSP must outlive every attachment; only the UI thread calls these control functions.
 void watch_dsp(DSP *dsp, int watching);
 // Validated input values only. Latest value wins; sync_dsp applies parameters in index order,
 // then messages in FIFO order. There is no combined parameter/message event order.

@@ -1,9 +1,9 @@
-export const nativeViews = true, views = true, saveLabel = "Salva", saveTitle = "Salva · Ctrl+S";
+export const nativeViews = true, saveLabel = "Salva", saveTitle = "Salva · Ctrl+S";
 
 export async function connect() {
     // The bridge creates its socket at DOMContentLoaded; readiness is separate from script loading.
     for (let attempt = 0; ; ++attempt) {
-        try { await command("status", "", "", false); return; }
+        try { await command("status"); return; }
         catch (error) {
             if (attempt === 30) throw error;
             await new Promise(resolve => setTimeout(resolve, 100));

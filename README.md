@@ -52,8 +52,6 @@ con i target `perone`/`perone-make`. Synth e filtro `fx_svf` usano gli esempi
 originali di `../brickworks`; i percorsi sono configurabili con `TIBIA` e
 `BRICKWORKS`. Il [README dei plugin](plugins/README.md) descrive il build.
 Sorgenti DSP e generatore non servono per caricare un bundle già compilato.
-Le vecchie partiture devono sostituire i percorsi `build/plugin.so` con
-`build/plugin.perone` dopo aver ricompilato i plugin.
 
 Gli esempi già compilati in Brickworks sono utilizzabili direttamente:
 
@@ -102,11 +100,18 @@ e verifica il nucleo senza richiedere i progetti in `plugins/`, Tibia o Brickwor
 `make test-plugins` e `make prog` richiedono i bundle di esempio già presenti e
 segnalano come compilarli se mancano. Il build dell'host e i test non compilano
 plugin di produzione.
-`make clean` pulisce i programmi dell'host; `make -C plugins clean` pulisce i plugin.
+Il codice nativo viene compilato una volta in `build/native/` e riusato fra programmi
+e test. Il compilatore genera le dipendenze dagli header (`-MMD -MP`); i test che
+includono un'implementazione per simulare I/O mantengono i propri oggetti separati.
+`make clean` pulisce programmi, oggetti e fixture dell'host, conservando i render;
+`make -C plugins clean` pulisce i plugin.
 `make keys` compila e avvia il synth da terminale autonomo in `examples/termux_synth/`.
 
 ```text
-*.c, *.h           host, sessione e loader
+*.c, *.h           motore, sessione, player, proiezione e adattatore Janet
+posix/             loader nativo, export, CLI, X11 e backend WebUI
+web/               loader Wasm, AudioWorklet e backend dell'editor web
+editor/            interfaccia condivisa fra native e web
 perone.h           copia dell’ABI Perone definita in Tibia
 plugins/<nome>/    sorgenti, metadati e build autonomo del plugin
 lib/               metadati Perone, API della DAW e funzioni musicali Janet
@@ -277,13 +282,9 @@ Gli import sono relativi alla partitura: `../lib/pattern` negli esempi e
 directory da cui si esegue l'host. L'esempio prog incorpora i cambi di tempo nelle
 posizioni degli eventi e programma il risultato a 60 BPM, un quarto per secondo.
 
-I vecchi `music/sequence`, `music/curve`, `music/serial` e `music/parallel` a callback
-sono stati sostituiti dai pattern. Le funzioni che prima emettevano eventi e
-restituivano una fine ora costruiscono e restituiscono un pattern. La programmazione
-nella sessione avviene con `daw/schedule`; `daw/note` e `daw/param` restano disponibili
-come API a basso livello. Non c'è ripetizione infinita o allineamento implicito dei
-valori tra pattern con ritmi diversi: ripetizione e alternanza si costruiscono con
-le normali funzioni Janet e `p/serial`.
+La programmazione nella sessione avviene con `daw/schedule`; `daw/note` e `daw/param`
+restano disponibili come API a basso livello. Ripetizione e alternanza si costruiscono
+con le normali funzioni Janet e `p/serial`, senza allineamenti impliciti fra ritmi diversi.
 
 ## Rendering neutro, elaborazione esplicita
 
@@ -379,9 +380,10 @@ make test-editor-web
 `make web-editor` genera anche `build/web/project.json`: un catalogo e una copia dei
 file `.janet`, `.json` e `.wasm` nelle directory indicate da `WEB_CONTENT` (default:
 `lib examples plugins`), più tutti gli asset sotto `ui/` dei bundle Perone. Tra i
-Wasm del bundle soltanto quelli che esportano `perone_get_api` sono precaricati come DSP: il Wasm della UI
-può vivere anche accanto al DSP, in `wasm32/`. Il catalogo ispeziona gli export senza
-eseguire i moduli. I percorsi relativi dentro ogni bundle restano intatti per import, CSS e Wasm della UI. Il browser
+Wasm del bundle soltanto quelli che esportano `perone_get_api` sono precaricati come DSP:
+il Wasm della UI può vivere anche accanto al DSP, in `wasm32/`. Il catalogo ispeziona
+gli export senza eseguire i moduli. I percorsi relativi dentro ogni bundle restano
+intatti per import, CSS e Wasm della UI. Il browser
 precarica partiture, metadati e DSP prima di abilitare l'editor; Janet
 risolve gli import e legge i metadati come nel native. Non si analizza il sorgente per
 indovinare le dipendenze e non c'è una lista di plugin per ciascun pezzo. Rigenerare
@@ -501,7 +503,7 @@ Il frontend mantiene una textarea con JavaScript senza framework e disegna solo 
 numeri e le bande visibili. La colorazione della sintassi resta assente: il supporto
 Janet pronto trovato per [CodeMirror 6](https://github.com/ianthehenry/codemirror-lang-janet)
 richiede dipendenze che per ora non introduciamo. La preparazione Janet è ancora
-sincrona: il prototipo non interrompe uno script durante la valutazione e non
+sincrona: l'editor non interrompe uno script durante la valutazione e non
 sostituisce la musica in corso.
 
 ## GUI web Perone
@@ -515,9 +517,14 @@ canvas o un proprio Wasm: non passa dal loader dei DSP. Gli asset si risolvono
 rispetto a `import.meta.url`. Il packaging resta in Tibia: `make ui-web UI_WEB_DIR=...`.
 
 `editor/plugins.js` gestisce selezione, montaggio in uno Shadow DOM, aggiornamenti
-e smontaggio, identici per DSP nativo e Wasm. I gesti rapidi vengono accorpati
+e smontaggio, identici per DSP nativo e Wasm. Il flusso DSP si collega soltanto quando
+`create` ha restituito la vista; eventuali gesti durante la creazione restano in attesa.
+Stop invalida anche una creazione ancora in corso, liberandone la vista quando arriva.
+Un callback non valido o un errore di comunicazione stacca la vista e segnala l'errore.
+I gesti rapidi vengono accorpati
 all'ultimo valore per parametro prima dell'invio: una sola richiesta UI alla volta
-lascia passare stato e feedback audio. I messaggi restano FIFO, al massimo 64 in attesa. `editor/perone-ui.js` riusa i controlli
+lascia passare stato e feedback audio. I messaggi restano FIFO, al massimo 64 in attesa.
+`editor/perone-ui.js` riusa i controlli
 generici di Tibia: range lineari/logaritmici, interi, liste, toggle e meter. Una UI
 custom dichiarata ma non caricabile produce un errore; «Parametri» rimane selezionabile.
 Il prodotto viene letto, validato e serializzato da Janet durante la preparazione,
@@ -621,9 +628,10 @@ allocate prima della riproduzione secondo i limiti del JSON, fino a 4096 byte pe
 messaggio. Il riempimento della coda o un messaggio fuori limite interrompe la prova
 con un errore. Senza una GUI i messaggi in uscita vengono scartati. I limiti sono
 uguali su native e Wasm: la coda assorbe anche i blocchi più corti del browser e
-i ritardi del collegamento WebUI. Le risposte UI si leggono circa ogni 50 ms; un overflow stacca la
-vista e segnala l'errore. Una sola vista per nodo consuma i messaggi; le copie L/R
-ricevono gli stessi controlli e restituiscono il flusso dell'istanza sinistra.
+i ritardi del collegamento WebUI. Il pannello web legge le risposte circa ogni 50 ms;
+un overflow stacca la vista e segnala l'errore. Una sola vista per nodo consuma i messaggi.
+Ogni collegamento scarta notifiche e overflow precedenti, conservando le modifiche
+già accettate in ingresso. I callback emessi durante lo smontaggio vengono ignorati.
 
 `make test-ui` richiede un display X11 e i bundle già compilati di Tibia C/C++ e
 A-SID. Verifica embedding, gesti reali del mouse, audio, sincronizzazione L/R,
@@ -633,8 +641,7 @@ senza richiedere X11 o plugin esterni.
 
 ## Portabilità e test web
 
-L'editor condiviso in `editor/index.html` sostituisce il precedente prototipo web
-separato. `make test-editor-web` verifica in Chromium riproduzione, timeline, tracking,
+`make test-editor-web` verifica in Chromium riproduzione, timeline, tracking,
 buffer modificati, errori, ripresa e download; richiede i quattro bundle wasm32 di
 Polpo descritti sotto. `make test-trace` verifica la semantica del tracciamento con le
 fixture e il confronto PCM. I [dettagli dei test](test/README.md) descrivono anche il
@@ -718,7 +725,7 @@ o MIDI viene rifiutata. Gli identificatori ceduti al worklet restano registrati 
 fino al rilascio della sessione; un identificatore sconosciuto è un errore.
 La callback comune in `player.c` richiama `session_render`: il player produce i blocchi su
 richiesta senza conservare il PCM dell'intero pezzo. `web/worklet.js` gestisce soltanto
-preparazione e rilascio dei plugin; il processore audio è quello di miniaudio.
+preparazione, rilascio e messaggi dei plugin; il processore audio è quello di miniaudio.
 
 Passare `source` prepara il buffer e la sua proiezione, lasciando intatto il file nel
 filesystem virtuale. Il player espone `takeView()`, che trasferisce la proiezione una
@@ -813,8 +820,7 @@ CV, sidechain obbligatorie e bus principali aggiuntivi vengono rifiutati prima
 che il DSP venga caricato. Il transport sincronizzato obbligatorio viene rifiutato;
 se dichiarato opzionale, il plugin usa il proprio comportamento senza transport.
 Entrambi i backend gestiscono i messaggi della GUI entro i limiti descritti sopra.
-Il salvataggio dello
-stato personalizzato non è esposto dall'API delle partiture.
+Il salvataggio dello stato personalizzato non è esposto dall'API delle partiture.
 
 Il contratto è Perone ABI v2, copiato senza modifiche in `perone.h`.
 L'host gestisce `alloc/init`, applica i valori iniziali, imposta il sample rate,
@@ -827,7 +833,6 @@ non contiene descrittori testuali e non legge JSON.
 (ID simbolico), `:label`, `:direction`, `:map` e `:scale-points`, oltre a unità,
 range e default. `daw/product` conserva anche tutti gli altri campi del prodotto.
 I parametri di uscita sono descritti ma non possono essere impostati o automatizzati.
-Le API precedenti, incluso `tibia_get_api`, non sono accettate.
 Script e plugin devono essere fidati: nessuna sandbox o isolamento dei crash nativi.
 Le chiamate `daw/*` costruiscono la sessione in modo sincrono; thread e task asincroni
 che modificano la sessione non sono supportati.
@@ -848,8 +853,6 @@ Il test usa Janet e DSP reali delle fixture e non richiede un dispositivo audio.
 `make test-plugins` conserva le regressioni dei DSP reali: synth e pitch bend,
 inviluppo indipendente dai blocchi, filtro, delay, percussioni e waveshaper,
 oltre ai metadati Brickworks usati da una partitura Janet.
-La vecchia API sperimentale cambia: `instrument` diventa `plugin` + `track`,
-`export` diventa `end`; `color`, `send` e `drum` non sono più casi speciali dell'host.
 
 `make run` suona la demo di otto secondi usando il synth già compilato con
 `make -C plugins/synth_mono`; `--input` elabora il microfono (usare cuffie).

@@ -104,7 +104,7 @@ async function action(op) {
     update();
     try {
         if (op === "run" || op === "stop") controls.dispose();
-        const result = await request(op, path.value, ["save", "run"].includes(op) ? code.value : "", views.checked);
+        const result = await request(op, path.value, ["save", "run"].includes(op) ? code.value : "");
         if (op === "run") {
             revision = result.score.revision;
             projection.score(result.score);
@@ -165,7 +165,7 @@ function beforeUnload(event) {
 
 async function poll() {
     if (ready && !busy) {
-        try { await request("status", "", "", false); await controls.poll(); }
+        try { await request("status"); await controls.poll(); }
         catch (error) { showError(error); }
     }
     setTimeout(poll, 50);
@@ -174,14 +174,13 @@ async function poll() {
 export async function startEditor(adapter) {
     backend = adapter;
     controls = plugins(request, adapter, showError);
-    byId("plugin-views").hidden = !backend.views;
     byId("save").textContent = backend.saveLabel;
     byId("save").title = backend.saveTitle;
     try {
         await backend.connect();
         window.onbeforeunload = beforeUnload;
         ready = true;
-        const result = await request("open", "", "", false);
+        const result = await request("open");
         path.value = savedPath = result.path;
         code.value = saved = result.text;
     } catch (error) {

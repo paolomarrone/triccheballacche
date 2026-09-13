@@ -6,6 +6,7 @@
 
 #define PERONE_UI_ABI_VERSION 1
 #define PERONE_UI_X11 1
+#define PERONE_UI_WEB 2
 
 typedef struct {
 	void *handle;
@@ -30,6 +31,7 @@ typedef struct {
 /* Separate, optional UI library; the DSP ABI is unchanged.
  * create returns NULL for unsupported window APIs or source creation failure.
  * X11 parent/widget handles are XIDs cast through uintptr_t to void *.
+ * Web parent/widget handles are tokens owned by the browser toolkit adapter.
  * Call all UI functions on the UI thread; keep the library loaded until free.
  * free requires a successfully created UI.
  * The host routes parameter gestures and messages, and schedules idle calls.
