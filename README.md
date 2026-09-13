@@ -283,6 +283,7 @@ input changes. Native and web UI lifecycle tests are described in the [test guid
 | [Il polpo a sette gomiti](examples/prog/polpo.janet) | 30 seconds; local `synth_mono`, `drums`, `shape` and `echo`. |
 | [Denti di vetro](examples/denti.janet) | About 63 seconds of irregular IDM; Polpo's plugins plus A-SID. |
 | [Sempiterno](examples/sempiterno.janet) | 92 seconds of organ techno/electro on Soto de Langa's three-part lauda, with driving percussion and a toccata; Brickworks, A-SID, local `drums`, `shape` and `echo`. |
+| [Falalalan](examples/falalalan.janet) | 110 seconds of electro/techno at 144 BPM: a melody from the supplied MIDI, new bass and harmony, acid sequences, a dub passage and chopped variations; Brickworks, A-SID, local `drums`, `shape` and `echo`. |
 | [gui](examples/gui.janet) | 65 seconds of automation and UI feedback; local synth, Tibia and A-SID. |
 
 Scores read `BRICKWORKS_PERONE`, `TIBIA_PERONE` and `ASID_PERONE` where applicable.
