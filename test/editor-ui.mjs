@@ -129,9 +129,20 @@ try {
             await new Promise(resolve => setTimeout(resolve, 150));
             assert(Math.abs(await evaluate(`Number(${fixture}.dataset.gain)`) - .3) < .0001, "Freed callbacks must not edit the DSP");
             await writeFile(`build/editor-ui-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
+            const revision = await evaluate('document.querySelector("#timeline").dataset.revision');
+            await evaluate(`globalThis.retainedUI = ${fixture}`);
             await click("stop");
-            await wait('document.querySelectorAll(".plugin-body > div").length === 0');
-            assert.equal(await evaluate("fixtureFreed"), 2);
+            await wait('document.querySelector("#stop").disabled');
+            assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 2);
+            assert.equal(await evaluate("fixtureFreed"), 1);
+            await evaluate("fixtureCallbacks.at(-1).set_parameter(1, .6)");
+            await wait(`Math.abs(Number(${fixture}.dataset.gain) - .6) < .0001`);
+            await wait(`Math.abs(Number(${fixture}.dataset.meter) - .6) < .0001`);
+            await click("play");
+            await wait(`Math.abs(Number(${fixture}.dataset.gain) - .4) < .0001`);
+            assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
+            assert(await evaluate(`${fixture} === retainedUI`), "Play preserves the GUI object");
+            assert.equal(await evaluate("fixtureFreed"), 1);
             await click("run");
             await wait(`${synthRoot}?.querySelector(".perone-controls")`);
             await openEffect();
@@ -178,7 +189,7 @@ try {
             assert(await evaluate(`${root}?.querySelector(".fixture-ui")`), "Collapsing one plugin preserves the other");
             await click("stop");
             await wait('document.querySelector("#stop").disabled');
-            // An asynchronous factory can complete after Stop; its returned UI must still be freed.
+            // An asynchronous factory can complete while stopped: the prepared project still owns it.
             const freed = await evaluate("fixtureFreed");
             await click("run");
             await wait(`${synthRoot}?.querySelector(".perone-controls")`);
@@ -189,7 +200,21 @@ try {
             await wait('document.querySelector("#stop").disabled');
             await evaluate("fixtureWait = false; fixtureResume()");
             await wait(`fixtureFreed === ${freed + 1}`);
-            assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 0);
+            await wait(`${fixture}?.dataset.helper === "7"`);
+            await wait(`Math.abs(Number(${fixture}.dataset.gain) - .45) < .0001`);
+            assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 2);
+            // Collapsing still invalidates a factory whose returned UI arrives later.
+            await toggleParameters();
+            await wait(`${root}?.querySelector(".perone-controls")`);
+            const beforePending = await evaluate("fixtureFreed");
+            await evaluate("fixtureWait = true; fixtureResume = undefined");
+            await toggleParameters();
+            await wait('typeof fixtureResume === "function"');
+            await evaluate(`document.querySelector('.plugin[data-node="1"]').open = false`);
+            await wait(`${root} === undefined`);
+            await evaluate("fixtureWait = false; fixtureResume()");
+            await wait(`fixtureFreed === ${beforePending + 1}`);
+            assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 1);
             assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
             assert.deepEqual(diagnostics, []);
             await call("Page.navigate", {url: "about:blank"});

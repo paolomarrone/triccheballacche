@@ -29,9 +29,10 @@ int receive_dsp(DSP *dsp, size_t *size, void *data); // 1 message, 0 empty, -1 o
 
 // Native loader/UI internals. Only the audio thread calls the DSP while playing.
 struct DSP {
-	void *handle, *instance, *memory;
+	Module *module;
+	void *instance, *memory;
 	const perone_api *api;
-	char *bindir, *datadir;
+	const char *bindir, *datadir; // Borrowed from module.
 	int initialized;
 	PluginConfig config;
 	atomic_int viewing, overflow, pending;

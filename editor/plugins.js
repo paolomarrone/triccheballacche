@@ -1,10 +1,10 @@
 import {create as generic} from "./perone-ui.js";
 
-// Each expanded section owns one view; native windows live until explicitly closed or playback stops.
+// Views belong to the prepared project and survive transport stop/restart.
 export function plugins(request, adapter, fail) {
     const panel = document.getElementById("plugins"), list = document.getElementById("plugin-list");
     const entries = new Map();
-    let score, running = false, busy = false, visible = false, track = 0;
+    let score, availableProject = false, busy = false, visible = false, track = 0;
     let available = new Set(), native = new Set();
 
     function detach(entry) {
@@ -13,7 +13,7 @@ export function plugins(request, adapter, fail) {
         try { old?.ui?.free(); }
         catch (error) { fail(error); }
         entry.body.replaceChildren();
-        if (old && running) request("watch", old.revision, entry.id, "off").catch(() => {});
+        if (old && availableProject) request("watch", old.revision, entry.id, "off").catch(() => {});
     }
 
     function dispose() {
@@ -33,7 +33,7 @@ export function plugins(request, adapter, fail) {
     }
 
     function buttons(entry) {
-        for (const button of entry.details.querySelectorAll("summary button")) button.disabled = !running || busy || entry.pending;
+        for (const button of entry.details.querySelectorAll("summary button")) button.disabled = !availableProject || busy || entry.pending;
         entry.window?.setAttribute("aria-pressed", native.has(entry.id));
         if (entry.window) entry.window.title = native.has(entry.id) ? "Close native UI" : "Open native UI";
         entry.parameters?.setAttribute("aria-pressed", entry.generic);
@@ -41,7 +41,7 @@ export function plugins(request, adapter, fail) {
     }
 
     async function windowView(entry) {
-        if (!running || busy || entry.pending) return;
+        if (!availableProject || busy || entry.pending) return;
         entry.pending = true;
         const opening = !native.has(entry.id), revision = score.revision;
         entry.details.open = false;
@@ -97,7 +97,7 @@ export function plugins(request, adapter, fail) {
     }
 
     async function mount(entry) {
-        if (entries.get(entry.id) !== entry || !running || busy || !visible || !entry.details.open || entry.pending) return;
+        if (entries.get(entry.id) !== entry || !availableProject || busy || !visible || !entry.details.open || entry.pending) return;
         detach(entry);
         fail("");
         const id = entry.id, node = score.nodes[id];
@@ -218,11 +218,11 @@ export function plugins(request, adapter, fail) {
         },
         status(value, pending) {
             const resumed = busy && !pending;
-            running = value; busy = pending;
-            if (!running) { dispose(); native.clear(); }
+            availableProject = value; busy = pending;
+            if (!availableProject) { dispose(); native.clear(); }
             for (const entry of entries.values()) {
                 buttons(entry);
-                if (running && resumed && !entry.token) mount(entry).catch(fail);
+                if (availableProject && resumed && !entry.token) mount(entry).catch(fail);
             }
         },
         dispose,

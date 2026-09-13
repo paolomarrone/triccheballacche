@@ -34,7 +34,10 @@ Core tests compare rendering at 44.1/48 kHz, variable block sizes, stereo channe
 separation and duplicated mono effects. Export tests preserve the previous WAV
 and clean temporary files after rendering, write, finalization and rename failures.
 The player uses a simulated device to check startup errors, interruption, final
-silence, draining and export options without requiring audio hardware.
+silence, draining and export options without requiring audio hardware. Replays
+after partial and complete playback must match the original PCM, retain the device
+and DSPs, restore automation/defaults and discard stale edits and messages.
+Loader tests check canonical module reuse and cache/instance lifetime ordering.
 
 `view-json.mjs` compares native and Wasm projection replies, including density,
 overlapping notes, imported origins, stale revisions and invalid queries. It frees
@@ -42,7 +45,7 @@ the audio score before querying to verify independent projection ownership.
 `playback.mjs` and `player-lifecycle.mjs` cover real AudioWorklet output, stop/restart,
 context closure, timeouts, cancellation during preparation and cleanup retries.
 
-Editor tests cover Unicode paths, unsaved relative imports, run/stop, atomic saves
+Editor tests cover Unicode paths, unsaved relative imports, Run/Play/Stop, atomic saves
 or downloads, diagnostics and recovery, source tracking, scrolling and selection.
 They check timeline persistence, notes retained while dragging with delayed replies,
 independent time/track zoom, stale replies, large times, unknown ends and bounded
@@ -84,8 +87,9 @@ relative JavaScript, CSS and a separate UI Wasm with external imports through
 `instantiateStreaming`, verifying asset paths and MIME types. It checks initial
 values, automation, meters, 400-value gesture bursts, binary messages, concurrent
 plugin sections, track selection, collapse, generic controls, stale/invalid callbacks
-and restart. Asynchronous creation must preserve
-early gestures and free a view that arrives after Stop. Screenshots are saved as
+and restart. Stop/Play must retain the GUI object and allow parameter edits while
+stopped; Run replaces it. Asynchronous creation must preserve early gestures
+across Stop and free a view that arrives after disposal. Screenshots are saved as
 `build/editor-ui-{native,web}.png`.
 
 `loader.c` and `perone-controls.mjs` test parameter coalescing, FIFO messages,

@@ -60,7 +60,7 @@ Player *player_new(Session *s) {
 	// Let the queued audio reach the device before reporting completion. Some backends pause on uninit.
 	uint64_t frames = (uint64_t)p->device.playback.internalPeriodSizeInFrames * p->device.playback.internalPeriods;
 	unsigned rate = p->device.playback.internalSampleRate;
-	p->tail = (size_t)((frames * session_rate(s) + rate - 1) / rate);
+	p->tail = p->latency = (size_t)((frames * session_rate(s) + rate - 1) / rate);
 	return p;
 }
 
@@ -83,6 +83,23 @@ double player_time(Player *p) {
 
 void player_stop(Player *p) {
 	atomic_store(&p->status, 2);
+}
+
+int player_pause(Player *p) {
+	player_stop(p);
+	ma_result result = ma_device_stop(&p->device);
+	if (result != MA_SUCCESS)
+		p->session->error = ma_result_description(result);
+	return result != MA_SUCCESS;
+}
+
+int player_rewind(Player *p) {
+	if (!player_status(p) || session_rewind(p->session))
+		return -1;
+	p->tail = p->latency;
+	atomic_store(&p->position, 0);
+	atomic_store(&p->status, 0);
+	return 0;
 }
 
 void player_free(Player *p) {

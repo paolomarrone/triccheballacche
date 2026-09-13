@@ -18,9 +18,16 @@ typedef struct {
 } PluginConfig;
 
 typedef struct DSP DSP;
+typedef struct Module Module;
+typedef struct {
+	Module *head;
+} Modules;
 
-// A successful open owns its resources; a failed open releases everything and returns NULL.
-DSP *open_dsp(const char *path, const PluginConfig *config, unsigned sample_rate, size_t capacity);
+// A DAW-owned cache. Instances retain their module independently of the cache.
+void modules_free(Modules *modules);
+
+// Optional cache keeps the binary loaded. A failed open releases instance resources and returns NULL.
+DSP *open_dsp(Modules *modules, const char *path, const PluginConfig *config, unsigned sample_rate, size_t capacity);
 void close_dsp(DSP *dsp); // NULL is allowed.
 void set_dsp(DSP *dsp, size_t parameter, float value);
 void reset_dsp(DSP *dsp);

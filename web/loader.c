@@ -29,7 +29,12 @@ EM_JS(void, wasm_process, (void *id, const float **inputs, float **outputs, size
 });
 // clang-format on
 
-DSP *open_dsp(const char *path, const PluginConfig *c, unsigned sample_rate, size_t capacity) {
+void modules_free(Modules *modules) {
+	(void)modules; // Compiled modules belong to the JavaScript host.
+}
+
+DSP *open_dsp(Modules *modules, const char *path, const PluginConfig *c, unsigned sample_rate, size_t capacity) {
+	(void)modules;
 	return (DSP *)(uintptr_t)wasm_open(path, sample_rate, c->inputs, c->output, c->midi, c->nparams, c->defaults,
 	    (uint32_t)c->outputs, (uint32_t)(c->outputs >> 32), capacity, c->to_ui, c->to_dsp);
 }

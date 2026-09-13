@@ -14,6 +14,7 @@ typedef struct {
 
 typedef struct {
 	DSP *dsp;
+	Modules *modules; // Optional borrowed cache; NULL gives this engine a private module reference.
 	PluginConfig config;
 	const Event *events;
 	size_t count, next, time;

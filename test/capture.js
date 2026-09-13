@@ -5,8 +5,11 @@ registerProcessor("capture", class extends AudioWorkletProcessor {
         this.audio = new Float32Array((options.processorOptions.frames + 512) * 2);
         this.position = 0;
         this.started = false;
+        const perone = globalThis.peroneHost.perone;
+        const instances = [...perone.instances];
         this.port.onmessage = () => {
-            this.port.postMessage({audio: this.audio, frames: this.position}, [this.audio.buffer]);
+            const reused = instances.every(([id, p]) => perone.instances.get(id) === p);
+            this.port.postMessage({audio: this.audio, frames: this.position, reused}, [this.audio.buffer]);
         };
     }
 

@@ -4,7 +4,7 @@ import {plugins} from "./plugins.js";
 const byId = id => document.getElementById(id);
 const path = byId("path"), code = byId("code"), views = byId("views"), errors = byId("errors");
 const numbers = byId("numbers"), marks = byId("marks");
-let backend, controls, ready = false, busy = false, playing = false, saved = "", savedPath = "", queue = Promise.resolve();
+let backend, controls, ready = false, busy = false, playing = false, prepared = false, saved = "", savedPath = "", queue = Promise.resolve();
 let revision = 0, frames = [], partial = false, tracedSource, tracedPath, seconds = 0, displayedSource, lineCount = 1, painted = "";
 
 function tracking() {
@@ -49,9 +49,10 @@ function dirty() {
 }
 
 function update() {
-    controls?.status(playing, busy);
+    controls?.status(prepared, busy);
     for (const id of ["open", "save", "run", "views"]) byId(id).disabled = !ready || busy;
     byId("stop").disabled = !ready || busy || !playing;
+    byId("play").disabled = !ready || busy || !prepared;
     path.disabled = !ready || busy;
     code.disabled = !ready;
     code.readOnly = busy;
@@ -74,6 +75,7 @@ function request(op, ...args) {
     const result = queue.then(async () => {
         const response = await backend.command(op, ...args);
         if (typeof response.playing === "boolean") playing = response.playing;
+        if (typeof response.prepared === "boolean") prepared = response.prepared;
         if (Number.isFinite(response.time)) {
             seconds = response.time;
             byId("time").textContent = `${seconds.toFixed(2)} s`;
@@ -100,11 +102,11 @@ async function action(op) {
         return;
     }
     busy = true;
-    if (op === "run") frames = [];
+    if (op === "run" || op === "play") frames = [];
     showError("");
     update();
     try {
-        if (op === "run" || op === "stop") controls.dispose();
+        if (op === "run") controls.dispose();
         const result = await request(op, path.value, ["save", "run"].includes(op) ? code.value : "");
         if (op === "run") {
             revision = result.score.revision;
@@ -138,7 +140,7 @@ const projection = timeline(request, origins => {
 }, index => { views.checked = true; controls?.track(index); }, showError);
 new ResizeObserver(paint).observe(code);
 
-for (const op of ["open", "save", "run", "stop"]) byId(op).addEventListener("click", () => action(op));
+for (const op of ["open", "save", "run", "play", "stop"]) byId(op).addEventListener("click", () => action(op));
 views.addEventListener("change", () => controls?.show(views.checked));
 for (const event of ["input", "click", "keyup", "select"]) code.addEventListener(event, update);
 code.addEventListener("scroll", paint);
@@ -148,6 +150,7 @@ path.addEventListener("input", update);
 document.addEventListener("keydown", event => {
     let op;
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") op = "run";
+    if ((event.ctrlKey || event.metaKey) && event.code === "Space" && prepared) op = "play";
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") op = "save";
     if (event.key === "Escape" && playing) op = "stop";
     if (op) {

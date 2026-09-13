@@ -9,8 +9,12 @@ registerProcessor("perone-setup", class extends AudioWorkletProcessor {
             try {
                 let result;
                 if (data.type === "close") host.perone?.closeAll();
-                else if (data.type === "control") result = host.perone.control(...data.args);
-                else throw Error("Unknown worklet request");
+                else if (data.type === "control") {
+                    result = host.perone.control(...data.args);
+                    if (data.player) host._player_sync(data.player);
+                } else if (data.type === "rewind") {
+                    if (host._player_rewind(data.player)) throw Error("Cannot rewind score");
+                } else throw Error("Unknown worklet request");
                 this.port.postMessage({type: data.type, id: data.id, result});
             } catch (error) {
                 this.port.postMessage({type: data.type, id: data.id, error: String(error)});

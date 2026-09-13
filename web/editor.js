@@ -1,11 +1,11 @@
-import {createPlayerHost, preparePlayer, closePlayer} from "./player.js";
+import {createPlayerHost, prepareScore, attachPlayer, closePlayer} from "./player.js";
 import {addFile} from "./host.js";
 
 export const saveLabel = "Download", saveTitle = "Download a copy of the score · Ctrl+S";
 const options = new URLSearchParams(location.search);
 const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();
-let host, player, view = 0, revision = 0, time = 0, failure = "", log = [];
+let host, player, playing = false, view = 0, revision = 0, time = 0, failure = "", log = [];
 
 export async function connect() {
     if (!crossOriginIsolated) throw Error("COOP/COEP headers required: run node test/server.mjs.");
@@ -41,10 +41,11 @@ function query(op, args = []) {
 }
 
 async function stop() {
-    if (player) time = player.time;
-    // Clear the JS player even on failure; closePlayer retains its host lock and permits cleanup retries.
-    player = undefined;
-    await closePlayer(host);
+    playing = false;
+    if (player) {
+        await player.stop();
+        time = player.time;
+    }
 }
 
 async function run(path, source) {
@@ -52,21 +53,35 @@ async function run(path, source) {
     const previousTime = time;
     failure = "";
     log = [];
+    let nextScore = 0, replacing = false;
     try {
-        const prepared = await preparePlayer(host, path, 48000, source);
+        nextScore = prepareScore(host, path, 48000, source);
+        replacing = true;
+        player = undefined;
+        await closePlayer(host);
+        const owned = nextScore;
+        nextScore = 0;
+        const prepared = await attachPlayer(host, owned);
+        player = prepared;
         await prepared.start();
         const next = prepared.takeView();
         if (!next) throw Error("Score projection missing");
         host._view_free(view);
         view = next;
-        player = prepared;
+        playing = true;
         ++revision;
         time = 0;
         return query("score");
     } catch (error) {
+        if (nextScore) host._score_free(nextScore);
         const diagnostics = log.join("\n");
-        try { await stop(); }
-        catch (cleanup) { throw new AggregateError([error, cleanup], `${error}\n${cleanup}`); }
+        try {
+            if (replacing) {
+                player = undefined;
+                playing = false;
+                await closePlayer(host);
+            }
+        } catch (cleanup) { throw new AggregateError([error, cleanup], `${error}\n${cleanup}`); }
         finally { time = previousTime; }
         throw Error(diagnostics || String(error));
     }
@@ -104,9 +119,17 @@ export async function command(op, ...args) {
             link.click();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         } else if (op === "run") result = await run(path, checkedText(args[1]));
-        else if (op === "stop") await stop();
+        else if (op === "play") {
+            if (!player) throw Error("Run a score before playing");
+            await stop();
+            try { await player.restart(); }
+            catch (error) { await stop(); throw error; }
+            playing = true;
+            time = 0;
+            failure = "";
+        } else if (op === "stop") await stop();
         else if (op === "status") {
-            if (player) {
+            if (player && playing) {
                 try {
                     const state = player.status;
                     if (state < 0) failure = "Playback error";
@@ -117,15 +140,17 @@ export async function command(op, ...args) {
                 }
             }
             error = failure;
-            result = query("status", [player ? player.time : time, Boolean(player)]);
+            result = query("status", [playing ? player.time : time, playing]);
         } else throw Error("Unknown command: " + op);
     } catch (cause) { error = String(cause.message || cause); }
-    return {...result, path, revision, time: player ? player.time : time, playing: Boolean(player), error: error || result.error || ""};
+    return {...result, path, revision, time: playing ? player.time : time, playing, prepared: Boolean(player), error: error || result.error || ""};
 }
 
 export async function close() {
     if (!host) return;
-    try { await stop(); }
+    playing = false;
+    player = undefined;
+    try { await closePlayer(host); }
     finally { host._view_free(view); view = 0; }
 }
 

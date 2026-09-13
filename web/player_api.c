@@ -16,3 +16,8 @@ int player_context(Player *p) {
 int player_node(Player *p) {
 	return p->device.webaudio.audioWorklet;
 }
+
+void player_sync(Player *p) {
+	if (player_status(p))
+		session_sync(p->session);
+}

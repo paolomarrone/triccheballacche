@@ -1,4 +1,5 @@
 #include "player.h"
+#include "posix/module.h"
 #include <assert.h>
 #include <math.h>
 #include <signal.h>
@@ -11,11 +12,13 @@
 // Replace only device I/O: use the real player, CLI, Janet, DSP, mixer and WAV exporter.
 static ma_result device_init(ma_context *, const ma_device_config *, ma_device *);
 static ma_result device_start(ma_device *);
+static ma_result device_stop(ma_device *);
 static void device_free(ma_device *);
 static ma_bool32 device_started(const ma_device *);
 static int tick(const struct timespec *, struct timespec *);
 #define ma_device_init device_init
 #define ma_device_start device_start
+#define ma_device_stop device_stop
 #define ma_device_uninit device_free
 #define ma_device_is_started device_started
 #define nanosleep tick
@@ -27,9 +30,10 @@ static int tick(const struct timespec *, struct timespec *);
 #undef ma_device_is_started
 #undef ma_device_uninit
 #undef ma_device_start
+#undef ma_device_stop
 #undef ma_device_init
 
-enum { NORMAL, INIT_FAIL, START_FAIL, INTERRUPT, DISCONNECT };
+enum { NORMAL, INIT_FAIL, START_FAIL, INTERRUPT, DISCONNECT, STOP_FAIL };
 static int mode, opened, closed, started;
 static ma_device *device;
 static size_t emitted, expected_frames, queue_frames;
@@ -57,6 +61,14 @@ static ma_result device_start(ma_device *p) {
 	if (mode == START_FAIL)
 		return MA_ERROR;
 	started = 1;
+	return MA_SUCCESS;
+}
+
+static ma_result device_stop(ma_device *p) {
+	assert(p == device);
+	if (mode == STOP_FAIL)
+		return MA_ERROR;
+	started = 0;
 	return MA_SUCCESS;
 }
 
@@ -148,12 +160,38 @@ static void test_pcm(void) {
 			assert(emitted >= s.frames + queue_frames); // Last audio must leave the simulated device queue.
 			assert(player_start(p));
 			pump(128); // Every subsequent callback stays silent.
+			DSP *original = s.nodes[0].dsp[0].dsp;
+			int devices = opened;
+			assert(!setenv("PERONE_TEST_FAIL", "alloc", 1));
+			for (int pass = 0; pass < 3; ++pass) {
+				assert(!player_pause(p) && !started);
+				watch_dsp(original, 1);
+				edit_dsp(original, 1, .9f);
+				session_sync(&s); // UI edits also work with the audio callback stopped.
+				float value;
+				assert(read_dsp(original, 1, &value) && value == .9f);
+				edit_dsp(original, 1, .8f); // A queued gesture must not override the prepared defaults.
+				assert(!player_rewind(p) && !s.time && !player_time(p));
+				assert(read_dsp(original, 1, &value) && value == s.nodes[0].dsp[0].config.defaults[1]);
+				assert(s.nodes[0].dsp[0].dsp == original && opened == devices);
+				emitted = 0;
+				assert(!player_start(p));
+				pump(128);
+				if (!pass)
+					continue; // Restart with notes and effect history still active.
+				for (size_t block = 0; !player_status(p); ++block) {
+					assert(block < 1000);
+					pump(blocks[block % 5]);
+				}
+				assert(player_status(p) == 1 && emitted >= s.frames + queue_frames);
+			}
+			assert(!unsetenv("PERONE_TEST_FAIL"));
 			player_free(p);
 			session_free(&s);
 		}
 	free(expected);
 	expected = NULL;
-	puts("OK: native player PCM matches WAV at 44.1/48 kHz; variable blocks, final silence and queue completion");
+	puts("OK: native PCM matches WAV at 44.1/48 kHz, including partial/full replay without DSP/device allocation");
 }
 
 static void test_lifecycle(void) {
@@ -183,7 +221,10 @@ static void test_lifecycle(void) {
 	player_stop(p);
 	pump(128);
 	assert(s.time == time && player_status(p) == 2 && player_start(p));
+	mode = STOP_FAIL;
+	assert(player_pause(p) && s.error);
 	player_free(p);
+	mode = NORMAL;
 	session_free(&s);
 	assert(!load_score(&s, &output, "test/playback.janet"));
 	p = player_new(&s);

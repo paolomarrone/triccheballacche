@@ -54,12 +54,17 @@ console.log("OK: Janet patterns, validation, stereo/mono DSP, event boundaries a
 
 // Rebuilding initial state preserves C handles and configured defaults, including duplicated mono effects.
 const path = "test/playback.janet", expected = renderScore(host, path, 48000);
+host.perone.deferred = true;
 const score = host.ccall("score_new", "number", ["string", "number"], [path, 48000]);
+host.perone.deferred = false;
 assert(score);
+assert.equal(host.perone.instances.size, 0, "Playback preparation must not create temporary DSPs");
+assert.equal(host.perone.planned.size, 3);
 const source = host.perone, destination = new Perone(host);
 try {
     const setup = source.releasePrepared();
     assert.equal(source.instances.size, 0);
+    assert.equal(source.planned.size, 0);
     assert.equal(source.remote.size, 3);
     destination.restorePrepared(setup);
     host.perone = destination;
@@ -71,7 +76,7 @@ try {
         position += n * 2;
     }
     assert.deepEqual(actual, expected);
-    assert.throws(() => destination.releasePrepared(), /after rendering/);
+    assert.throws(() => destination.releasePrepared(), /Only deferred DSPs/);
     assert.equal(destination.instances.size, 3);
     destination.closeAll();
 

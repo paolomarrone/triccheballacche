@@ -26,9 +26,11 @@ static volatile sig_atomic_t stopped;
 
 typedef struct {
 	Session session;
+	Modules modules;
 	ScoreView score;
 	unsigned revision;
 	Player *player;
+	int playing;
 	Controls controls;
 	const char *entry;
 	char *error;
@@ -52,9 +54,42 @@ static void request(webui_event_t *event) {
 	pthread_mutex_unlock(&mutex);
 }
 
+static const char *pause_editor(Editor *editor) {
+	const char *error = NULL;
+	if (editor->player) {
+		if (player_pause(editor->player)) {
+			error = editor->session.error;
+			// Uninit still joins the callback if stopping the device failed.
+			player_free(editor->player);
+			editor->player = NULL;
+		}
+		editor->time = (double)editor->session.time / editor->session.sample_rate;
+	}
+	editor->playing = 0;
+	return error;
+}
+
+// The device is stopped; its borrowed Session keeps the same address across successful Runs.
+static const char *play_editor(Editor *editor) {
+	Session *s = &editor->session;
+	if (editor->player ? player_rewind(editor->player) : session_rewind(s))
+		return s->error ? s->error : "Cannot rewind score";
+	if (!editor->player)
+		editor->player = player_new(s);
+	if (!editor->player || player_start(editor->player)) {
+		const char *error = s->error ? s->error : "Audio startup failed";
+		pause_editor(editor);
+		return error;
+	}
+	editor->playing = 1;
+	editor->time = 0;
+	free(editor->error);
+	editor->error = NULL;
+	return NULL;
+}
+
 static void finish(Editor *editor) {
-	if (editor->player)
-		editor->time = player_time(editor->player);
+	pause_editor(editor);
 	player_free(editor->player);
 	editor->player = NULL;
 	controls_close(&editor->controls, &editor->session);
@@ -129,7 +164,7 @@ static double decimal(webui_event_t *request, int index) {
 static void reply(
     webui_event_t *event, Editor *editor, const char *error, const char *text, const char *path, int score) {
 	const char *op = webui_get_string_at(event, 0);
-	double time = editor->player ? player_time(editor->player) : editor->time;
+	double time = editor->playing ? player_time(editor->player) : editor->time;
 	char *view = NULL;
 	int query = !strcmp(op, "range") || !strcmp(op, "note");
 	if (query)
@@ -137,7 +172,7 @@ static void reply(
 		    decimal(event, 3), decimal(event, 4), decimal(event, 5), decimal(event, 6));
 	else if (score || !strcmp(op, "status"))
 		view = score_view_json(
-		    &editor->score, editor->revision, score ? "score" : "status", time, !!editor->player, 0, 0, 0, 0);
+		    &editor->score, editor->revision, score ? "score" : "status", time, editor->playing, 0, 0, 0, 0);
 	if (!view && (query || score || !strcmp(op, "status")))
 		error = "Out of memory";
 	Json json = {0};
@@ -157,9 +192,9 @@ static void reply(
 				json_print(&json, "%s%d", count++ ? "," : "", i);
 		json_print(&json, "]");
 	}
-	json_print(&json,
-	    ",\"playing\":%s,\"time\":%.17g,\"revision\":%u,\"view\":%s,\"error\":", editor->player ? "true" : "false",
-	    time, editor->revision, view ? view : "null");
+	json_print(&json, ",\"prepared\":%s,\"playing\":%s,\"time\":%.17g,\"revision\":%u,\"view\":%s,\"error\":",
+	    editor->session.sealed ? "true" : "false", editor->playing ? "true" : "false", time, editor->revision,
+	    view ? view : "null");
 	json_string(&json, error);
 	json_print(&json, "}");
 	webui_return_string(event, json.failed ? "{\"error\":\"Out of memory\"}" : json.data);
@@ -190,33 +225,50 @@ static void command(Editor *editor, webui_event_t *event) {
 	} else if (!strcmp(op, "save")) {
 		error = save_text(path, source);
 	} else if (!strcmp(op, "run")) {
-		finish(editor);
+		error = pause_editor(editor);
 		free(editor->error);
 		editor->error = NULL;
 		double previous_time = editor->time;
-		editor->session.sample_rate = 48000;
+		Session *next = calloc(1, sizeof(*next));
 		Output output;
-		ScoreView score;
-		if (prepare_score(&editor->session, &output, path, source, &diagnostics, &score)) {
-			error = diagnostics ? diagnostics : editor->session.error ? editor->session.error : "Preparation failed";
-		} else {
-			if (!error && (!(editor->player = player_new(&editor->session)) || player_start(editor->player)))
-				error = editor->session.error ? editor->session.error : "Audio startup failed";
+		ScoreView score = {0};
+		if (!next)
+			error = "Out of memory";
+		if (!error) {
+			next->sample_rate = 48000;
+			next->modules = &editor->modules;
+			if (prepare_score(next, &output, path, source, &diagnostics, &score))
+				error = diagnostics ? diagnostics : next->error ? next->error : "Preparation failed";
 		}
-		if (error) {
-			finish(editor);
-			score_view_free(&score);
+		if (!error) {
+			controls_close(&editor->controls, &editor->session);
+			session_free(&editor->session);
+			editor->session = *next;
+			*next = (Session){0};
+			error = play_editor(editor);
+			if (error)
+				finish(editor);
+			else {
+				score_view_free(&editor->score);
+				editor->score = score;
+				score = (ScoreView){0};
+				++editor->revision;
+				assets_set(&editor->score, editor->revision);
+				changed = 1;
+			}
+		}
+		if (next)
+			session_free(next);
+		free(next);
+		score_view_free(&score);
+		if (error)
 			editor->time = previous_time;
-		} else {
-			score_view_free(&editor->score);
-			editor->score = score;
-			editor->time = 0;
-			++editor->revision;
-			assets_set(&editor->score, editor->revision);
-			changed = 1;
-		}
+	} else if (!strcmp(op, "play")) {
+		error = pause_editor(editor);
+		if (!error)
+			error = editor->session.sealed ? play_editor(editor) : "Run a score before playing";
 	} else if (!strcmp(op, "stop")) {
-		finish(editor);
+		error = pause_editor(editor);
 	} else if (!strcmp(op, "status")) {
 		error = editor->error;
 	} else {
@@ -228,12 +280,20 @@ static void command(Editor *editor, webui_event_t *event) {
 }
 
 static void poll_player(Editor *editor) {
-	if (!editor->player)
+	if (!editor->session.sealed)
 		return;
 	const char *error = NULL;
 
 	if (controls_poll(&editor->controls, &editor->session) < 0)
 		error = "Plugin UI control error";
+	if (!editor->playing) {
+		session_sync(&editor->session);
+		if (error) {
+			free(editor->error);
+			editor->error = copy_string(error);
+		}
+		return;
+	}
 	int status = player_status(editor->player);
 	if (status < 0)
 		error = editor->session.error ? editor->session.error : "Audio error";
@@ -242,7 +302,7 @@ static void poll_player(Editor *editor) {
 	if (error || status) {
 		free(editor->error);
 		editor->error = error ? copy_string(error) : NULL;
-		finish(editor);
+		pause_editor(editor);
 	}
 }
 
@@ -297,6 +357,7 @@ int main(int argc, char **argv) {
 	pthread_cond_broadcast(&answered);
 	pthread_mutex_unlock(&mutex);
 	finish(&editor);
+	modules_free(&editor.modules);
 	score_view_free(&editor.score);
 	free(editor.error);
 	webui_exit();

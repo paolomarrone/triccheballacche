@@ -39,9 +39,7 @@
         "invalid parameter range/default")
       row)))
 
-(defn perone/read
-  "Read a .perone bundle, preserving the product metadata and original indices."
-  [path]
+(defn- perone/load [path]
   (def product ((freeze (json/decode (slurp (string path "/product.json")) true)) :product))
   (def name (product :bundleName))
   (assert (and (string? name) (peg/match '(sequence (some (choice (range "az" "AZ" "09") "_" "-")) -1) name))
@@ -98,3 +96,13 @@
             :dsp-to-ui-size (or (get-in product [:messaging :dspToUiSize]) 0)
             :ui-to-dsp-size (or (get-in product [:messaging :uiToDspSize]) 0)}
    :defaults (map |(if (= ($ :direction) :input) ($ :default) nil) parameters)})
+
+# One immutable description per bundle in this evaluation. A new Run rereads metadata.
+(def- perone/cache @{})
+(defn perone/read
+  "Read and cache an immutable bundle description, preserving product metadata and original indices."
+  [path]
+  (or (perone/cache path)
+      (let [bundle (freeze (perone/load path))]
+        (put perone/cache path bundle)
+        bundle)))

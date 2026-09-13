@@ -10,7 +10,7 @@ int open_engine(Engine *e, const char *path, const PluginConfig *c, unsigned sam
 	for (int i = 0; i < c->nparams; ++i)
 		if (!(c->outputs & (UINT64_C(1) << i)) && !isfinite(c->defaults[i]))
 			return -1;
-	DSP *dsp = open_dsp(path, c, sample_rate, BLOCK);
+	DSP *dsp = open_dsp(e->modules, path, c, sample_rate, BLOCK);
 	if (!dsp)
 		return -1;
 	e->dsp = dsp;

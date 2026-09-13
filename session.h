@@ -9,7 +9,7 @@ typedef struct {
 	char *path;
 	Event *events;
 	size_t count, capacity, next;
-	float values[2]; // Mixer gain/pan only; initial plugin values live in PluginConfig.
+	float values[2], defaults[2]; // Mixer gain/pan only; initial plugin values live in PluginConfig.
 	int ncontrols;
 	int attached;
 } Node;
@@ -20,6 +20,7 @@ typedef struct {
 
 typedef struct {
 	Node nodes[MAX_NODES];
+	Modules *modules; // Borrowed from the DAW; session_free does not release it.
 	Track tracks[MAX_TRACKS], master;
 	int nnodes, ntracks, has_master, sealed;
 	unsigned sample_rate; // Set before preparation; zero selects DEFAULT_SAMPLE_RATE.
@@ -35,5 +36,8 @@ int session_param(Session *s, int id, size_t time, int param, float value);
 int session_note(Session *s, int id, size_t time, size_t end, int pitch, int velocity);
 int session_end(Session *s, size_t frames);
 int session_render(Session *s, float *stereo, size_t frames);
+// No audio callback may be using the session during rewind or stopped UI synchronization.
+int session_rewind(Session *s);
+void session_sync(Session *s);
 void session_free(Session *s);
 #endif

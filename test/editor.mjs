@@ -180,6 +180,15 @@ try {
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert((await evaluate('document.querySelector("#errors").textContent')).includes(path));
         assert.equal(await evaluate('document.querySelector("#stop").disabled'), true);
+        await writeFile(`${directory}/helper.janet`, '(error "Play must not evaluate this import")');
+        await click("play"); // Use the old project even with an invalid draft and changed imports.
+        await waitFor('!document.querySelector("#stop").disabled');
+        assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), report.revision);
+        assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
+        assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
+        await click("stop");
+        await writeFile(`${directory}/helper.janet`, `(def duration 3)
+(defn notes [items node] (array/push items [0 2 [:note node 60 100]]))`);
         await set("code", changed);
         await click("run");
         await waitFor('!document.querySelector("#stop").disabled');

@@ -63,8 +63,12 @@ The test server supplies `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: require-corp`. Chromium is verified; Firefox and
 Safari remain unverified.
 
-**Run** uses the current buffer and original path, preserving relative imports.
-Ctrl/Command+Enter runs from the start, Esc stops, and Ctrl/Command+S saves.
+**Run** (Ctrl/Command+Enter) evaluates the current buffer at its original path,
+preserving relative imports, and starts the new score. **Play** (Ctrl/Command+Space)
+restarts the prepared score without evaluating Janet or recreating plugins.
+**Stop** (Esc) silences playback and keeps the project and its UIs ready.
+An evaluation error leaves the previous project available for Play.
+Ctrl/Command+S saves.
 Desktop saves replace the file atomically; web **Download** saves a local copy
 and updates the session filesystem. Reloading restores the published files.
 Scores are UTF-8 text without NUL bytes, up to 8 MiB.
@@ -260,9 +264,10 @@ subject to smaller product limits. One view per node consumes output messages;
 duplicated mono effects report from the left instance.
 
 Collapsing a section or changing tracks releases its inline UI and invalidates
-its callbacks. Stop releases every inline and native UI. Asynchronous creation
-queues gestures until attachment; a view arriving
-after Stop is freed. Invalid callbacks or communication errors detach the web view.
+its callbacks. Stop and Play preserve inline and native UIs; controls remain usable
+while stopped. Run replaces the plugin instances and their views.
+Asynchronous creation queues gestures until attachment; a view arriving after
+disposal is freed. Invalid callbacks or communication errors detach the web view.
 A new attachment clears old notifications and overflow while preserving accepted
 input changes. Native and web UI lifecycle tests are described in the [test guide](test/README.md).
 
@@ -308,6 +313,16 @@ Windows still needs native loader, export and CLI backends. Desktop UI hosts
 currently require X11. Each native platform needs matching plugin binaries.
 
 Preparation builds and sorts all events, then closes Janet before audio starts.
+The editor owns a cache of loaded modules; each prepared session owns its DSP
+instances, and the player owns the audio device. Stop retains all three.
+Play restores initial input parameters and mixer settings, resets DSPs and event
+cursors, and discards pending host messages and edits. UI gestures are temporary;
+put lasting changes in the score. Plugin reset semantics govern internal state,
+including random generators; replay does not restore a serialized plugin snapshot.
+Native binaries stay loaded until the editor closes, so restart it after rebuilding
+a plugin. Janet caches immutable bundle metadata within each evaluation and rereads
+it on Run. The web host caches compiled Wasm modules and creates DSP instances
+directly in the worklet, once per prepared score.
 The engine allocates no memory during processing; mixing buffers are independent
 of duration, while stored events are not. Current limits are 32 tracks, 128 nodes,
 8 effects per chain, 64 parameters per plugin, 3600 seconds and one export per run.
@@ -328,9 +343,13 @@ the whole render in memory. `web/player.js` provides `createPlayerHost`,
 `preparePlayer(host, path, sampleRate, source?)` and `closePlayer(host)` for streaming.
 Preload scripts, imports and bundles with `addFile`, preserving their paths.
 
-A player exposes `start()`, `time`, `status` (0 running, 1 done, −1 failed),
-`context`, `node` and `close()`. Await closure before reusing its host. Cleanup
-retains shared memory if AudioContext closure cannot be confirmed and can be retried.
+A player exposes `start()`, `stop()`, `restart()`, `time`, `status` (0 ready/running,
+1 done, −1 failed, 2 stopped), `context`, `node` and `close()`. Stop suspends the
+context; restart rewinds the existing score and resumes it. Await closure before
+attaching another score to its host. `prepareScore` evaluates a draft while the
+old player is stopped; `attachPlayer` takes ownership after closing the old player.
+Cleanup retains shared memory if AudioContext closure cannot be confirmed and can
+be retried.
 Preparing from `source` also captures the immutable score projection; `takeView()`
 transfers it once, and the caller must release it with `view_free`. Projection
 queries and serialization stay outside the audio thread.

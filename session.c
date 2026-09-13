@@ -33,6 +33,7 @@ int session_plugin(Session *s, const char *path, const PluginConfig *config) {
 		return fail(s, "sealed session or node limit reached");
 	Node *n = s->nodes + s->nnodes;
 	*n = (Node){0};
+	n->dsp[0].modules = s->modules;
 	if (open_engine(n->dsp, path, config, session_rate(s))) {
 		close_engine(n->dsp);
 		return fail(s, "cannot open plugin");
@@ -52,7 +53,7 @@ int session_set(Session *s, int id, int param, float value) {
 	if (n->path)
 		n->dsp[0].config.defaults[param] = value;
 	else
-		n->values[param] = value;
+		n->defaults[param] = n->values[param] = value;
 	return 0;
 }
 
@@ -85,6 +86,7 @@ int session_track(Session *s, int source, const int *effects, int count, int mas
 	for (int i = 0; i < count; ++i)
 		if (duplicate[i]) {
 			Node *n = s->nodes + effects[i];
+			n->dsp[1].modules = s->modules;
 			if (open_engine(n->dsp + 1, n->path, &n->dsp[0].config, session_rate(s))) {
 				for (int j = 0; j <= i; ++j)
 					close_engine(s->nodes[effects[j]].dsp + 1);
@@ -100,7 +102,7 @@ int session_track(Session *s, int source, const int *effects, int count, int mas
 	Node *m = s->nodes + s->nnodes;
 	m->ncontrols = master ? 1 : 2;
 	m->attached = 1;
-	m->values[0] = 1;
+	m->defaults[0] = m->values[0] = 1;
 	if (master)
 		s->has_master = 1;
 	return s->nnodes++;
@@ -179,11 +181,25 @@ int session_end(Session *s, size_t frames) {
 		Node *n = s->nodes + i;
 		if (n->count)
 			qsort(n->events, n->count, sizeof(Event), compare);
+	}
+	s->frames = frames;
+	s->sealed = 1;
+	return session_rewind(s);
+}
+
+int session_rewind(Session *s) {
+	if (!s->sealed)
+		return fail(s, "rewind requires a prepared session");
+	for (int i = 0; i < s->nnodes; ++i) {
+		Node *n = s->nodes + i;
+		n->next = 0;
+		memcpy(n->values, n->defaults, sizeof(n->values));
 		if (!n->path)
 			continue;
 		const PluginConfig *config = &n->dsp[0].config;
 		for (int c = 0; c < 2 && n->dsp[c].dsp; ++c) {
 			Engine *e = n->dsp + c;
+			e->next = e->time = 0;
 			for (int j = 0; j < config->nparams; ++j)
 				if (!(config->outputs & (UINT64_C(1) << j)))
 					set_dsp(e->dsp, j, config->defaults[j]);
@@ -192,9 +208,14 @@ int session_end(Session *s, size_t frames) {
 			e->count = n->count;
 		}
 	}
-	s->frames = frames;
-	s->sealed = 1;
+	s->time = 0;
+	s->error = NULL;
 	return 0;
+}
+
+void session_sync(Session *s) {
+	for (int i = 0; i < s->nnodes; ++i)
+		sync_dsp(s->nodes[i].dsp[0].dsp, s->nodes[i].dsp[1].dsp);
 }
 
 static void controls(Node *n, size_t time) {
@@ -236,8 +257,7 @@ int session_render(Session *s, float *out, size_t frames) {
 		return fail(s, "render outside session");
 	while (frames) {
 		size_t n = frames < BLOCK ? frames : BLOCK;
-		for (int i = 0; i < s->nnodes; ++i)
-			sync_dsp(s->nodes[i].dsp[0].dsp, s->nodes[i].dsp[1].dsp);
+		session_sync(s);
 		memset(out, 0, 2 * n * sizeof(float));
 		for (int tr = 0; tr < s->ntracks; ++tr) {
 			Track *t = s->tracks + tr;

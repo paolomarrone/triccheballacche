@@ -281,8 +281,40 @@ static void test_notifications(void) {
 	watch_dsp(dsp, 1);
 	assert(!receive_dsp(dsp, &size, received));
 	assert(read_dsp(dsp, 1, &value) && value == .25f && audio[0] == .25f);
+	assert(!send_dsp(dsp, 1, &sent));
+	sync_dsp(dsp, NULL);
+	render(&e, audio, NULL, 1); // Leave a notification and another input queued across rewind.
+	assert(!send_dsp(dsp, 1, &sent));
+	edit_dsp(dsp, 1, .75f);
+	set_dsp(dsp, 1, .5f);
+	reset_dsp(dsp);
+	sync_dsp(dsp, NULL);
+	render(&e, audio, NULL, 1);
+	assert(!receive_dsp(dsp, &size, received));
+	assert(read_dsp(dsp, 1, &value) && value == .5f && audio[0] == .5f);
 	close_engine(&e);
 	puts("OK: DSP notifications, overflow recovery, fresh attachment and pending edits after detach");
+}
+
+static void test_modules(void) {
+	Modules modules = {0};
+	Engine first = {.modules = &modules}, second = {.modules = &modules};
+	assert(!open_bundle(&first, "build/fixture.perone", DEFAULT_SAMPLE_RATE));
+	Module *module = first.dsp->module;
+	assert(!open_bundle(&second, "./build/../build/fixture.perone", DEFAULT_SAMPLE_RATE));
+	assert(second.dsp->module == module && second.dsp->instance != first.dsp->instance);
+	close_engine(&first);
+	close_engine(&second);
+	first.modules = &modules;
+	assert(!open_bundle(&first, "build/fixture.perone", DEFAULT_SAMPLE_RATE));
+	assert(first.dsp->module == module); // Cache outlives every instance.
+	modules_free(&modules);
+	modules_free(&modules);
+	float out[2];
+	render(&first, out, NULL, 1); // An instance also keeps its binary alive after releasing the cache.
+	assert(out[0] == .5f && out[1] == -.5f);
+	close_engine(&first);
+	puts("OK: canonical module reuse, independent instances and cache/instance lifetime ordering");
 }
 
 static void test_bundle(const char *path) {
@@ -325,6 +357,7 @@ int main(int argc, char **argv) {
 	test_stereo_scheduler();
 	test_disconnected_inputs();
 	test_lifecycle();
+	test_modules();
 	test_notifications();
 	Engine missing = {0};
 	assert(open_bundle(&missing, "build/nonexistent.so", DEFAULT_SAMPLE_RATE) != 0);

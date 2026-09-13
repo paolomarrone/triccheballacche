@@ -31,7 +31,7 @@ try {
             for (const rate of [44100, 48000]) {
                 status.textContent = `Playing and checking at ${rate} Hz…`;
                 for (const path of ["test/schedule.janet", "test/playback.janet"])
-                    await testPlayback(host, reference, path, rate);
+                    await testPlayback(host, reference, path, rate, true);
             }
             await testPlayerExportOptions(host, reference);
             await testPlayerErrors(host);

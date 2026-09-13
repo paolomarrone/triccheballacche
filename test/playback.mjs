@@ -20,7 +20,7 @@ function renderMix(host, path, rate) {
     } finally { host._score_free(score); }
 }
 
-export async function testPlayback(host, reference, path, rate) {
+export async function testPlayback(host, reference, path, rate, replay = false) {
     const expected = renderMix(reference, path, rate);
     const player = await preparePlayer(host, path, rate);
     try {
@@ -28,26 +28,40 @@ export async function testPlayback(host, reference, path, rate) {
         const busy = await preparePlayer(host, path, rate).then(() => false, () => true);
         check(busy, "Concurrent players must be rejected");
         await player.context.audioWorklet.addModule(new URL("./capture.js", import.meta.url));
-        const capture = new AudioWorkletNode(player.context, "capture", {
-            outputChannelCount: [2], processorOptions: {frames: expected.length / 2}
-        });
-        const gain = player.context.createGain();
-        gain.gain.value = 0.1;
-        player.node.disconnect();
-        player.node.connect(capture).connect(gain).connect(player.context.destination);
-        await player.start();
-        const deadline = performance.now() + expected.length / (2 * rate) * 1000 + 5000;
-        while (!player.status && performance.now() < deadline) await sleep(50);
-        check(player.status === 1, "Playback did not finish");
-        await sleep(100);
-        const received = new Promise(resolve => { capture.port.onmessage = ({data}) => resolve(data); });
-        capture.port.postMessage("read");
-        const {audio, frames} = await received;
-        capture.port.close();
-        check(frames * 2 > expected.length, "Missing audio or final silence");
-        for (let i = 0; i < expected.length; i++)
-            check(audio[i] === expected[i], `${path}, ${rate} Hz: PCM differs at sample ${i}: ${audio[i]} != ${expected[i]}`);
-        for (let i = expected.length; i < frames * 2; i++) check(audio[i] === 0, "Final buffer must be padded with silence");
+        for (let pass = 0; pass < (replay ? 3 : 1); ++pass) {
+            const capture = new AudioWorkletNode(player.context, "capture", {
+                outputChannelCount: [2], processorOptions: {frames: expected.length / 2}
+            });
+            const gain = player.context.createGain();
+            gain.gain.value = 0.1;
+            player.node.disconnect();
+            player.node.connect(capture).connect(gain).connect(player.context.destination);
+            if (pass) await player.restart(); else await player.start();
+            if (pass === 1) {
+                await sleep(20); // Stop with notes and effect history still active.
+            } else {
+                const deadline = performance.now() + expected.length / (2 * rate) * 1000 + 5000;
+                while (!player.status && performance.now() < deadline) await sleep(50);
+                check(player.status === 1, "Playback did not finish");
+            }
+            await player.stop();
+            check(player.status === 2 && player.context.state === "suspended", "Stop must retain a suspended player");
+            const time = player.time;
+            await sleep(30);
+            check(player.time === time, "Stopped transport advanced");
+            const received = new Promise(resolve => { capture.port.onmessage = ({data}) => resolve(data); });
+            capture.port.postMessage("read");
+            const {audio, frames, reused} = await received;
+            capture.port.close();
+            capture.disconnect();
+            gain.disconnect();
+            check(reused, "Playback replaced worklet DSP instances");
+            if (pass === 1) continue;
+            check(frames * 2 > expected.length, "Missing audio or final silence");
+            for (let i = 0; i < expected.length; i++)
+                check(audio[i] === expected[i], `${path}, ${rate} Hz, pass ${pass}: PCM differs at sample ${i}: ${audio[i]} != ${expected[i]}`);
+            for (let i = expected.length; i < frames * 2; i++) check(audio[i] === 0, "Final buffer must be padded with silence");
+        }
     } finally {
         await player.close();
         await player.close();
@@ -63,7 +77,7 @@ export async function testPlayerExportOptions(host, reference) {
     await addFile(host, path, configured);
     await addFile(reference, path, configured);
     check(renderScore(reference, path, 48000)[0] === Math.fround(0.9), "Offline normalization must still apply");
-    await testPlayback(host, reference, path, 48000);
+    await testPlayback(host, reference, path, 48000, true);
 }
 
 export async function testPlayerErrors(host) {

@@ -44,6 +44,8 @@ export class Perone {
         this.host = host;
         this.modules = new Map();
         this.instances = new Map();
+        this.planned = new Map(); // Configuration only until the audio owner instantiates it.
+        this.deferred = false;
         this.remote = new Set(); // C handles whose DSP ownership moved to the worklet.
         this.next = 1;
     }
@@ -64,12 +66,17 @@ export class Perone {
     }
 
     open(configuration, id = this.next++) {
-        if (this.instances.has(id) || this.remote.has(id)) throw Error("Perone handle already in use");
+        if (this.instances.has(id) || this.planned.has(id) || this.remote.has(id)) throw Error("Perone handle already in use");
         const config = {...configuration, path: this.path(configuration.path),
             parameters: new Float32Array(configuration.parameters)};
         const {path, sampleRate, inputChannels, outputChannels, midiBus, parameters, outputMask, capacity, toDsp = 0, toUi = 0} = config;
         const module = this.modules.get(path);
         if (!module) throw Error("Wasm module not preloaded: " + path);
+        if (this.deferred) {
+            this.planned.set(id, config);
+            this.next = Math.max(this.next, id + 1);
+            return id;
+        }
         const wasm = new WebAssembly.Instance(module).exports;
         wasm.__wasm_call_ctors();
         const pointer = wasm.perone_get_api(2);
@@ -85,7 +92,7 @@ export class Perone {
         for (const name of required) if (!api[name]) throw Error("Missing Perone function: " + name);
 
         const owned = [];
-        const p = {wasm, api, owned, config, instance: 0, initialized: false, rendered: false,
+        const p = {wasm, api, owned, config, instance: 0, initialized: false,
             watching: false, pending: false, dirty: new Uint8Array(parameters.length), wanted: new Float32Array(parameters.length),
             toUi: new Messages(toUi), toDsp: new Messages(toDsp), overflow: false};
         const allocate = size => {
@@ -162,6 +169,7 @@ export class Perone {
     }
 
     close(id) {
+        if (this.planned.delete(id)) return;
         const p = this.instances.get(id);
         if (p) {
             this.instances.delete(id);
@@ -170,6 +178,7 @@ export class Perone {
     }
 
     closeAll() {
+        this.planned.clear();
         const errors = [];
         for (const id of this.instances.keys()) {
             try { this.close(id); } catch (error) { errors.push(error); }
@@ -177,15 +186,14 @@ export class Perone {
         if (errors.length) throw new AggregateError(errors, "Perone cleanup failed: " + errors.map(String).join("; "));
     }
 
-    // Rebuild instructions for initial/reset state, never a snapshot of a running DSP.
+    // Transfer descriptions only. Each DSP is instantiated once by its audio owner.
     releasePrepared() {
-        const instances = [...this.instances].map(([id, p]) => {
-            if (p.rendered) throw Error("Cannot rebuild a DSP after rendering or MIDI input");
-            return {id, config: p.config};
-        });
+        if (this.instances.size) throw Error("Only deferred DSPs can be transferred");
+        const instances = [...this.planned].map(([id, config]) => ({id, config}));
+        const paths = new Set(instances.map(({config}) => config.path));
         for (const {id} of instances) this.remote.add(id);
-        this.closeAll();
-        return {modules: [...this.modules], instances};
+        this.planned.clear();
+        return {modules: [...this.modules].filter(([path]) => paths.has(path)), instances};
     }
 
     restorePrepared(setup) {
@@ -202,6 +210,8 @@ export class Perone {
     }
 
     set(id, parameter, value) {
+        const config = this.planned.get(id);
+        if (config) { config.parameters[parameter] = value; return; }
         const p = this.instances.get(id);
         p.config.parameters[parameter] = value;
         p.api.set_parameter(p.instance, parameter, value);
@@ -260,13 +270,17 @@ export class Perone {
     }
 
     reset(id) {
+        if (this.planned.has(id)) return;
         const p = this.instances.get(id);
+        p.pending = p.overflow = false;
+        p.dirty.fill(0);
+        p.toDsp.read = p.toDsp.write;
+        p.toUi.read = p.toUi.write;
         p.api.reset(p.instance);
     }
 
     midi(id, bus, pointer) {
         const p = this.instances.get(id), heap = this.host.HEAPU8;
-        p.rendered = true;
         for (let i = 0; i < 3; i++) p.midi[i] = heap[pointer + i];
         p.api.midi_msg_in(p.instance, bus, p.midiPointer);
     }
@@ -274,7 +288,6 @@ export class Perone {
     process(id, inputs, outputs, frames) {
         const p = this.instances.get(id), heap = this.host.HEAPF32, pointers = this.host.HEAPU32;
         if (frames > p.config.capacity || p.memory !== p.wasm.memory.buffer) throw Error("Invalid DSP buffer or memory growth");
-        p.rendered = true;
         for (let c = 0; c < p.x.length; c++) {
             const pointer = inputs ? pointers[inputs / 4 + c] : 0;
             p.pointers[c] = pointer ? p.addresses[c] : 0;
