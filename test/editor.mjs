@@ -10,7 +10,7 @@ const source = `# Unicode, "quotes", backslash \\ and <html> stay plain text.
 (import ./helper)
 (import ../../lib/pattern :as p)
 (def synth (daw/plugin "build/fixture.perone" {:gain 0.01}))
-(daw/track synth)
+(daw/output (daw/track synth))
 (defn phrase []
   (def items @[])
   (helper/notes items synth)
@@ -208,9 +208,9 @@ try {
         assert(responses.every(response => !response.error || response.error.includes("busy")));
         const dense = `(def lead (daw/plugin "build/fixture.perone" {:gain 0.001}))
 (def fx (daw/plugin "build/effect.perone"))
-(daw/track lead {:effects [fx]})
-(for i 0 9 (daw/track (daw/plugin "build/fixture.perone" {:gain 0.001})))
-(daw/master)
+(def tracks @[(daw/track lead {:effects [fx]})])
+(for i 0 9 (array/push tracks (daw/track (daw/plugin "build/fixture.perone" {:gain 0.001}))))
+(daw/output (daw/master (daw/mix tracks)))
 (for i 0 1200 (daw/note lead (* i 0.005) 0.03 (+ 60 (% i 12)) 80))
 (daw/note lead 0 8 48 90)
 (daw/end 12)`;

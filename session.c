@@ -57,56 +57,135 @@ int session_set(Session *s, int id, int param, float value) {
 	return 0;
 }
 
+static int handle(Session *s, int id) {
+	return !s->sealed && id >= 0 && id < s->nnodes;
+}
+
+int session_through(Session *s, int source, int effect) {
+	if (!handle(s, source) || !handle(s, effect))
+		return fail(s, "sealed session or invalid handle");
+	Node *n = s->nodes + effect;
+	if (!n->path || !n->dsp[0].config.input || n->ninputs)
+		return fail(s, "expected an effect without an input");
+	n->inputs = malloc(sizeof(Input));
+	if (!n->inputs)
+		return fail(s, "out of memory");
+	n->inputs[0] = (Input){.node = source};
+	n->ninputs = 1;
+	return effect;
+}
+
+int session_mix(Session *s, const int *inputs, int count) {
+	if (s->sealed || s->nnodes == MAX_NODES || count < 1 || count > MAX_NODES)
+		return fail(s, "sealed session or invalid mix size");
+	for (int i = 0; i < count; ++i)
+		if (!handle(s, inputs[i]))
+			return fail(s, "invalid mix input");
+	Node *n = s->nodes + s->nnodes;
+	*n = (Node){.ncontrols = 2, .ninputs = count, .defaults = {1, 0}, .values = {1, 0}};
+	n->inputs = calloc(count, sizeof(Input));
+	if (!n->inputs)
+		return fail(s, "out of memory");
+	for (int i = 0; i < count; ++i)
+		n->inputs[i].node = inputs[i];
+	return s->nnodes++;
+}
+
+int session_output(Session *s, int source) {
+	if (!handle(s, source) || s->has_output)
+		return fail(s, "expected one output in an unsealed session");
+	s->output = source;
+	s->has_output = 1;
+	return source;
+}
+
+// A track is a visible mixer point. Its source may itself be a mix or another track.
 int session_track(Session *s, int source, const int *effects, int count, int master) {
-	if (s->sealed || s->nnodes == MAX_NODES || count < 0 || count > MAX_FX ||
-	    (master ? s->has_master : s->ntracks == MAX_TRACKS))
+	if (!handle(s, source) || count < 0 || count > MAX_FX || (master ? s->has_master : s->ntracks == MAX_TRACKS))
 		return fail(s, "sealed session or track/effect limit reached");
-	int ids[MAX_FX + 1], total = 0;
-	if (!master)
-		ids[total++] = source;
-	for (int i = 0; i < count; ++i)
-		ids[total++] = effects[i];
-	for (int i = 0; i < total; ++i) {
-		int id = ids[i];
-		if (id < 0 || id >= s->nnodes || !s->nodes[id].path || s->nodes[id].attached ||
-		    !!s->nodes[id].dsp[0].config.input != (master || i > 0))
-			return fail(s, "expected unused source/effect plugin");
-		for (int j = 0; j < i; ++j)
-			if (ids[j] == id)
-				return fail(s, "plugin already in this chain");
+	int signal = source, connected = 0;
+	for (; connected < count; ++connected) {
+		signal = session_through(s, signal, effects[connected]);
+		if (signal < 0)
+			goto rollback;
 	}
-	int channels = master ? 2 : s->nodes[source].dsp[0].config.output, duplicate[MAX_FX];
-	for (int i = 0; i < count; ++i) {
-		const PluginConfig *m = &s->nodes[effects[i]].dsp[0].config;
-		if (channels == 2 && m->input == 1 && m->output == 2)
-			return fail(s, "a mono-to-stereo effect requires a mono signal");
-		duplicate[i] = channels == 2 && m->input == 1;
-		channels = duplicate[i] ? 2 : m->output;
-	}
-	for (int i = 0; i < count; ++i)
-		if (duplicate[i]) {
-			Node *n = s->nodes + effects[i];
-			n->dsp[1].modules = s->modules;
-			if (open_engine(n->dsp + 1, n->path, &n->dsp[0].config, session_rate(s))) {
-				for (int j = 0; j <= i; ++j)
-					close_engine(s->nodes[effects[j]].dsp + 1);
-				return fail(s, "cannot create second mono effect instance");
-			}
-		}
+	int mixer = session_mix(s, &signal, 1);
+	if (mixer < 0)
+		goto rollback;
 	Track *t = master ? &s->master : &s->tracks[s->ntracks++];
-	*t = (Track){.source = source, .mixer = s->nnodes, .count = count, .level = 1};
+	*t = (Track){.source = source, .mixer = mixer, .count = count};
 	atomic_init(&t->listen, 0);
 	for (int i = 0; i < count; ++i)
 		t->effects[i] = effects[i];
-	for (int i = 0; i < total; ++i)
-		s->nodes[ids[i]].attached = 1;
-	Node *m = s->nodes + s->nnodes;
-	m->ncontrols = master ? 1 : 2;
-	m->attached = 1;
-	m->defaults[0] = m->values[0] = 1;
 	if (master)
 		s->has_master = 1;
-	return s->nnodes++;
+	else
+		s->nodes[mixer].track = s->ntracks;
+	return mixer;
+rollback:
+	while (connected) {
+		Node *n = s->nodes + effects[--connected];
+		free(n->inputs);
+		n->inputs = NULL;
+		n->ninputs = 0;
+	}
+	return -1;
+}
+
+// Validate and order only at sealing: plugins may be declared before their inputs.
+static int visit(Session *s, int id, unsigned char *state) {
+	if (state[id] == 1)
+		return fail(s, "audio graph contains a cycle");
+	if (state[id] == 2)
+		return 0;
+	state[id] = 1;
+	Node *n = s->nodes + id;
+	if (n->path && n->ninputs != !!n->dsp[0].config.input)
+		return fail(s, "effect has no input");
+	n->upstream = n->track ? 1u << (n->track - 1) : 0;
+	for (int i = 0; i < n->ninputs; ++i) {
+		int input = n->inputs[i].node;
+		if (visit(s, input, state))
+			return -1;
+		n->upstream |= s->nodes[input].upstream;
+	}
+	n->channels = n->path ? n->dsp[0].config.output : 2;
+	if (n->path && n->ninputs && s->nodes[n->inputs[0].node].channels == 2 && n->dsp[0].config.input == 1) {
+		if (n->channels == 2)
+			return fail(s, "a mono-to-stereo effect requires a mono signal");
+		n->channels = 2;
+	}
+	state[id] = 2;
+	s->order[s->norder++] = id;
+	return 0;
+}
+
+static int compile(Session *s) {
+	if (!s->has_output)
+		return fail(s, "missing audio output");
+	unsigned char state[MAX_NODES] = {0};
+	s->norder = 0;
+	if (visit(s, s->output, state))
+		return -1;
+	if (s->norder != s->nnodes)
+		return fail(s, "node does not reach the output");
+	for (int i = 0; i < s->nnodes; ++i) {
+		Node *n = s->nodes + i;
+		n->downstream = n->track ? 1u << (n->track - 1) : 0;
+	}
+	for (int i = s->norder; i-- > 0;) {
+		Node *n = s->nodes + s->order[i];
+		for (int j = 0; j < n->ninputs; ++j)
+			s->nodes[n->inputs[j].node].downstream |= n->downstream;
+		if (n->path && n->channels == 2 && n->dsp[0].config.output == 1 && !n->dsp[1].dsp) {
+			n->dsp[1].modules = s->modules;
+			if (open_engine(n->dsp + 1, n->path, &n->dsp[0].config, session_rate(s)))
+				return fail(s, "cannot create second mono effect instance");
+		}
+	}
+	if (!s->audio)
+		s->audio = calloc(s->nnodes, BLOCK * 2 * sizeof(float));
+	return s->audio ? 0 : fail(s, "out of memory");
 }
 
 static int reserve(Session *s, Node *n, size_t extra) {
@@ -170,8 +249,6 @@ int session_end(Session *s, size_t frames) {
 		return fail(s, "empty duration or already sealed");
 	for (int i = 0; i < s->nnodes; ++i) {
 		Node *n = s->nodes + i;
-		if (!n->attached)
-			return fail(s, "plugin is not connected to a track or master");
 		for (size_t j = 0; j < n->count; ++j) {
 			Event *e = n->events + j;
 			if (e->time > frames || (e->time == frames && (e->parameter >= 0 || e->midi[0] != 0x80)))
@@ -183,6 +260,8 @@ int session_end(Session *s, size_t frames) {
 		if (n->count)
 			qsort(n->events, n->count, sizeof(Event), compare);
 	}
+	if (compile(s))
+		return -1;
 	s->frames = frames;
 	s->sealed = 1;
 	return session_rewind(s);
@@ -193,18 +272,6 @@ int session_listen(Session *s, int track, int flags) {
 		return -1;
 	atomic_store_explicit(&s->tracks[track].listen, flags, memory_order_relaxed);
 	return 0;
-}
-
-static unsigned audible_tracks(const Session *s) {
-	unsigned audible = 0, solo = 0;
-	for (int i = 0; i < s->ntracks; ++i) {
-		int flags = atomic_load_explicit(&s->tracks[i].listen, memory_order_relaxed);
-		if (!(flags & TRACK_MUTE))
-			audible |= 1u << i;
-		if (flags & TRACK_SOLO)
-			solo |= 1u << i;
-	}
-	return solo ? audible & solo : audible;
 }
 
 int session_rewind(Session *s) {
@@ -245,31 +312,72 @@ static void controls(Node *n, size_t time) {
 	}
 }
 
-static int chain(Session *s, const Track *t, float *audio, int channels, size_t n) {
-	float tmp[BLOCK * 2], mono[BLOCK];
-	for (int j = 0; j < t->count; ++j) {
-		Node *fx = s->nodes + t->effects[j];
-		const PluginConfig *m = &fx->dsp[0].config;
-		if (fx->dsp[1].dsp) {
-			for (int c = 0; c < 2; ++c) {
-				for (size_t i = 0; i < n; ++i)
-					mono[i] = audio[2 * i + c];
-				render(fx->dsp + c, tmp + c * n, mono, n);
-			}
-			for (size_t i = 0; i < n; ++i) {
-				audio[2 * i] = tmp[i];
-				audio[2 * i + 1] = tmp[n + i];
-			}
-		} else {
-			if (channels == 1 && m->input == 2)
-				for (size_t i = n; i-- > 0;)
-					audio[2 * i] = audio[2 * i + 1] = audio[i];
-			render(fx->dsp, tmp, audio, n);
-			channels = m->output;
-			memcpy(audio, tmp, channels * n * sizeof(float));
-		}
+static float fade(float level, float target, float step) {
+	return level < target ? fminf(target, level + step) : fmaxf(target, level - step);
+}
+
+static void input_audio(Session *s, Node *node, int index, unsigned solo, float *audio, size_t frames) {
+	Input *edge = node->inputs + index;
+	Node *source = s->nodes + edge->node;
+	const float *input = s->audio + edge->node * BLOCK * 2;
+	float target = !solo || ((source->upstream | node->downstream) & solo);
+	float step = 1.f / (.005f * s->sample_rate);
+	if (!s->time)
+		edge->level = target;
+	for (size_t i = 0; i < frames; ++i) {
+		edge->level = fade(edge->level, target, step);
+		for (int c = 0; c < source->channels; ++c)
+			audio[i * source->channels + c] = input[i * source->channels + c] * edge->level;
 	}
-	return channels;
+}
+
+static void process(Session *s, Node *node, unsigned solo, float *out, size_t frames) {
+	float input[BLOCK * 2];
+	if (!node->ninputs) {
+		render(node->dsp, out, NULL, frames);
+		return;
+	}
+	if (!node->path) {
+		// Cache sample-accurate controls once, then sum each input with its channel layout.
+		float gain[BLOCK], pan[BLOCK];
+		for (size_t i = 0; i < frames; ++i) {
+			controls(node, s->time + i);
+			gain[i] = node->values[0];
+			pan[i] = node->values[1];
+		}
+		memset(out, 0, 2 * frames * sizeof(float));
+		for (int j = 0; j < node->ninputs; ++j) {
+			input_audio(s, node, j, solo, input, frames);
+			int channels = s->nodes[node->inputs[j].node].channels;
+			for (size_t i = 0; i < frames; ++i) {
+				if (channels == 1) {
+					float angle = (pan[i] + 1) * .7853981633974483f, x = input[i] * gain[i];
+					out[2 * i] += x * cosf(angle);
+					out[2 * i + 1] += x * sinf(angle);
+				} else {
+					out[2 * i] += input[2 * i] * gain[i] * (pan[i] > 0 ? 1 - pan[i] : 1);
+					out[2 * i + 1] += input[2 * i + 1] * gain[i] * (pan[i] < 0 ? 1 + pan[i] : 1);
+				}
+			}
+		}
+		return;
+	}
+	input_audio(s, node, 0, solo, input, frames);
+	if (node->dsp[1].dsp) {
+		float mono[BLOCK], tmp[BLOCK];
+		for (int c = 0; c < 2; ++c) {
+			for (size_t i = 0; i < frames; ++i)
+				mono[i] = input[2 * i + c];
+			render(node->dsp + c, tmp, mono, frames);
+			for (size_t i = 0; i < frames; ++i)
+				out[2 * i + c] = tmp[i];
+		}
+	} else {
+		if (s->nodes[node->inputs[0].node].channels == 1 && node->dsp[0].config.input == 2)
+			for (size_t i = frames; i-- > 0;)
+				input[2 * i] = input[2 * i + 1] = input[i];
+		render(node->dsp, out, input, frames);
+	}
 }
 
 int session_render(Session *s, float *out, size_t frames) {
@@ -277,51 +385,42 @@ int session_render(Session *s, float *out, size_t frames) {
 		return fail(s, "render outside session");
 	while (frames) {
 		size_t n = frames < BLOCK ? frames : BLOCK;
-		unsigned audible = audible_tracks(s);
-		float step = 1.f / (.005f * s->sample_rate);
+		unsigned solo = 0, mute = 0;
+		for (int i = 0; i < s->ntracks; ++i) {
+			int flags = atomic_load_explicit(&s->tracks[i].listen, memory_order_relaxed);
+			if (flags & TRACK_SOLO)
+				solo |= 1u << i;
+			if (flags & TRACK_MUTE)
+				mute |= 1u << i;
+		}
 		session_sync(s);
-		memset(out, 0, 2 * n * sizeof(float));
-		for (int tr = 0; tr < s->ntracks; ++tr) {
-			Track *t = s->tracks + tr;
-			Node *m = s->nodes + t->mixer;
-			float audio[BLOCK * 2];
-			Engine *source = s->nodes[t->source].dsp;
-			render(source, audio, NULL, n);
-			int channels = chain(s, t, audio, source->config.output, n);
-			float target = !!(audible & (1u << tr));
-			if (!s->time)
-				t->level = target;
-			for (size_t i = 0; i < n; ++i) {
-				controls(m, s->time + i);
-				if (t->level < target)
-					t->level = fminf(target, t->level + step);
-				else if (t->level > target)
-					t->level = fmaxf(target, t->level - step);
-				float pan = m->values[1], gain = m->values[0] * t->level;
-				if (channels == 1) {
-					float angle = (pan + 1) * .7853981633974483f, x = audio[i] * gain;
-					out[2 * i] += x * cosf(angle);
-					out[2 * i + 1] += x * sinf(angle);
-				} else {
-					out[2 * i] += audio[2 * i] * gain * (pan > 0 ? 1 - pan : 1);
-					out[2 * i + 1] += audio[2 * i + 1] * gain * (pan < 0 ? 1 + pan : 1);
+		for (int i = 0; i < s->norder; ++i) {
+			int id = s->order[i];
+			Node *node = s->nodes + id;
+			float *audio = s->audio + id * BLOCK * 2;
+			process(s, node, solo, audio, n);
+			if (node->track) {
+				int j = node->track - 1;
+				Track *track = s->tracks + j;
+				float target = !(mute & (1u << j)), step = 1.f / (.005f * s->sample_rate);
+				if (!s->time)
+					track->level = target;
+				for (size_t k = 0; k < n; ++k) {
+					track->level = fade(track->level, target, step);
+					audio[2 * k] *= track->level;
+					audio[2 * k + 1] *= track->level;
 				}
 			}
+			for (size_t j = 0; j < n * node->channels; ++j)
+				if (!isfinite(audio[j]))
+					return fail(s, "non-finite audio");
 		}
-		if (s->has_master) {
-			if (chain(s, &s->master, out, 2, n) == 1)
-				for (size_t i = n; i-- > 0;)
-					out[2 * i] = out[2 * i + 1] = out[i];
-			Node *m = s->nodes + s->master.mixer;
-			for (size_t i = 0; i < n; ++i) {
-				controls(m, s->time + i);
-				out[2 * i] *= m->values[0];
-				out[2 * i + 1] *= m->values[0];
-			}
-		}
-		for (size_t i = 0; i < 2 * n; ++i)
-			if (!isfinite(out[i]))
-				return fail(s, "non-finite audio");
+		const float *audio = s->audio + s->output * BLOCK * 2;
+		if (s->nodes[s->output].channels == 1)
+			for (size_t i = 0; i < n; ++i)
+				out[2 * i] = out[2 * i + 1] = audio[i];
+		else
+			memcpy(out, audio, 2 * n * sizeof(float));
 		s->time += n;
 		frames -= n;
 		out += 2 * n;
@@ -336,6 +435,9 @@ void session_free(Session *s) {
 		close_engine(n->dsp + 1);
 		free(n->events);
 		free(n->path);
+		free(n->name);
+		free(n->inputs);
 	}
+	free(s->audio);
 	*s = (Session){0};
 }

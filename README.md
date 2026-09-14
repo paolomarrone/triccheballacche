@@ -1,8 +1,8 @@
 # triccheballacche
 
 A minimal scriptable DAW: Janet scores, C audio, Perone plugins. Mono and stereo
-instruments feed effect chains and a stereo mix. Native and browser hosts share
-the scheduler, mixer, player, editor and score projection.
+audio nodes form a graph of instruments, effects and stereo mixes. Native and
+browser hosts share the scheduler, mixer, player, editor and score projection.
 
 ## Build and run
 
@@ -85,10 +85,12 @@ needed. Clicking a note selects its source when available. Timing follows
 rendered audio, without compensating for device latency or plugin release tails.
 
 **M** mutes a track; **S** solos it. Multiple solos play together, and mute takes
-precedence. Dimmed lanes remain scheduled: instruments, effects and volume
-automation keep advancing. Switching uses a 5 ms fade. These listening controls
-survive Stop/Play; a successful Run clears them for the new score. They do not
-change the Janet source or a separate offline export.
+precedence. Solo follows graph paths: a group retains its upstream sources; a
+source retains its downstream processing. Other parallel routes are excluded,
+including direct paths that share the same source. Audition changes fade over
+5 ms and leave score automation and DSP clocks running. Stop/Play preserves them;
+a new Run clears them. A track over a mix is a group row; its notes stay on the
+original source rows, and its plugin panel stops at upstream track boundaries.
 
 The editor uses a textarea and plain JavaScript. It does not yet provide syntax
 highlighting, MIDI editing, parameter curves or live replacement of a running
@@ -105,6 +107,7 @@ Save this as `score.janet` in the repository root and run
 (def synth (daw/plugin "plugins/synth_mono/build/plugin.perone" {:vcf_cutoff 900}))
 (def filter (daw/plugin "plugins/tibia_test/build/plugin.perone" {:cutoff 2000}))
 (def track (daw/track synth {:effects [filter] :gain 0.5 :pan -0.2}))
+(daw/output track)
 
 (daw/note synth 0 4 60)
 (daw/param synth 1 :vcf_cutoff 6000)
@@ -119,8 +122,11 @@ plugin paths are relative to the host's working directory.
 | Call | Contract |
 | --- | --- |
 | `daw/plugin path &opt params` | Create a plugin handle with optional initial parameter overrides. |
-| `daw/track source &opt options` | Attach a source and effects; return the track mixer handle. |
-| `daw/master &opt options` | Configure the optional master once; return its mixer handle. |
+| `daw/through signal effect` | Bind an effect's input once; return its output handle. |
+| `daw/mix signals &opt options` | Sum one or more signals into a stereo gain/pan node. |
+| `daw/track signal &opt options` | Add effects and a visible mixer point with mute/solo. |
+| `daw/master signal &opt options` | Add an optional mixer point labeled Master, without mute/solo. |
+| `daw/output signal` | Select the sole final output. Tracks and master never connect implicitly. |
 | `daw/note plugin start duration pitch &opt velocity` | MIDI pitch 0–127, velocity 1–127 (default 100), duration of at least one sample. |
 | `daw/param node time parameter value` | Schedule an input parameter on a plugin or mixer, by keyword or index. |
 | `daw/info node` | Immutable parameter descriptions: index, name, label, direction, unit, range, default, integer flag, mapping and scale points. |
@@ -128,9 +134,11 @@ plugin paths are relative to the host's working directory.
 | `daw/schedule start bpm pattern` | Emit a pattern in quarter-note beats; return its nominal end in seconds. |
 | `daw/end seconds &opt options` | Seal the score and set duration and export options. Playback/export follows successful preparation. |
 
-Track options are `:effects [fx1 fx2 ...]`, `:gain` 0–4 (default 1), and `:pan`
-−1–1 (default 0). The master accepts effects and gain; its default is unity.
-Each plugin belongs to exactly one chain. Unattached plugins, unknown options,
+Mix options are `:gain` 0–4 (default 1) and `:pan` −1–1 (default 0).
+Tracks and master also accept `:effects [fx1 fx2 ...]` and an optional `:name`.
+A handle always refers to the same node: sharing it reuses the audio, while calling
+`daw/plugin` again creates another instance. Each effect has one input; mix signals
+before a shared effect. Cycles, nodes that do not reach the output, unknown options,
 invalid parameter names, out-of-range values and noninteger values for integer
 parameters are errors. Output parameters are readable but cannot be scheduled.
 `daw/info` retains the product defaults, independently of initial overrides.
@@ -201,13 +209,30 @@ scheduling error is caught, events already emitted remain in the session.
 
 ## Audio and export
 
-```text
-source → effects → gain/pan → stereo sum → master effects → master gain
+Audio topology is an acyclic graph, fixed during preparation. Janet functions
+compose signals; existing patterns automate gains and plugin parameters over time.
+For example, with `drums` and `bass` already defined:
+
+```janet
+(def rhythm (daw/mix [drums bass]))
+(def dry (daw/mix [rhythm]))
+(def wet (daw/mix [(daw/through rhythm
+  (daw/plugin "plugins/shape/build/plugin.perone" {:drive 3}))] {:gain 0}))
+(daw/output (daw/mix [dry wet]))
+(daw/param dry 8 :gain 0)
+(daw/param wet 8 :gain 1)
 ```
+
+Use a curve of parameter events for a gradual crossfade. Gain before an effect
+controls its input and preserves its tail; gain after it controls the tail too.
+Each node runs once per block even when inaudible, keeping DSP state and automation
+advancing. Master uses the same graph renderer as every other mixer.
+[The routing example](examples/routing.janet) demonstrates a shared rhythm bus,
+parallel distortion/echo and a crossfade.
 
 A mono 1→1 effect on stereo uses two independent instances. Mono is duplicated
 at equal amplitude for a 2→2 effect; a 1→2 effect accepts only mono input.
-Stereo-to-mono conversion requires a 2→1 plugin. The master always outputs stereo.
+Stereo-to-mono conversion requires a 2→1 plugin. Mixers output stereo; a mono final output is duplicated at equal amplitude.
 Mono panning uses constant power (about −3 dB per channel at center); stereo uses
 linear balance, with unity at center and no channel mixing.
 
@@ -282,6 +307,7 @@ input changes. Native and web UI lifecycle tests are described in the [test guid
 | Score | Content and required bundles |
 | --- | --- |
 | [hello](examples/hello.janet) | Minimal local synth score. |
+| [routing](examples/routing.janet) | Shared rhythm bus, parallel distortion/echo and a crossfade; local plugins. |
 | [automation](examples/automation.janet) | One minute of effect and mixer automation; local plugins. |
 | [patterns](examples/patterns.janet) | Repetition, reversal, transposition, stretching and a filter curve; Brickworks synth. |
 | [brickworks](examples/brickworks.janet) | Original C/C++ synth, compressor, mono-to-stereo pan and reverb bundles. |
@@ -319,7 +345,8 @@ Wasm are verified. `TARGET_OS=Darwin` omits `-ldl`, but macOS remains unverified
 Windows still needs native loader, export and CLI backends. Desktop UI hosts
 currently require X11. Each native platform needs matching plugin binaries.
 
-Preparation builds and sorts all events, then closes Janet before audio starts.
+Preparation validates channel layouts, orders the audio graph, allocates its buffers
+and sorts events, then closes Janet before audio starts.
 The editor owns a cache of loaded modules; each prepared session owns its DSP
 instances, and the player owns the audio device. Stop retains all three.
 Play restores initial input parameters and mixer gain/pan, resets DSPs and event
@@ -332,7 +359,8 @@ it on Run. The web host caches compiled Wasm modules and creates DSP instances
 directly in the worklet, once per prepared score.
 The engine allocates no memory during processing; mixing buffers are independent
 of duration, while stored events are not. Current limits are 32 tracks, 128 nodes,
-8 effects per chain, 64 parameters per plugin, 3600 seconds and one export per run.
+8 effects in a track convenience call (longer paths use `daw/through`),
+64 parameters per plugin, 3600 seconds and one export per run.
 Sample rates range from 1 to 384000 Hz and remain fixed for the session.
 
 Plugins may have one main mono/stereo audio output, at most one main mono/stereo

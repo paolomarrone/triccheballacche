@@ -3,6 +3,8 @@
 (import ../lib/music)
 (import ../lib/pattern :as p)
 
+(def tracks @[])
+
 (def asid (or (os/getenv "ASID_PERONE") "../asid/plugin/perone/build/asid.perone"))
 (defn synth [params] (daw/plugin "plugins/synth_mono/build/plugin.perone" params))
 (defn echo [params] (daw/plugin "plugins/echo/build/plugin.perone" params))
@@ -15,18 +17,20 @@
                       :vco2_level 23 :vco2_fine (if (= i 0) -11 9)
                       :vcf_cutoff 6800 :vca_attack 2 :vca_decay 270
                       :vca_sustain 0 :vca_release 210}))
-    (daw/track voice {:gain 0.62 :pan (if (= i 0) -0.52 0.52)
-                     :effects [(echo {:time1 179 :time2 359 :time3 719
-                                      :level1 0.28 :level2 0.17 :level3 0.1})]})
+    (array/push tracks
+      (daw/track voice {:gain 0.62 :pan (if (= i 0) -0.52 0.52)
+                       :effects [(echo {:time1 179 :time2 359 :time3 719
+                                        :level1 0.28 :level2 0.17 :level3 0.1})]}))
     voice))
 (def pads
   (seq [i :range [0 3]]
     (def voice (synth {:volume 55 :vco1_wave 3 :vco2_wave 2 :vco2_level 20
                       :vco2_fine (- (* i 9) 8) :vcf_cutoff 1600 :vcf_resonance 8
                       :vca_attack 180 :vca_decay 600 :vca_sustain 55 :vca_release 950}))
-    (daw/track voice {:gain 0.25 :pan ([-0.72 0 0.72] i)
-                     :effects [(echo {:time1 401 :time2 809 :time3 1217
-                                      :level1 0.22 :level2 0.14 :level3 0.09})]})
+    (array/push tracks
+      (daw/track voice {:gain 0.25 :pan ([-0.72 0 0.72] i)
+                       :effects [(echo {:time1 401 :time2 809 :time3 1217
+                                        :level1 0.22 :level2 0.14 :level3 0.09})]}))
     voice))
 
 # A-SID is the acid voice's moving filter, before saturation and a short, dry echo.
@@ -38,9 +42,11 @@
 (def acid-track (daw/track acid {:gain 0.42 :pan -0.1
                                :effects [mouth teeth (echo {:time1 89 :time2 179 :time3 269
                                                            :level1 0.14 :level2 0.08 :level3 0.04})]}))
+(array/push tracks acid-track)
 (def sub (synth {:volume 72 :vco1_wave 3 :vcf_cutoff 250
                 :vca_attack 3 :vca_decay 180 :vca_sustain 45 :vca_release 65}))
-(daw/track sub {:gain 0.55})
+(array/push tracks
+  (daw/track sub {:gain 0.55}))
 
 # Kick, snare and hats have separate tails. The fourth voice is the broken machinery.
 (def metal (daw/plugin asid {:cutoff 74 :lfo_amount 42 :lfo_speed 62}))
@@ -54,10 +60,14 @@
         3 [metal (shape {:drive 4 :level 0.55 :dc 0.002})
            (echo {:time1 47 :time2 97 :time3 193 :level1 0.2 :level2 0.11 :level3 0.06})]
         []))
-    (daw/track voice {:gain ([0.85 0.65 0.27 0.48] i) :pan ([0 -0.08 0.38 -0.46] i) :effects effects})
+    (array/push tracks
+      (daw/track voice {:gain ([0.85 0.65 0.27 0.48] i) :pan ([0 -0.08 0.38 -0.46] i) :effects effects}))
     voice))
 # A bounded waveshaper leaves playback headroom even without export normalization.
-(def master (daw/master {:effects [(shape {:drive 1.2 :level 0.82 :lowpass 0.9})]}))
+(def master
+  (daw/master (daw/mix tracks)
+    {:effects [(shape {:drive 1.2 :level 0.82 :lowpass 0.9})]}))
+(daw/output master)
 
 # These builders only collect pattern data; scheduling happens once, at the end.
 (defn control [items t node key value]

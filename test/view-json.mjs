@@ -33,6 +33,8 @@ for (const rate of [44100, 48000]) {
             finally { host._free(pointer); }
         });
         assert.deepEqual(actual, expected, `Native/Wasm query mismatch at ${rate}`);
+        assert.equal(actual[0].score.tracks[0][0], 0, "Serial effects retain the original note source");
+        assert.deepEqual(actual[0].score.nodes[1].inputs, [0]);
         assert(actual[1].lanes[0].density.length === 100 && !actual[1].lanes[0].notes);
         assert(actual[2].lanes[0].notes.some(note => note[3] === 48), "Long notes crossing the viewport remain visible");
         assert(actual[3].frames.some(frame => frame[0] === "test/trace-helper.janet") && actual[4].frames.length);

@@ -6,7 +6,7 @@ import {Perone} from "../web/perone.js";
 
 const host = await createHost({printErr: () => {}});
 for (const path of ["lib/music.janet", "lib/pattern.janet", "test/music.janet", "test/pattern.janet",
-    "test/daw.janet", "test/schedule.janet", "test/playback.janet", "build/fixture.perone/product.json", "build/effect.perone/product.json",
+    "test/daw.janet", "test/schedule.janet", "test/playback.janet", "test/routing.janet", "build/fixture.perone/product.json", "build/effect.perone/product.json",
     "build/fixture.perone/wasm32/fixture.wasm", "build/effect.perone/wasm32/fixture.wasm"])
     await addFile(host, path, fs.readFileSync(path));
 
@@ -22,7 +22,7 @@ function pcm(file) {
 }
 
 for (const rate of [44100, 48000]) {
-    for (const score of ["test/schedule.janet", "test/playback.janet", "test/daw.janet"]) {
+    for (const score of ["test/schedule.janet", "test/playback.janet", "test/routing.janet", "test/daw.janet"]) {
         const file = `build/web/reference-${rate}.wav`;
         try {
             const result = spawnSync("./build/daw", [score, file, String(rate)], {encoding: "utf8"});
@@ -48,6 +48,16 @@ assert.throws(() => renderScore(host, "test/bad.janet", 48000));
 assert.equal(host.perone.instances.size, 0);
 assert.throws(() => renderScore(host, "test/schedule.janet", 384001));
 assert.equal(host.perone.instances.size, 0);
+for (const tail of [
+    '(daw/output f) (daw/end 1)',
+    '(daw/through f f) (daw/output f) (daw/end 1)',
+    '(daw/through p f) (daw/output p) (daw/end 1)',
+    '(daw/through p f) (daw/through p f) (daw/output f) (daw/end 1)']) {
+    await addFile(host, "test/invalid-graph.janet", new TextEncoder().encode(
+        '(def p (daw/plugin "build/fixture.perone")) (def f (daw/plugin "build/effect.perone")) ' + tail));
+    assert.throws(() => renderScore(host, "test/invalid-graph.janet", 48000));
+    assert.equal(host.perone.instances.size, 0, "Invalid graph leaked DSP instances");
+}
 // A subsequent valid score still works after errors.
 assert.equal(renderScore(host, "test/schedule.janet", 48000).length, 144000);
 console.log("OK: Janet patterns, validation, stereo/mono DSP, event boundaries and 60-second automation match native PCM exactly at 44.1/48 kHz; cleanup and recovery pass");

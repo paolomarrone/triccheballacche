@@ -2,6 +2,8 @@
 # Only the melody comes from falalalan.mid; bass, harmony and drums are new.
 (import ../lib/pattern :as p)
 
+(def tracks @[])
+
 (defn phrase [notes]
   (p/serial (seq [[pitch beats] :in notes]
     (p/events beats (if pitch [[0 beats pitch]] [])))))
@@ -24,12 +26,14 @@
    :vcf_cutoff 3200 :vcf_resonance 12 :vcf_contour 30 :vcf_decay 100 :vcf_sustain 0
    :vca_attack 3 :vca_decay 170 :vca_sustain 46 :vca_release 42}))
 (def delay (echo {:time1 312.5 :time2 625 :time3 937.5 :level1 0.17 :level2 0.08 :level3 0.035}))
-(daw/track lead {:gain 0.8 :pan 0.12 :effects [delay]})
+(array/push tracks
+  (daw/track lead {:gain 0.8 :pan 0.12 :effects [delay]}))
 (def bass (bw "synth_mono"
   {:volume 90 :vco1_wave 2 :vco1_pw 48 :vco2_wave 3 :vco2_level 80
    :vcf_cutoff 550 :vcf_resonance 10 :vcf_contour 32 :vcf_decay 115 :vcf_sustain 0
    :vca_attack 3 :vca_decay 165 :vca_sustain 30 :vca_release 35}))
 (def bass-track (daw/track bass {:gain 1 :effects [(shape {:drive 1.8 :level 0.8 :dc 0.001})]}))
+(array/push tracks bass-track)
 (def acid (bw "synth_mono"
   {:volume 82 :vco1_wave 1 :vco2_wave 2 :vco2_coarse -1 :vco2_level 42
    :vcf_cutoff 800 :vcf_resonance 72 :vcf_contour 45 :vcf_decay 140 :vcf_sustain 0
@@ -39,6 +43,7 @@
 (def acid-track (daw/track acid {:gain 0.82 :pan -0.3 :effects
   [sid (shape {:drive 2.8 :level 0.72 :dc 0.001})
    (echo {:time1 156.25 :time2 312.5 :time3 468.75 :level1 0.16 :level2 0.08 :level3 0.04})]}))
+(array/push tracks acid-track)
 (def stab (bw "synth_poly"
   {:volume 76 :vco1_wave 1 :vco2_wave 2 :vco2_fine -5 :vco2_level 55
    :vcf_cutoff 1800 :vcf_contour 30 :vcf_decay 90 :vcf_sustain 0
@@ -46,26 +51,32 @@
 (def room (bw "fx_reverb" {:predelay 26 :damping 3800 :decay 65 :wet 15}))
 (def stab-track (daw/track stab {:gain 0.58 :pan 0.42 :effects
   [(bw "fx_chorus" {:rate 0.4 :depth 12}) room]}))
+(array/push tracks stab-track)
 (def air (bw "synth_mono"
   {:volume 55 :vco1_level 0 :noise_level 100 :vcf_cutoff 900
    :vca_attack 70 :vca_sustain 100 :vca_release 320}))
-(daw/track air {:gain 0.5 :pan -0.15 :effects [(bw "fx_hp1" {:cutoff 700})]})
+(array/push tracks
+  (daw/track air {:gain 0.5 :pan -0.15 :effects [(bw "fx_hp1" {:cutoff 700})]}))
 
 (def bits (bw "fx_bitcrush" {:bit_depth 10 :sr_ratio 60}))
 (def drums
   (seq [i :range [0 4]]
     (def voice (daw/plugin "plugins/drums/build/plugin.perone" {:seed (+ 1441526 (* i 65537))}))
-    (daw/track voice {:gain ([1.65 1.1 0.44 0.55] i) :pan ([0 -0.06 0.3 -0.48] i)
-      :effects (case i
-        0 [(shape {:drive 1.55 :level 0.9})]
-        1 [(shape {:drive 1.65 :level 0.85})
-           (echo {:time1 12 :time2 24 :time3 36 :level1 0.24 :level2 0.18 :level3 0.1})]
-        3 [bits (echo {:time1 104.167 :time2 208.333 :time3 416.667
-                      :level1 0.2 :level2 0.1 :level3 0.04})]
-        [])})
+    (array/push tracks
+      (daw/track voice {:gain ([1.65 1.1 0.44 0.55] i) :pan ([0 -0.06 0.3 -0.48] i)
+        :effects (case i
+          0 [(shape {:drive 1.55 :level 0.9})]
+          1 [(shape {:drive 1.65 :level 0.85})
+             (echo {:time1 12 :time2 24 :time3 36 :level1 0.24 :level2 0.18 :level3 0.1})]
+          3 [bits (echo {:time1 104.167 :time2 208.333 :time3 416.667
+                        :level1 0.2 :level2 0.1 :level3 0.04})]
+          [])}))
     voice))
-(def master (daw/master {:effects [(bw "fx_hp1" {:cutoff 26})
-                                 (shape {:drive 1.12 :level 0.9 :lowpass 0.96})]}))
+(def master
+  (daw/master (daw/mix tracks)
+    {:effects [(bw "fx_hp1" {:cutoff 26})
+               (shape {:drive 1.12 :level 0.9 :lowpass 0.96})]}))
+(daw/output master)
 
 (defn control [items t node key value]
   (array/push items [t t [:param node key value]]))

@@ -6,12 +6,14 @@ export function timeline(request, select, selectTrack, error) {
     let score, data, from = 0, scale = 0.02, time = 0, playing = false;
     let width = 0, height = 0, row = 60, label = 220, version = 0, pending = false, scheduled = false;
     let hits = [], drag, selected, rowHeight = 60, trackIndex = 0;
-    let listening = [], enabled = false;
+    let listening = [], outputs = [], enabled = false;
     const changing = new Set();
     const ruler = 24;
 
     function audible(index) {
-        return !(listening[index] & 1) && (!listening.some(flags => flags & 2) || (listening[index] & 2));
+        const node = score.nodes[score.tracks[index][1]];
+        const solo = listening.reduce((mask, flags, i) => mask | (flags & 2 ? 1 << i : 0), 0);
+        return !(listening[index] & 1) && (!solo || ((node.upstream | node.downstream) & solo));
     }
 
     function buttons() {
@@ -76,9 +78,25 @@ export function timeline(request, select, selectTrack, error) {
         }
     }
 
+    function name(track) {
+        return score.nodes[track[1]].label || (track[0] < 0 ? "Master" : score.nodes[track[0]].name);
+    }
+
+    function destinations(id, seen = new Set(), names = new Set()) {
+        if (seen.has(id)) return names;
+        seen.add(id);
+        if (id === score.output) names.add("out");
+        for (const next of outputs[id]) {
+            const track = score.tracks.find(t => t[1] === next);
+            if (track) names.add(name(track));
+            else destinations(next, seen, names);
+        }
+        return names;
+    }
+
     function chain(track) {
-        const [source, , ...effects] = track;
-        return [source < 0 ? "Master" : score.nodes[source].name, ...effects.map(id => score.nodes[id].name)].join(" → ");
+        const effects = track.slice(2).map(id => score.nodes[id].name);
+        return [name(track), ...effects, [...destinations(track[1])].join(" + ")].join(" → ");
     }
 
     function pitchRange(track) {
@@ -286,20 +304,22 @@ export function timeline(request, select, selectTrack, error) {
         score(value) {
             score = value; data = selected = undefined; from = 0; roll.scrollTop = 0;
             listening = score.tracks.map(() => 0);
+            outputs = score.nodes.map(() => []);
+            score.nodes.forEach((node, id) => node.inputs.forEach(input => outputs[input].push(id)));
             changing.clear();
             detail.textContent = ""; detail.title = "";
             trackIndex = Math.min(trackIndex, Math.max(0, score.tracks.length - 1));
             tracks.replaceChildren(...score.tracks.map((track, index) => {
                 const lane = document.createElement("div");
                 lane.className = "track";
-                const button = document.createElement("button"), name = document.createElement("span"), effects = document.createElement("small");
+                const button = document.createElement("button"), title = document.createElement("span"), effects = document.createElement("small");
                 button.className = "track-select";
-                name.textContent = `${index + 1}  ${track[0] < 0 ? "Master" : score.nodes[track[0]].name}`;
-                effects.textContent = track.length > 2 ? track.slice(2).map(id => score.nodes[id].name).join(" → ") : "→ out";
+                title.textContent = `${index + 1}  ${name(track)}`;
+                effects.textContent = chain(track).slice(name(track).length + 1);
                 button.title = chain(track);
                 button.dataset.track = index;
                 button.setAttribute("aria-pressed", index === trackIndex);
-                button.append(name, effects);
+                button.append(title, effects);
                 button.onclick = () => {
                     trackIndex = index;
                     for (const child of tracks.querySelectorAll(".track-select")) child.setAttribute("aria-pressed", child === button);

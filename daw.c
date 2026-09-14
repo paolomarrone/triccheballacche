@@ -63,14 +63,15 @@ static Janet plugin(int32_t argc, Janet *argv) {
 }
 
 static Janet make_track(int32_t argc, Janet *argv, int master) {
-	int offset = master ? 0 : 1;
-	janet_arity(argc, offset, offset + 1);
-	int source = master ? -1 : handle(argv[0]);
-	Janet opts = argc > offset ? argv[offset] : janet_wrap_nil();
-	const char *const track_keys[] = {"gain", "effects", "pan", NULL}, *const master_keys[] = {"gain", "effects", NULL};
-	options(opts, master ? master_keys : track_keys);
+	janet_arity(argc, 1, 2);
+	int source = handle(argv[0]);
+	Janet opts = argc == 2 ? argv[1] : janet_wrap_nil();
+	const char *const keys[] = {"gain", "effects", "pan", "name", NULL};
+	options(opts, keys);
 	float gain = number(option(opts, "gain", janet_wrap_number(1)), 0, 4);
 	float pan = number(option(opts, "pan", janet_wrap_number(0)), -1, 1);
+	Janet name = option(opts, "name", janet_wrap_nil());
+	const char *label = janet_checktype(name, JANET_NIL) ? NULL : janet_getcstring(&name, 0);
 	Janet fx = option(opts, "effects", janet_wrap_nil());
 	int ids[MAX_FX], count = 0;
 	if (!janet_checktype(fx, JANET_NIL)) {
@@ -82,8 +83,9 @@ static Janet make_track(int32_t argc, Janet *argv, int master) {
 	}
 	int id = checked(session_track(current, source, ids, count, master));
 	checked(session_set(current, id, 0, gain));
-	if (!master)
-		checked(session_set(current, id, 1, pan));
+	checked(session_set(current, id, 1, pan));
+	if (label && !(current->nodes[id].name = copy_string(label)))
+		janet_panic("out of memory");
 	return janet_wrap_integer(id);
 }
 
@@ -93,6 +95,35 @@ static Janet track(int32_t argc, Janet *argv) {
 
 static Janet master(int32_t argc, Janet *argv) {
 	return make_track(argc, argv, 1);
+}
+
+static Janet through(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 2);
+	return janet_wrap_integer(checked(session_through(current, handle(argv[0]), handle(argv[1]))));
+}
+
+static Janet mix(int32_t argc, Janet *argv) {
+	janet_arity(argc, 1, 2);
+	JanetView inputs = janet_getindexed(argv, 0);
+	if (inputs.len < 1 || inputs.len > MAX_NODES)
+		janet_panic("invalid mix size");
+	int ids[MAX_NODES];
+	for (int i = 0; i < inputs.len; ++i)
+		ids[i] = handle(inputs.items[i]);
+	Janet opts = argc == 2 ? argv[1] : janet_wrap_nil();
+	const char *const keys[] = {"gain", "pan", NULL};
+	options(opts, keys);
+	float gain = number(option(opts, "gain", janet_wrap_number(1)), 0, 4);
+	float pan = number(option(opts, "pan", janet_wrap_number(0)), -1, 1);
+	int id = checked(session_mix(current, ids, inputs.len));
+	checked(session_set(current, id, 0, gain));
+	checked(session_set(current, id, 1, pan));
+	return janet_wrap_integer(id);
+}
+
+static Janet connect_output(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 1);
+	return janet_wrap_integer(checked(session_output(current, handle(argv[0]))));
 }
 
 static Janet note(int32_t argc, Janet *argv) {
@@ -237,7 +268,10 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 	}
 	const JanetReg api[] = {{"plugin", plugin, "(native/plugin binary layout defaults) -> plugin handle"},
 	    {"track", track, "(native/track source &opt {:effects [...] :gain 1 :pan 0}) -> mixer handle"},
-	    {"master", master, "(native/master &opt {:effects [...] :gain 1}) -> mixer handle"},
+	    {"master", master, "(native/master signal &opt options) -> mixer handle"},
+	    {"through", through, "(native/through signal effect) -> effect handle"},
+	    {"mix", mix, "(native/mix signals &opt {:gain 1 :pan 0}) -> mixer handle"},
+	    {"output", connect_output, "(native/output signal) Select the final audio output."},
 	    {"note", note, "(daw/note plugin seconds duration pitch &opt velocity)"},
 	    {"event-count", event_count, "(native/event-count node) -> scheduled event count"}, {"project", project, NULL},
 	    {"param", parameter, "(native/param node seconds index value)"},

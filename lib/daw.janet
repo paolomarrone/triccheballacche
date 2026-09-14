@@ -46,9 +46,19 @@
   (put daw/nodes id daw/mixer-parameters)
   id)
 
-(defn daw/master [&opt options]
-  (def id (native/master options))
-  (put daw/nodes id [(daw/mixer-parameters 0)])
+(defn daw/master [signal &opt options]
+  (def id (native/master signal options))
+  (put daw/nodes id daw/mixer-parameters)
+  id)
+
+(def daw/through native/through)
+(def daw/output native/output)
+
+(defn daw/mix
+  "Sum signals into a stereo mixer. Reusing a signal shares its audio, including DSP state."
+  [signals &opt options]
+  (def id (native/mix signals options))
+  (put daw/nodes id daw/mixer-parameters)
   id)
 
 (defn daw/param [node time parameter value]

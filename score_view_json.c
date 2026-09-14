@@ -9,13 +9,19 @@ static int integer(double value, double lo, double hi) {
 }
 
 static void metadata(Json *json, const ScoreView *view, unsigned revision) {
-	json_print(json, ",\"score\":{\"revision\":%u,\"end\":%.17g,\"nodes\":[", revision, view->end);
+	json_print(
+	    json, ",\"score\":{\"revision\":%u,\"end\":%.17g,\"output\":%d,\"nodes\":[", revision, view->end, view->output);
 	for (int i = 0; i < view->nnodes; ++i) {
 		const ScoreNode *node = view->nodes + i;
 		ScoreSummary summary = node->count ? node->events[node->count / 2].summary : (ScoreSummary){0};
 		json_print(json, "%s{\"name\":", i ? "," : "");
 		json_string(json, node->name);
-		json_print(json, ",\"bundle\":");
+		json_print(json, ",\"label\":");
+		json_string(json, node->label);
+		json_print(json, ",\"upstream\":%u,\"downstream\":%u,\"inputs\":[", node->upstream, node->downstream);
+		for (int j = 0; j < node->ninputs; ++j)
+			json_print(json, "%s%d", j ? "," : "", node->inputs[j]);
+		json_print(json, "],\"bundle\":");
 		json_string(json, node->bundle);
 		json_print(json, ",\"product\":%s,\"low\":%d,\"high\":%d}", node->product ? node->product : "null", summary.low,
 		    summary.high);

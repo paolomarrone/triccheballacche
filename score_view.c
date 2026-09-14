@@ -5,6 +5,7 @@
 void score_view_free(ScoreView *view) {
 	for (int i = 0; i < view->nnodes; ++i) {
 		free(view->nodes[i].name);
+		free(view->nodes[i].label);
 		free(view->nodes[i].bundle);
 		free(view->nodes[i].product);
 		free(view->nodes[i].events);
@@ -21,14 +22,32 @@ void score_view_free(ScoreView *view) {
 }
 
 int score_view_init(ScoreView *view, const Session *session) {
-	*view = (ScoreView){
-	    .nnodes = session->nnodes, .ntracks = session->ntracks, .end = (double)session->frames / session->sample_rate};
+	*view = (ScoreView){.nnodes = session->nnodes,
+	    .ntracks = session->ntracks,
+	    .output = session->output,
+	    .end = (double)session->frames / session->sample_rate};
 	memcpy(view->tracks, session->tracks, session->ntracks * sizeof(Track));
-	if (session->has_master)
-		view->tracks[view->ntracks++] = session->master;
+	// A serial processing path keeps the original source's notes. Stop at another
+	// track or a sum: group rows do not duplicate the notes of their input tracks.
+	for (int i = 0; i < view->ntracks; ++i) {
+		int *id = &view->tracks[i].source;
+		while (!session->nodes[*id].track && session->nodes[*id].ninputs == 1)
+			*id = session->nodes[*id].inputs[0].node;
+	}
+	if (session->has_master) {
+		view->tracks[view->ntracks] = session->master;
+		view->tracks[view->ntracks++].source = -1;
+	}
 	for (int i = 0; i < session->nnodes; ++i) {
 		const Node *source = session->nodes + i;
 		ScoreNode *node = view->nodes + i;
+		node->ninputs = source->ninputs;
+		for (int j = 0; j < source->ninputs; ++j)
+			node->inputs[j] = source->inputs[j].node;
+		node->upstream = source->upstream;
+		node->downstream = source->downstream;
+		if (source->name && !(node->label = copy_string(source->name)))
+			return -1;
 		const char *name = source->path ? strrchr(source->path, '/') : NULL;
 		node->name = copy_string(name ? name + 1 : source->path ? source->path : "Mixer");
 		if (source->path) {

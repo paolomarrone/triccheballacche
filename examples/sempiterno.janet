@@ -3,6 +3,8 @@
 # All three parts follow the supplied score, including accidentals and the octave clef.
 (import ../lib/pattern :as p)
 
+(def tracks @[])
+
 (def root (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
 (defn bw [name &opt params]
   (daw/plugin (string root "/" name "/build/bw_example_" name ".perone") params))
@@ -24,6 +26,7 @@
   (seq [[i voice] :pairs manuals]
     (daw/track voice {:gain ([0.48 0.28 0.36] i) :pan ([-0.1 0.3 -0.3] i)
                      :effects [(rooms i)]})))
+(array/concat tracks manual-tracks)
 (def mixture (bw "synth_mono"
   {:volume 74 :vco1_wave 2 :vco1_pw 50 :vco2_wave 3 :vco2_coarse 1.584963
    :vco2_level 45 :vco3_wave 3 :vco3_coarse 2 :vco3_level 38
@@ -31,6 +34,7 @@
 (def rotor (bw "fx_trem" {:rate 5 :amount 20}))
 (def mixture-track (daw/track mixture {:gain 0.3 :pan 0.38 :effects
   [rotor (echo {:time1 94 :time2 188 :time3 375 :level1 0.12 :level2 0.07 :level3 0.04})]}))
+(array/push tracks mixture-track)
 
 # A-SID supplies the moving acid filter; the pedal keeps the original tenor's roots.
 (def bass (bw "synth_mono"
@@ -40,24 +44,30 @@
 (def sid (daw/plugin (or (os/getenv "ASID_PERONE") "../asid/plugin/perone/build/asid.perone")
   {:cutoff 49 :lfo_amount 16 :lfo_speed 31}))
 (def grit (shape {:drive 3.5 :level 0.7 :dc 0.001 :lowpass 0.88}))
-(daw/track bass {:gain 0.76 :effects [sid grit]})
+(array/push tracks
+  (daw/track bass {:gain 0.76 :effects [sid grit]}))
 (def pedal (bw "synth_mono"
   {:volume 80 :vco1_wave 3 :vcf_cutoff 210 :vca_attack 3
    :vca_decay 170 :vca_sustain 42 :vca_release 28}))
-(daw/track pedal {:gain 0.56})
+(array/push tracks
+  (daw/track pedal {:gain 0.56}))
 (def drums
   (seq [i :range [0 4]]
     (def voice (daw/plugin "plugins/drums/build/plugin.perone" {:seed (+ 1599 (* i 12289))}))
-    (daw/track voice {:gain ([1.65 1.1 0.46 0.65] i) :pan ([0 -0.06 0.28 -0.35] i)
-      :effects (case i
-        0 [(shape {:drive 1.15 :level 0.93})]
-        1 [(echo {:time1 13 :time2 29 :time3 61 :level1 0.14 :level2 0.08 :level3 0.04})]
-        3 [(shape {:drive 2.5 :level 0.7 :dc 0.002})]
-        [])})
+    (array/push tracks
+      (daw/track voice {:gain ([1.65 1.1 0.46 0.65] i) :pan ([0 -0.06 0.28 -0.35] i)
+        :effects (case i
+          0 [(shape {:drive 1.15 :level 0.93})]
+          1 [(echo {:time1 13 :time2 29 :time3 61 :level1 0.14 :level2 0.08 :level3 0.04})]
+          3 [(shape {:drive 2.5 :level 0.7 :dc 0.002})]
+          [])}))
     voice))
 # Leave transients room. This explicit bound also applies during live playback.
-(def master (daw/master {:effects [(bw "fx_hp1" {:cutoff 24})
-                                 (shape {:drive 1.05 :level 0.9 :lowpass 0.96})]}))
+(def master
+  (daw/master (daw/mix tracks)
+    {:effects [(bw "fx_hp1" {:cutoff 24})
+               (shape {:drive 1.05 :level 0.9 :lowpass 0.96})]}))
+(daw/output master)
 
 (defn control [items t node key value]
   (array/push items [t t [:param node key value]]))

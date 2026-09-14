@@ -32,7 +32,7 @@ static void test_buffer_score(void) {
 	const char *source = "(import ../lib/music)\n"
 	                     "(assert (= (dyn :current-file) \"test/unsaved.janet\"))\n"
 	                     "(def p (daw/plugin \"build/fixture.perone\" {:gain 0.25}))\n"
-	                     "(daw/track p) (gccollect) (daw/end (music/seconds 120 1))";
+	                     "(daw/output (daw/track p)) (gccollect) (daw/end (music/seconds 120 1))";
 	assert(!prepare_score(&s, &cfg, path, source, &diagnostics, NULL) && !diagnostics);
 	float audio[2];
 	assert(!session_render(&s, audio, 1) && audio[0] == .25f && audio[1] == -.25f);
@@ -98,7 +98,7 @@ static void test_external_metadata(void) {
 	    "(def row ((daw/info p) 1)) (assert (= (row :label) \"Intensity \\\"音\\\"\")) "
 	    "(assert (= (get-in row [:scale-points :Full]) 1)) "
 	    "(assert (= (row :default) 0.5)) "
-	    "(daw/track p) (daw/param p 0.0001 :gain 0.75) (gccollect) (daw/end 0.01)"));
+	    "(daw/output (daw/track p)) (daw/param p 0.0001 :gain 0.75) (gccollect) (daw/end 0.01)"));
 	float out[20];
 	assert(!session_render(&s, out, 10));
 	for (int i = 0; i < 10; ++i) {
@@ -114,7 +114,7 @@ static void test_sample_rate(void) {
 	Output cfg;
 	assert(!script(&s, &cfg,
 	    "(def p (daw/plugin \"build/fixture.perone\" {:gain 0.25 :mode 3})) "
-	    "(daw/track p) (daw/param p 0.001 :gain 0.75) (daw/end 0.01)"));
+	    "(daw/output (daw/track p)) (daw/param p 0.001 :gain 0.75) (daw/end 0.01)"));
 	assert(s.frames == 480 && s.nodes[0].events[0].time == 48);
 	float audio[100];
 	assert(!session_render(&s, audio, 50));
@@ -253,6 +253,15 @@ static int session_bundle(Session *s, const char *path) {
 	return id;
 }
 
+// Existing flat-chain fixtures choose their output explicitly.
+static void output_tracks(Session *s) {
+	int ids[MAX_TRACKS];
+	for (int i = 0; i < s->ntracks; ++i)
+		ids[i] = s->tracks[i].mixer;
+	int root = s->has_master ? s->master.mixer : s->ntracks == 1 ? ids[0] : session_mix(s, ids, s->ntracks);
+	assert(session_output(s, root) >= 0);
+}
+
 static void listen_mix(Session *s, float left, float right) {
 	float audio[1024 * 2];
 	size_t n = s->sample_rate / 100; // Settle the 5 ms transition, including across internal blocks.
@@ -275,6 +284,7 @@ static void test_listen(void) {
 		assert(!session_param(&s, fx, rate / 2, 0, .25f));
 		assert(!session_param(&s, mixer, rate / 2, 0, .5f));
 		assert(session_listen(&s, 0, TRACK_MUTE) < 0); // No prepared project yet.
+		output_tracks(&s);
 		assert(!session_end(&s, rate));
 		listen_mix(&s, .375f, .4375f);
 		assert(session_listen(&s, -1, 0) < 0 && session_listen(&s, 3, 0) < 0);
@@ -321,6 +331,7 @@ static void test_listen(void) {
 		int source = mock(&s, 3, 1);
 		assert(session_track(&s, source, NULL, 0, 0) >= 0);
 	}
+	output_tracks(&s);
 	assert(!session_end(&s, 1) && !session_listen(&s, MAX_TRACKS - 1, TRACK_SOLO));
 	float audio[2];
 	assert(!session_render(&s, audio, 1) && audio[0] == 1 && audio[1] == -.5f);
@@ -336,6 +347,7 @@ static void test_initial_parameters(void) {
 	assert(session_track(&s, source, &fx, 1, 0) >= 0);
 	assert(!session_param(&s, fx, 2, 2, 0));
 	assert(!session_set(&s, fx, 2, .5f)); // Initial values still apply to both instances.
+	output_tracks(&s);
 	assert(!session_end(&s, 4) && !session_render(&s, out, 4));
 	for (int i = 0; i < 4; ++i) {
 		float level = i < 2 ? .5f * powf(.5f, i + 1) : .5f;
@@ -349,7 +361,7 @@ static void test_initial_parameters(void) {
 
 static void pipeline(Session *s) {
 	int source = mock(s, 0, 1), fx[] = {mock(s, 1, 2), mock(s, 2, .25f)};
-	int tr = session_track(s, source, fx, 2, 0), master = session_track(s, -1, NULL, 0, 1);
+	int tr = session_track(s, source, fx, 2, 0), master = session_track(s, tr, NULL, 0, 1);
 	assert(tr >= 0 && master >= 0);
 	assert(!session_set(s, tr, 1, -1));
 	assert(!session_param(s, fx[0], 7, 0, .75f));
@@ -357,6 +369,7 @@ static void pipeline(Session *s) {
 	assert(!session_param(s, tr, 13, 0, .5f));
 	assert(!session_param(s, tr, 17, 1, 1));
 	assert(!session_param(s, master, 19, 0, .5f));
+	output_tracks(s);
 	assert(!session_end(s, 33));
 }
 
@@ -386,11 +399,12 @@ static void test_master(void) {
 	int source = mock(&s, 0, 1), tr = session_track(&s, source, NULL, 0, 0);
 	int fx = session_bundle(&s, "build/effect.perone");
 	assert(fx >= 0 && !session_set(&s, tr, 1, -1));
-	assert(session_track(&s, -1, &fx, 1, 1) >= 0);
+	assert(session_track(&s, tr, &fx, 1, 1) >= 0);
 	assert(s.nodes[fx].dsp[0].dsp != s.nodes[fx].dsp[1].dsp);
 	assert(!session_set(&s, fx, 2, .5f));
 	assert(!session_param(&s, fx, 3, 1, .5f));
 	assert(!session_param(&s, fx, 3, 2, 0));
+	output_tracks(&s);
 	assert(!session_end(&s, 32) && !session_render(&s, audio, 32));
 	for (int i = 0; i < 32; ++i)
 		assert(fabsf(audio[2 * i] - (i < 3 ? powf(.5f, i + 1) : .5f)) < 1e-6f && audio[2 * i + 1] == 0);
@@ -402,9 +416,9 @@ static void stereo_pipeline(Session *s) {
 	int source = mock(s, 3, 1), mono = session_bundle(s, "build/effect.perone");
 	int fx[] = {mono, mock(s, 4, 1)};
 	int tr = session_track(s, source, fx, 2, 0), stereo = mock(s, 4, 1);
-	int master = session_track(s, -1, &stereo, 1, 1);
+	int master = session_track(s, tr, &stereo, 1, 1);
 	assert(tr >= 0 && master >= 0);
-	assert(s->nodes[mono].dsp[1].dsp && !s->nodes[fx[1]].dsp[1].dsp && !s->nodes[stereo].dsp[1].dsp);
+
 	assert(!session_set(s, mono, 2, .5f));
 	assert(!session_param(s, mono, 5, 1, .5f));
 	assert(!session_param(s, mono, 5, 2, 0));
@@ -412,6 +426,7 @@ static void stereo_pipeline(Session *s) {
 	assert(!session_param(s, tr, 13, 1, -1));
 	assert(!session_param(s, tr, 17, 1, 1));
 	assert(!session_param(s, master, 19, 0, .25f));
+	output_tracks(s);
 	assert(!session_end(s, 33));
 }
 
@@ -448,6 +463,7 @@ static void test_channel_transitions(void) {
 			fx[count++] = mock(&s, 6, 1); // Explicit stereo-to-mono DSP.
 		fx[count++] = mock(&s, kind == 0 ? 4 : 5, 1);
 		assert(session_track(&s, source, fx, count, 0) >= 0);
+		output_tracks(&s);
 		assert(!session_end(&s, 9) && !session_render(&s, out, 9));
 		for (int i = 0; i < 9; ++i) {
 			assert(out[2 * i] == (kind == 2 ? .25f : 1));
@@ -458,17 +474,20 @@ static void test_channel_transitions(void) {
 	Session s = {0};
 	float out[2];
 	int source = mock(&s, 3, 1), fx[] = {session_bundle(&s, "build/effect.perone"), mock(&s, 5, 1)};
-	assert(session_track(&s, source, fx, 2, 0) < 0); // No implicit stereo fold-down before a mono-to-stereo effect.
-	assert(s.ntracks == 0 && !s.nodes[fx[0]].dsp[1].dsp && !s.nodes[source].attached);
-	assert(session_track(&s, source, fx, 1, 0) >= 0);
+	assert(session_track(&s, source, fx, 2, 0) >= 0);
+	output_tracks(&s);
+	assert(session_end(&s, 1) < 0); // No implicit fold-down, validated before allocating mono adapters.
+	assert(!s.sealed && !s.audio && !s.nodes[fx[0]].dsp[1].dsp);
 	session_free(&s);
 	source = mock(&s, 3, 1);
 	int downmix = mock(&s, 6, 1);
-	assert(session_track(&s, source, NULL, 0, 0) >= 0 && session_track(&s, -1, &downmix, 1, 1) >= 0);
+	int tr = session_track(&s, source, NULL, 0, 0);
+	assert(tr >= 0 && session_through(&s, tr, downmix) >= 0);
+	assert(session_output(&s, downmix) >= 0);
 	assert(!session_end(&s, 1) && !session_render(&s, out, 1));
 	assert(out[0] == .25f && out[1] == .25f);
 	session_free(&s);
-	puts("OK: mono/stereo transitions, native mono-to-stereo DSP, explicit downmix and invalid-chain rollback");
+	puts("OK: mono/stereo transitions, native mono-to-stereo DSP, explicit downmix and invalid graph rejection");
 }
 
 static void export_session(Session *s, size_t frames, int overflow) {
@@ -476,6 +495,7 @@ static void export_session(Session *s, size_t frames, int overflow) {
 	assert(track >= 0 && !session_set(s, track, 0, 4));
 	if (overflow)
 		assert(!session_param(s, source, BLOCK, 0, FLT_MAX));
+	output_tracks(s);
 	assert(!session_end(s, frames));
 }
 
@@ -548,6 +568,7 @@ static void test_stereo_wav(void) {
 	Output cfg = {0};
 	int source = mock(&s, 3, .25f);
 	assert(session_track(&s, source, NULL, 0, 0) >= 0);
+	output_tracks(&s);
 	assert(!session_end(&s, 1025) && !write_score(&s, &cfg, "build/stereo-test.wav"));
 	FILE *f = fopen("build/stereo-test.wav", "rb");
 	unsigned char header[44];
@@ -567,6 +588,7 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 	Session s = {0};
 	int source = mock(&s, 0, value), tr = session_track(&s, source, NULL, 0, 0);
 	assert(!session_set(&s, tr, 0, gain) && !session_set(&s, tr, 1, -1));
+	output_tracks(&s);
 	assert(!session_end(&s, 1025) && !write_score(&s, &cfg, "build/export-test.wav"));
 	FILE *f = fopen("build/export-test.wav", "rb");
 	unsigned char header[44];

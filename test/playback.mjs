@@ -72,7 +72,7 @@ export async function testPlayback(host, reference, path, rate, replay = false) 
 
 export async function testPlayerExportOptions(host, reference) {
     const path = "test/export-options.janet";
-    const source = '(def s (daw/plugin "build/fixture.perone" {:gain 0.25})) (daw/track s) ';
+    const source = '(def s (daw/plugin "build/fixture.perone" {:gain 0.25})) (daw/output (daw/track s)) ';
     const configured = new TextEncoder().encode(source + '(daw/end 0.05003 {:format :pcm16 :normalize 0.9})');
     await addFile(host, path, configured);
     await addFile(reference, path, configured);
@@ -82,8 +82,8 @@ export async function testPlayerExportOptions(host, reference) {
 
 export async function testListening(host) {
     await addFile(host, "test/listening.janet", new TextEncoder().encode(
-        '(daw/track (daw/plugin "build/fixture.perone" {:gain 0.25})) ' +
-        '(daw/track (daw/plugin "build/fixture.perone" {:gain 0.5})) (daw/end 0.3)'));
+        '(def a (daw/track (daw/plugin "build/fixture.perone" {:gain 0.25}))) ' +
+        '(def b (daw/track (daw/plugin "build/fixture.perone" {:gain 0.5}))) (daw/output (daw/mix [a b])) (daw/end 0.3)'));
     const player = await preparePlayer(host, "test/listening.janet", 48000);
     try {
         await player.context.audioWorklet.addModule(new URL("./capture.js", import.meta.url));

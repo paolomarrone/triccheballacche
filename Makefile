@@ -25,7 +25,7 @@ SCORE_HEADERS = daw.h score_view.h score_view_json.h json_write.h session.h engi
 ENGINE_OBJECTS = $(addprefix build/native/,engine.o posix/loader.o script.o trace.o)
 SCORE_OBJECTS = $(SCORE_SOURCES:%.c=build/native/%.o) build/native/posix/loader.o
 NATIVE_PROGRAMS = build/host build/daw build/daw-ui build/editor
-NATIVE_TESTS = build/test $(addprefix build/,$(addsuffix _test,daw player score_view plugins ui view_json))
+NATIVE_TESTS = build/test $(addprefix build/,$(addsuffix _test,daw player routing score_view plugins ui view_json))
 FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h examples/termux_synth/src/*.c))
 
 .PHONY: all test test-plugins test-prog test-brickworks check-plugins run keys prog clean format format-check
@@ -114,10 +114,11 @@ $(TEST_EFFECT)/product.json: test/perone/effect.json
 	mkdir -p $(dir $@)
 	cp $< $@
 
-test: build/test build/termux_test build/daw_test build/player_test build/score_view_test $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/product.json
+test: build/routing_test build/test build/termux_test build/daw_test build/player_test build/score_view_test $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/product.json
 	./build/test
 	./build/termux_test
 	./build/daw_test
+	./build/routing_test
 	./build/player_test
 	./build/score_view_test
 

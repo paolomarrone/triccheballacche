@@ -9,7 +9,7 @@
   {:vco1_wave 2 :vcf_cutoff 6000 :vca_attack 4 :vca_release 90}))
 (def test (daw/plugin tibia {:gain -9 :cutoff 12000}))
 (def filter (daw/plugin asid {:cutoff 65 :lfo_amount 30 :lfo_speed 35}))
-(daw/track synth {:effects [test filter] :gain 0.2})
+(daw/output (daw/track synth {:effects [test filter] :gain 0.2}))
 
 (defn phrase [root]
   (def notes (p/steps 0.5 (map |(+ root $) [0 7 12 3 10 7 15 12])))

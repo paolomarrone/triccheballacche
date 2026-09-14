@@ -261,7 +261,7 @@ static void test_cli(void) {
 	int fd = mkstemp(path);
 	FILE *file = fdopen(fd, "w");
 	assert(fd >= 0 && file);
-	assert(fputs("(def s (daw/plugin \"build/fixture.perone\" {:gain 0.25})) (daw/track s) "
+	assert(fputs("(def s (daw/plugin \"build/fixture.perone\" {:gain 0.25})) (daw/output (daw/track s)) "
 	             "(daw/end 0.05003 {:format :pcm16 :normalize 0.9})",
 	           file) >= 0);
 	assert(!fclose(file));

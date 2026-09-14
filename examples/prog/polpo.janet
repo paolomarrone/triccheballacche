@@ -3,6 +3,8 @@
 (import ../../lib/music)
 (import ../../lib/pattern :as p)
 
+(def tracks @[])
+
 (def patches [ # wave, cutoff, resonance, attack, decay, sustain, release, glide
   [2 700 12 2 95 65 35 0]
   [1 3800 8 2 90 30 24 0]
@@ -38,7 +40,8 @@
   (array/push effects
     (daw/plugin "plugins/echo/build/plugin.perone"
       {:level1 wet :level2 (/ wet 2) :level3 (/ wet 3)}))
-  (daw/track synth {:pan (pans tr) :gain (gains tr) :effects effects})
+  (array/push tracks
+    (daw/track synth {:pan (pans tr) :gain (gains tr) :effects effects}))
   (array/push band synth))
 (def [bass left right lead key1 key2 key3 counter] band)
 
@@ -53,14 +56,18 @@
     (if (= i 0) []
       [(daw/plugin "plugins/echo/build/plugin.perone"
          {:level1 0.07 :level2 0.035 :level3 (/ 0.07 3)})]))
-  (daw/track source {:pan ([0 -0.08 0.35 0.4 -0.55 -0.4 0.45] i) :effects effects})
+  (array/push tracks
+    (daw/track source {:pan ([0 -0.08 0.35 0.4 -0.55 -0.4 0.45] i) :effects effects}))
   (array/push drum-band source))
 
 (defn drum [items kind t strength]
   (def pitch (drum-notes kind))
   (array/push items [t (+ t 0.001) [:note (drum-band pitch) pitch (math/floor (+ 0.5 (* strength 127)))]]))
 
-(def master (daw/master {:effects [(daw/plugin "plugins/shape/build/plugin.perone" {:drive 1.35 :dc 0.002})]}))
+(def master
+  (daw/master (daw/mix tracks)
+    {:effects [(daw/plugin "plugins/shape/build/plugin.perone" {:drive 1.35 :dc 0.002})]}))
+(daw/output master)
 
 (defn note [items tr t duration pitch volume]
   # This synth uses parameter 0 for volume, not MIDI velocity.

@@ -3,6 +3,8 @@
 (import ../lib/music)
 (import ../lib/pattern :as p)
 
+(def tracks @[])
+
 (def bpm 112)
 (def intro-rest 8) # Beats before the arpeggio enters.
 (def root (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
@@ -33,6 +35,7 @@
 (def pad-space (bw "fxpp_reverb" {:predelay 28 :damping 4200 :decay 72 :wet 27}))
 (def pad-track (daw/track pad
   {:gain 0.26 :effects [chorus (bw "fx_pan" {:pan -15}) pad-space]}))
+(array/push tracks pad-track)
 
 # Bass: a resonant saw with a triangle underneath and a little distortion.
 (def bass (bw "synth_mono"
@@ -41,7 +44,8 @@
    :vcf_decay 150 :vcf_sustain 0 :vcf_release 90
    :vca_decay 190 :vca_sustain 42 :vca_release 65}))
 (def drive (bw "fx_dist" {:distortion 12 :tone 38 :volume 65}))
-(daw/track bass {:gain 1.25 :effects [drive]})
+(array/push tracks
+  (daw/track bass {:gain 1.25 :effects [drive]}))
 
 # The simple synth plucks eighth notes; its panner travels across the stereo field.
 (def arp (bw "synth_simple"
@@ -49,7 +53,8 @@
 (def phaser (bw "fx_phaser" {:rate 0.17 :amount 1.4 :center 1200}))
 (def arp-pan (bw "fx_pan"))
 (def arp-space (bw "fxpp_reverb" {:predelay 60 :damping 5800 :decay 65 :wet 20}))
-(daw/track arp {:gain 0.45 :effects [phaser arp-pan arp-space]})
+(array/push tracks
+  (daw/track arp {:gain 0.45 :effects [phaser arp-pan arp-space]}))
 
 (def lead (bw "synth_mono"
   {:vco1_wave 2 :vco1_pw 38 :vco2_wave 3 :vco2_level 66 :vco2_fine -5
@@ -57,24 +62,31 @@
    :vcf_decay 260 :vcf_sustain 30
    :vca_attack 12 :vca_decay 230 :vca_sustain 55 :vca_release 240}))
 (def lead-space (bw "fxpp_reverb" {:predelay 85 :damping 4600 :decay 73 :wet 22}))
-(daw/track lead {:gain 0.38 :effects [(bw "fx_pan" {:pan 22}) lead-space]})
+(array/push tracks
+  (daw/track lead {:gain 0.38 :effects [(bw "fx_pan" {:pan 22}) lead-space]}))
 
 # The drums are three more synth instances: pitched triangle, snare, filtered noise.
 (def kick (bw "synth_mono"
   {:vco1_wave 3 :vcf_cutoff 450 :vca_decay 170 :vca_sustain 0 :vca_release 70}))
-(daw/track kick {:gain 1.05})
+(array/push tracks
+  (daw/track kick {:gain 1.05}))
 (def snare (bw "synth_mono"
   {:vco1_wave 3 :vco1_level 50 :noise_level 100 :vcf_cutoff 6500
    :vca_decay 150 :vca_sustain 0 :vca_release 85}))
-(daw/track snare {:gain 1.9 :pan -0.1
-  :effects [(bw "fxpp_reverb" {:predelay 9 :damping 3800 :decay 35 :wet 9})]})
+(array/push tracks
+  (daw/track snare {:gain 1.9 :pan -0.1
+    :effects [(bw "fxpp_reverb" {:predelay 9 :damping 3800 :decay 35 :wet 9})]}))
 (def hat (bw "synth_mono"
   {:vco1_level 0 :noise_level 100 :vcf_cutoff 11000
    :vca_decay 38 :vca_sustain 0 :vca_release 25}))
-(daw/track hat {:gain 0.75 :pan 0.32 :effects [(bw "fx_hp1" {:cutoff 7200})]})
+(array/push tracks
+  (daw/track hat {:gain 0.75 :pan 0.32 :effects [(bw "fx_hp1" {:cutoff 7200})]}))
 
 # Remove DC from the asymmetric pulse waves and leave room below the kick.
-(def master (daw/master {:effects [(bw "fx_hp1" {:cutoff 25})]}))
+(def master
+  (daw/master (daw/mix tracks)
+    {:effects [(bw "fx_hp1" {:cutoff 25})]}))
+(daw/output master)
 
 (defn thump [items beat volume]
   (note items kick beat 0.36 32 volume)

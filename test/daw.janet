@@ -23,7 +23,8 @@
 (def filter (daw/plugin "build/effect.perone"))
 (rejects (fn [] (daw/end 61))) # Unconnected plugins are never silently discarded.
 (def track (daw/track synth {:effects [filter]}))
-(def master (daw/master))
+(def master (daw/master track))
+(daw/output master)
 (def nan (/ 0 0))
 (def gain ((daw/info synth) 1))
 (assert (= [(gain :name) (gain :unit) (gain :min) (gain :max) (gain :default) (gain :integer)]
@@ -49,12 +50,12 @@
   (fn [] (daw/plugin path {:mode 1.000000001}))
   (fn [] (daw/plugin path {:gain nan}))
   (fn [] (daw/plugin path {100 1}))
-  (fn [] (daw/track synth)) # An instance cannot have two owners.
+  (fn [] (daw/through synth filter)) # Effect inputs cannot be rebound.
   (fn [] (daw/track synth {:gian 1}))
   (fn [] (daw/track synth {:gain nan}))
   (fn [] (daw/track synth {:pan 2}))
-  (fn [] (daw/track filter)) # An effect is not a source.
-  (fn [] (daw/master))
+  (fn [] (daw/mix []))
+  (fn [] (daw/master track))
   (fn [] (daw/note track 0 1 60))
   (fn [] (daw/note -1 0 1 60))
   (fn [] (daw/note synth 0 0 60))

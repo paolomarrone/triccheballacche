@@ -2,7 +2,7 @@
 (import ../lib/pattern :as p)
 (import ./trace-helper :as external)
 (def synth (daw/plugin "build/fixture.perone" {:gain 0.25}))
-(daw/track synth)
+(daw/output (daw/track synth))
 
 (def first (p/steps 0.25 [60 nil 64])) # first origin
 (def second (p/steps 0.25 [60 nil 64])) # equal value, distinct origin

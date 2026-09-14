@@ -14,7 +14,7 @@ const button = document.querySelector("#run"), status = document.querySelector("
 try {
     if (!crossOriginIsolated) throw Error("Run node test/server.mjs (COOP/COEP headers required).");
     const host = await createPlayerHost({printErr: () => {}}), reference = await createHost();
-    for (const path of ["lib/pattern.janet", "lib/trace.janet", "test/schedule.janet", "test/playback.janet",
+    for (const path of ["lib/pattern.janet", "lib/trace.janet", "test/schedule.janet", "test/playback.janet", "test/routing.janet",
         "build/fixture.perone/product.json", "build/effect.perone/product.json",
         "build/fixture.perone/wasm32/fixture.wasm", "build/effect.perone/wasm32/fixture.wasm"]) {
         const response = await fetch("../" + path);
@@ -30,7 +30,7 @@ try {
         try {
             for (const rate of [44100, 48000]) {
                 status.textContent = `Playing and checking at ${rate} Hz…`;
-                for (const path of ["test/schedule.janet", "test/playback.janet"])
+                for (const path of ["test/schedule.janet", "test/playback.janet", "test/routing.janet"])
                     await testPlayback(host, reference, path, rate, true);
             }
             await testPlayerExportOptions(host, reference);

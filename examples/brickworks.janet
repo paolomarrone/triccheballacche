@@ -9,7 +9,7 @@
 (def comp (daw/plugin (bundle "fx_comp"))) # Optional sidechain stays disconnected.
 (def pan (daw/plugin (bundle "fx_pan")))
 (def reverb (daw/plugin (bundle "fxpp_reverb")))
-(daw/track synth {:effects [comp pan reverb] :gain 0.3})
+(daw/output (daw/track synth {:effects [comp pan reverb] :gain 0.3}))
 (defn chord [pitches]
   (p/events 2 (map |[0 1.5 $] pitches)))
 

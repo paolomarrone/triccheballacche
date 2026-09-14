@@ -10,7 +10,7 @@
 (assert (= (get-in (daw/product synth) [:parameters 26 :id]) "vcf_cutoff"))
 (assert (= ((daw/product synth) :bundleName) "bw_example_synth_mono"))
 (assert (find |($ :scale-points) (daw/info synth)))
-(daw/track synth {:effects [filter]})
+(daw/output (daw/track synth {:effects [filter]}))
 (daw/note synth 0 1 60)
 (daw/param synth 0.25 :vcf_cutoff 4000)
 (daw/param filter 0.5 :cutoff 500)

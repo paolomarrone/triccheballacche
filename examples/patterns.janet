@@ -5,7 +5,7 @@
 (def root (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
 (def synth (daw/plugin (string root "/synth_mono/build/bw_example_synth_mono.perone")
   {:volume 65 :vco1_wave 2 :vcf_resonance 12 :vca_attack 8 :vca_release 100}))
-(daw/track synth {:gain 0.4})
+(daw/output (daw/track synth {:gain 0.4}))
 
 (def motif (p/steps 0.5 [60 nil 64 67]))
 (def theme (p/serial [motif (p/reverse motif) (p/map |(+ $ 12) motif) (p/stretch 2 motif)]))

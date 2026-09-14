@@ -1,7 +1,7 @@
 (import ../lib/pattern :as p)
 
 (def synth (daw/plugin "build/fixture.perone" {:gain 0.25}))
-(daw/track synth)
+(daw/output (daw/track synth))
 
 (defn rejects [f]
   (assert (try (do (f) false) ([_] true)) "expected a schedule error"))

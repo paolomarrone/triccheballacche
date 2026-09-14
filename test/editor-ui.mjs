@@ -27,9 +27,9 @@ try {
     }
     await writeFile(entry, `(def s (daw/plugin "${directory}/synth.perone" {:gain 0.01}))
 (def f (daw/plugin "${directory}/effect.perone" {:gain 0.4}))
-(daw/track s {:effects [f]})
-(daw/track (daw/plugin "${directory}/synth.perone" {:gain 0.01}))
-(daw/master)
+(def a (daw/track s {:effects [f]}))
+(def b (daw/track (daw/plugin "${directory}/synth.perone" {:gain 0.01})))
+(daw/output (daw/master (daw/mix [a b])))
 (daw/param f 1.5 :gain 0.2)
 (daw/end 40)
 `);
@@ -255,7 +255,31 @@ try {
             await wait(`fixtureFreed === ${beforePending + 1}`);
             assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 1);
             assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
+            // The same controls follow nested routing on both backends.
+            const saved = await readFile(entry, "utf8");
+            const graph = saved.replace('(daw/output (daw/master (daw/mix [a b])))', `
+(def group (daw/track (daw/mix [a b]) {:name "Group"}))
+(def wet (daw/track (daw/through group (daw/plugin "${directory}/effect.perone")) {:name "Wet"}))
+(daw/output (daw/mix [group wet]))`);
+            await evaluate(`(() => { const code = document.querySelector('#code'); code.value = ${JSON.stringify(graph)}; code.dispatchEvent(new Event('input')); })()`);
+            await click("run");
+            await wait('document.querySelectorAll("#track-list [data-listen]").length === 8');
+            assert.match(await evaluate('document.querySelector("#track-list .track:nth-child(3)").textContent'), /Group/);
+            assert.match(await evaluate('document.querySelector("#track-list .track:nth-child(3) small").textContent'), /Wet.*out|out.*Wet/);
+            await toggle(3, 2, true);
+            assert.deepEqual(await inaudible(), [false, false, false, false], "Wet solo retains upstream tracks");
+            await toggle(3, 2, false);
+            await toggle(0, 2, true);
+            assert.deepEqual(await inaudible(), [false, true, false, false], "Source solo retains its group and effects");
+            await evaluate(`document.querySelector('#track-list [data-track="2"]').click()`);
+            await wait('document.querySelectorAll(".plugin").length === 0');
+            await evaluate(`document.querySelector('#track-list [data-track="3"]').click()`);
+            await wait('document.querySelectorAll(".plugin").length === 1');
+            await click("stop");
+            await wait('document.querySelector("#stop").disabled');
             assert.deepEqual(diagnostics, []);
+            // Restore the saved text before leaving, so the draft confirmation is not part of this test.
+            await evaluate(`(() => { const code = document.querySelector('#code'); code.value = ${JSON.stringify(saved)}; code.dispatchEvent(new Event('input')); })()`);
             await call("Page.navigate", {url: "about:blank"});
             console.log(`OK: ${mode} DSP, shared custom/generic UI, relative JS/CSS/UI Wasm, automation, edits, messages, selection, stop and restart`);
         });

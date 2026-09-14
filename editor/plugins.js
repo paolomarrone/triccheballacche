@@ -62,7 +62,15 @@ export function plugins(request, adapter, fail) {
         if (!score) return;
         const chain = score.tracks[track];
         if (!chain) return;
-        const ids = [chain[0], ...chain.slice(2)].filter(id => id >= 0 && score.nodes[id].product);
+        const ids = [], seen = new Set();
+        const boundaries = new Set(score.tracks.filter(t => t !== chain).map(t => t[1]));
+        function visit(id) {
+            if (seen.has(id) || boundaries.has(id)) return;
+            seen.add(id);
+            for (const input of score.nodes[id].inputs) visit(input);
+            if (score.nodes[id].product) ids.push(id);
+        }
+        visit(chain[1]);
         for (const id of ids) {
             const details = document.createElement("details"), summary = document.createElement("summary");
             const name = document.createElement("span"), body = document.createElement("div");

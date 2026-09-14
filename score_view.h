@@ -25,6 +25,9 @@ typedef struct {
 } ScoreEvent;
 
 typedef struct {
+	int inputs[MAX_NODES], ninputs;
+	unsigned upstream, downstream;
+	char *label;
 	char *name, *bundle, *product; // Product JSON is encoded by Janet before teardown.
 	float minimum[MAX_PARAMS], maximum[MAX_PARAMS];
 	uint64_t integers;
@@ -36,7 +39,7 @@ typedef struct {
 typedef struct {
 	ScoreNode nodes[MAX_NODES];
 	Track tracks[MAX_TRACKS + 1];
-	int nnodes, ntracks;
+	int nnodes, ntracks, output;
 	double end;
 	ScoreOrigin *origins;
 	size_t norigins, *references, nreferences;
