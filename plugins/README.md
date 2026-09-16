@@ -44,7 +44,7 @@ Each project supplies `plugin.h` and `product.json`, locally or through Brickwor
 JSON supplies defaults and metadata; musical presets remain in Janet scores.
 Plugins require no Janet, miniaudio or host sources.
 
-Pass the complete `.perone` directory to `build/host` or `daw/plugin`; JSON must
+Pass the complete `.perone` directory to `build/tools/perone-host` or `daw/plugin`; JSON must
 travel with the binary. The host uses the unchanged Perone ABI from Tibia, with
 no DSP patches or pitch-bend compensation. See the [host contract and UI support](../README.md#perone-and-plugin-uis).
 

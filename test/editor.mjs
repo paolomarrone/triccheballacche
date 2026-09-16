@@ -4,12 +4,12 @@ import {once} from "node:events";
 import {mkdtemp, readFile, writeFile, stat, chmod, rm} from "node:fs/promises";
 import {withBrowser} from "./chromium.mjs";
 
-const directory = await mkdtemp("build/editor-test-");
+const directory = await mkdtemp("build/test/editor-test-");
 const path = `${directory}/score "音".janet`;
 const source = `# Unicode, "quotes", backslash \\ and <html> stay plain text.
 (import ./helper)
-(import ../../lib/pattern :as p)
-(def synth (daw/plugin "build/fixture.perone" {:gain 0.01}))
+(import ../../../lib/pattern :as p)
+(def synth (daw/plugin "build/test/fixture.perone" {:gain 0.01}))
 (daw/output (daw/track synth))
 (defn phrase []
   (def items @[])
@@ -28,7 +28,7 @@ await writeFile(`${directory}/helper.janet`, `(def duration 3)
 `);
 await writeFile(path, source);
 await chmod(path, 0o640);
-const app = spawn("./build/editor", ["--serve", path]);
+const app = spawn("./build/gui", ["--serve", path]);
 let output = "", error = "";
 app.stderr.on("data", data => error += data);
 const exited = once(app, "exit");
@@ -136,7 +136,7 @@ try {
         await click("views");
         await waitFor('document.querySelector("#state").textContent === "Playing"');
         const screenshot = await call("Page.captureScreenshot", {format: "png"});
-        await writeFile("build/editor.png", Buffer.from(screenshot.data, "base64"));
+        await writeFile("build/test/editor.png", Buffer.from(screenshot.data, "base64"));
         await click("stop");
         await waitFor('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
@@ -206,10 +206,10 @@ try {
         const responses = await evaluate(`Promise.all(Array.from({length: 8}, () =>
             webui.call("command", "status").then(JSON.parse)))`);
         assert(responses.every(response => !response.error || response.error.includes("busy")));
-        const dense = `(def lead (daw/plugin "build/fixture.perone" {:gain 0.001}))
-(def fx (daw/plugin "build/effect.perone"))
+        const dense = `(def lead (daw/plugin "build/test/fixture.perone" {:gain 0.001}))
+(def fx (daw/plugin "build/test/effect.perone"))
 (def tracks @[(daw/track lead {:effects [fx]})])
-(for i 0 9 (array/push tracks (daw/track (daw/plugin "build/fixture.perone" {:gain 0.001}))))
+(for i 0 9 (array/push tracks (daw/track (daw/plugin "build/test/fixture.perone" {:gain 0.001}))))
 (daw/output (daw/master (daw/mix tracks)))
 (for i 0 1200 (daw/note lead (* i 0.005) 0.03 (+ 60 (% i 12)) 80))
 (daw/note lead 0 8 48 90)
@@ -323,6 +323,6 @@ try {
         app.kill("SIGTERM");
         await exited;
     }
-    await writeFile("build/editor-test.log", output + error);
+    await writeFile("build/test/editor-test.log", output + error);
     await rm(directory, {recursive: true, force: true});
 }

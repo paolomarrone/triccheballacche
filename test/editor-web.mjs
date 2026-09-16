@@ -6,7 +6,7 @@ import {serve} from "./server.mjs";
 import {withBrowser} from "./chromium.mjs";
 
 const entry = process.argv[2] || "examples/prog/polpo.janet";
-const downloads = await mkdtemp("build/editor-downloads-");
+const downloads = await mkdtemp("build/test/editor-downloads-");
 const server = serve(0);
 await once(server, "listening");
 try {
@@ -45,7 +45,7 @@ try {
         await wait('document.querySelector("#marks").childElementCount > 0');
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
         const screenshot = await call("Page.captureScreenshot", {format: "png"});
-        await writeFile(`build/editor-web-${basename(entry, ".janet")}.png`, Buffer.from(screenshot.data, "base64"));
+        await writeFile(`build/test/editor-web-${basename(entry, ".janet")}.png`, Buffer.from(screenshot.data, "base64"));
         await set("code", "# draft\n" + source);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         await click("stop");

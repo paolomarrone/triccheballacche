@@ -1,6 +1,6 @@
 # Declare the effect first and reuse both source and effect outputs.
-(def effect (daw/plugin "build/effect.perone" {:gain 0.5 :decay 0.3}))
-(def synth (daw/plugin "build/fixture.perone" {:gain 0.25}))
+(def effect (daw/plugin "build/test/effect.perone" {:gain 0.5 :decay 0.3}))
+(def synth (daw/plugin "build/test/fixture.perone" {:gain 0.25}))
 (def source (daw/track synth {:name "Source"}))
 (daw/through source effect)
 (def dry (daw/mix [source]))

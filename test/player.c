@@ -24,7 +24,7 @@ static int tick(const struct timespec *, struct timespec *);
 #define nanosleep tick
 #include "../player.c"
 #define main cli_main
-#include "../posix/daw_main.c"
+#include "../posix/cli.c"
 #undef main
 #undef nanosleep
 #undef ma_device_is_started
@@ -126,9 +126,9 @@ static void reference(const char *path, unsigned rate) {
 	assert(!load_score(&s, &output, path));
 	expected_frames = s.frames;
 	// Playback uses the mix before export normalization or PCM16 conversion.
-	assert(!write_score(&s, &(Output){0}, "build/player-reference.wav"));
+	assert(!write_score(&s, &(Output){0}, "build/test/player-reference.wav"));
 	session_free(&s);
-	FILE *file = fopen("build/player-reference.wav", "rb");
+	FILE *file = fopen("build/test/player-reference.wav", "rb");
 	unsigned char header[44];
 	assert(file && fread(header, 1, sizeof(header), file) == sizeof(header));
 	assert(header[20] == 3 && header[22] == 2 && header[34] == 32);
@@ -136,7 +136,7 @@ static void reference(const char *path, unsigned rate) {
 	expected = malloc(expected_frames * 2 * sizeof(float));
 	assert(expected && fread(expected, sizeof(float) * 2, expected_frames, file) == expected_frames);
 	assert(fgetc(file) == EOF && !fclose(file));
-	assert(!unlink("build/player-reference.wav"));
+	assert(!unlink("build/test/player-reference.wav"));
 }
 
 static void test_pcm(void) {
@@ -245,7 +245,7 @@ static void test_lifecycle(void) {
 }
 
 static void test_cli(void) {
-	char *args[] = {"daw", "--play", "test/playback.janet", "48000"};
+	char *args[] = {"cli", "--play", "test/playback.janet", "48000"};
 	reference(args[2], 48000);
 	assert(!cli_main(4, args) && emitted >= expected_frames + queue_frames);
 	free(expected);
@@ -257,11 +257,11 @@ static void test_cli(void) {
 	args[3] = "bad-rate";
 	assert(cli_main(4, args));
 	assert(cli_main(2, args));
-	char path[] = "build/player-score-XXXXXX";
+	char path[] = "build/test/player-score-XXXXXX";
 	int fd = mkstemp(path);
 	FILE *file = fdopen(fd, "w");
 	assert(fd >= 0 && file);
-	assert(fputs("(def s (daw/plugin \"build/fixture.perone\" {:gain 0.25})) (daw/output (daw/track s)) "
+	assert(fputs("(def s (daw/plugin \"build/test/fixture.perone\" {:gain 0.25})) (daw/output (daw/track s)) "
 	             "(daw/end 0.05003 {:format :pcm16 :normalize 0.9})",
 	           file) >= 0);
 	assert(!fclose(file));

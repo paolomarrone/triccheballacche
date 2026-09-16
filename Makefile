@@ -5,6 +5,9 @@ LDLIBS = -lm -pthread
 ifneq ($(TARGET_OS),Darwin)
 LDLIBS += -ldl
 endif
+ifeq ($(shell uname -o 2>/dev/null),Android)
+LDLIBS += -landroid-spawn
+endif
 MINIAUDIO ?= $(firstword $(wildcard ../miniaudio.h) .deps/miniaudio.h)
 JANET ?= .deps/janet
 JANET_INCLUDES = -I$(JANET)/src/include -I$(JANET)/src/conf
@@ -15,21 +18,21 @@ WEBUI_REV = ac4ea8cd7b11daf3d96c65db03e6c02e1e0bd6d2
 PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
-SCRIPT_SOURCES = script.c trace.c
-ifeq ($(shell uname -o 2>/dev/null),Android)
-LDLIBS += -landroid-spawn
-endif
-TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
-SCORE_SOURCES = daw.c score_view.c score_view_json.c json_write.c session.c engine.c $(SCRIPT_SOURCES)
-SCORE_HEADERS = daw.h score_view.h score_view_json.h json_write.h session.h engine.h script.h loader.h util.h
-ENGINE_OBJECTS = $(addprefix build/native/,engine.o posix/loader.o script.o trace.o)
-SCORE_OBJECTS = $(SCORE_SOURCES:%.c=build/native/%.o) build/native/posix/loader.o
-NATIVE_PROGRAMS = build/host build/daw build/daw-ui build/editor
-NATIVE_TESTS = build/test $(addprefix build/,$(addsuffix _test,daw player routing score_view plugins ui view_json))
-FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h examples/termux_synth/src/*.c))
+ENGINE_SOURCES = engine.c script.c trace.c
+SCORE_SOURCES = daw.c score_view.c session.c $(ENGINE_SOURCES)
+VIEW_SOURCES = score_view_json.c json_write.c
+ENGINE_OBJECTS = $(addprefix build/obj/native/,engine.o posix/loader.o script.o trace.o json.o)
+SCORE_OBJECTS = $(addprefix build/obj/native/,daw.o score_view.o session.o) $(ENGINE_OBJECTS)
+VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
+NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host
+NATIVE_TESTS = $(addprefix build/test/,loader daw player routing score_view plugins ui view_json)
+FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h tools/*.c test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h))
 
-.PHONY: all test test-plugins test-prog test-brickworks check-plugins run keys prog clean format format-check
-all: build/host build/daw
+.PHONY: all cli gui tools clean format format-check
+all: cli
+cli: build/cli
+gui: build/gui
+tools: build/tools/perone-host
 
 format:
 	clang-format -i $(FORMAT_SOURCES)
@@ -37,9 +40,7 @@ format:
 format-check:
 	clang-format --dry-run --Werror $(FORMAT_SOURCES)
 
-build:
-	mkdir -p $@
-
+# Downloads are cached independently of generated files and build products.
 .deps/miniaudio.h:
 	mkdir -p .deps
 	curl -fL --retry 2 https://raw.githubusercontent.com/mackron/miniaudio/0.11.25/miniaudio.h -o $@.tmp
@@ -48,57 +49,80 @@ build:
 $(JANET)/Makefile:
 	git clone --depth 1 --branch v1.41.2 https://github.com/janet-lang/janet.git $(JANET)
 
+$(JANET)/build/c/janet.c: $(JANET)/Makefile
+	$(MAKE) -C $(JANET) HOSTCC="$(CC)" build/c/janet.c
+
 $(JANET)/build/libjanet.a: $(JANET)/build/c/janet.c
 	$(MAKE) -C $(JANET) CC="$(CC)" CFLAGS="$(CFLAGS)" build/libjanet.a
-
-build/audio.o: audio.c audio.h $(MINIAUDIO) Makefile | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) -c audio.c -o $@
 
 $(SPORK)/src/json.c:
 	mkdir -p $(dir $@)
 	curl -fL --retry 2 https://raw.githubusercontent.com/janet-lang/spork/$(SPORK_REV)/src/json.c -o $@.tmp
 	mv $@.tmp $@
 
-build/json.o: $(SPORK)/src/json.c $(JANET)/build/libjanet.a | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -DJANET_ENTRY_NAME=janet_json -c $< -o $@
-
-build/%.inc: lib/%.janet | build
+build/generated/%.inc: lib/%.janet
+	mkdir -p $(dir $@)
 	sed -e 's/[\\"]/\\&/g' -e 's/^/"/' -e 's/$$/\\n"/' $< > $@
 
-# Share compiled native code between programs and tests; headers are tracked by the compiler.
-build/native/%.o: %.c Makefile | $(JANET)/build/libjanet.a
+# Native programs share objects, with compiler-generated header dependencies.
+build/obj/native/%.o: %.c Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -I$(dir $(MINIAUDIO)) $(SCRIPT_FLAGS) -MMD -MP -c $< -o $@
 
-build/native/test/%.o: CFLAGS += -UNDEBUG
-build/native/script.o: build/perone.inc
-build/native/daw.o: build/daw.inc
-build/native/player.o build/native/posix/main.o build/native/posix/daw_main.o build/native/posix/export.o build/native/posix/ui_main.o build/native/posix/editor.o build/native/test/player.o: $(MINIAUDIO)
-build/native/posix/editor.o build/native/posix/controls.o build/native/posix/assets.o: CPPFLAGS += -I$(WEBUI)/include
-build/native/posix/editor.o build/native/posix/controls.o build/native/posix/assets.o: $(WEBUI)/include/webui.h
+build/obj/native/json.o: $(SPORK)/src/json.c Makefile | $(JANET)/Makefile
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -DJANET_ENTRY_NAME=janet_json -MMD -MP -c $< -o $@
 
--include $(wildcard build/native/*.d build/native/*/*.d)
+build/obj/native/test/%.o: CFLAGS += -UNDEBUG
+$(addprefix build/obj/native/,daw.o script.o trace.o posix/ui.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
+build/obj/native/script.o: build/generated/perone.inc
+build/obj/native/daw.o: build/generated/daw.inc
+$(addprefix build/obj/native/,audio.o player.o posix/cli.o posix/export.o posix/gui.o tools/perone-host.o test/player.o): $(MINIAUDIO)
+$(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): CPPFLAGS += -I$(WEBUI)/include
+$(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): $(WEBUI)/include/webui.h
 
-$(NATIVE_PROGRAMS) $(NATIVE_TESTS): build/json.o $(JANET)/build/libjanet.a
+$(NATIVE_PROGRAMS) $(filter-out build/test/score_view,$(NATIVE_TESTS)): $(JANET)/build/libjanet.a
+$(NATIVE_PROGRAMS) $(NATIVE_TESTS):
+	mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(filter %.a,$^) $(LDLIBS) -o $@
 
-build/host: build/native/posix/main.o $(ENGINE_OBJECTS) build/audio.o
-build/test: build/native/test/loader.o $(ENGINE_OBJECTS)
+build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
+build/gui: $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o posix/ui.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
+build/tools/perone-host: build/obj/native/tools/perone-host.o $(ENGINE_OBJECTS) build/obj/native/audio.o
+build/gui build/test/ui: LDLIBS += -lX11
 
-build/termux_synth: examples/termux_synth/src/termux_synth.c $(MINIAUDIO) | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -I$(dir $(MINIAUDIO)) $< $(LDFLAGS) $(LDLIBS) -o $@
+# Only the GUI needs WebUI. Compile its two sources once, without an unused shared library.
+$(WEBUI)/include/webui.h:
+	git clone --depth 1 --branch 2.4.2 https://github.com/webui-dev/webui.git $(WEBUI)
+	git -C $(WEBUI) checkout $(WEBUI_REV)
 
-build/termux_test: test/termux.c examples/termux_synth/src/termux_synth.c $(MINIAUDIO) | build
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -I$(dir $(MINIAUDIO)) $< $(LDFLAGS) $(LDLIBS) -o $@
+# WebUI 2.4's HTTP server lacks Wasm/ES-module MIME types. Patch a build copy only.
+build/generated/webui/civetweb.c: $(WEBUI)/include/webui.h posix/webui.patch
+	mkdir -p $(dir $@)
+	cp $(WEBUI)/src/civetweb/civetweb.c $@
+	patch --silent $@ posix/webui.patch
 
-check-plugins:
-	@for plugin in $(TEST_PLUGINS); do \
-		test -f "$$plugin/product.json" || { echo "Missing $$plugin; build plugins separately: make -C plugins" >&2; exit 1; }; \
-	done
+build/obj/native/vendor/webui.o: $(WEBUI)/include/webui.h Makefile
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -w -DNO_SSL -I$(WEBUI)/include -MMD -MP -c $(WEBUI)/src/webui.c -o $@
 
-TEST_BUNDLE = build/fixture.perone
-TEST_EFFECT = build/effect.perone
-$(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX): test/perone/plugin.c perone.h
+build/obj/native/vendor/civetweb.o: build/generated/webui/civetweb.c Makefile
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -w -DNDEBUG -DNO_SSL -DNO_CACHING -DNO_CGI -DUSE_WEBSOCKET -I$(WEBUI)/src/civetweb -MMD -MP -c $< -o $@
+
+# Tests link only the components they exercise. Fixtures are independent of Tibia.
+$(NATIVE_TESTS): build/test/%: build/obj/native/test/%.o
+build/test/loader build/test/ui: $(ENGINE_OBJECTS)
+build/test/routing: build/obj/native/session.o $(ENGINE_OBJECTS)
+build/test/daw build/test/player build/test/plugins build/test/view_json: $(SCORE_OBJECTS)
+build/test/daw build/test/player: build/obj/native/posix/export.o build/obj/native/audio.o
+build/test/score_view: build/obj/native/score_view.o
+build/test/view_json: $(VIEW_OBJECTS)
+
+TEST_BUNDLE = build/test/fixture.perone
+TEST_EFFECT = build/test/effect.perone
+NATIVE_FIXTURES = $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/product.json
+$(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX): test/perone/plugin.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -fPIC -fvisibility=hidden -shared $< -o $@
 
@@ -106,7 +130,7 @@ $(TEST_BUNDLE)/product.json: test/perone/product.json
 	mkdir -p $(dir $@)
 	cp $< $@
 
-$(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX): test/perone/plugin.c perone.h
+$(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX): test/perone/plugin.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -DPERONE_TEST_EFFECT -fPIC -fvisibility=hidden -shared $< -o $@
 
@@ -114,165 +138,145 @@ $(TEST_EFFECT)/product.json: test/perone/effect.json
 	mkdir -p $(dir $@)
 	cp $< $@
 
-test: build/routing_test build/test build/termux_test build/daw_test build/player_test build/score_view_test $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/product.json
-	./build/test
-	./build/termux_test
-	./build/daw_test
-	./build/routing_test
-	./build/player_test
-	./build/score_view_test
+.PHONY: test test-plugins test-ui test-editor test-prog test-brickworks check-plugins prog
+test: $(addprefix build/test/,loader daw player routing score_view) $(NATIVE_FIXTURES)
+	./build/test/loader
+	./build/test/daw
+	./build/test/routing
+	./build/test/player
+	./build/test/score_view
 
-test-plugins: check-plugins build/plugins_test
-	./build/plugins_test
+TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
+check-plugins:
+	@for plugin in $(TEST_PLUGINS); do \
+		test -f "$$plugin/product.json" || { echo "Missing $$plugin; build plugins separately: make -C plugins" >&2; exit 1; }; \
+	done
 
-run: build/host
-	./build/host plugins/synth_mono/build/plugin.perone
+test-plugins: check-plugins build/test/plugins
+	./build/test/plugins
 
-keys: build/termux_synth
-	./build/termux_synth --keys
+test-ui: build/test/ui
+	./build/test/ui
 
-build/daw: build/native/posix/daw_main.o build/native/player.o build/native/posix/export.o $(SCORE_OBJECTS) build/audio.o
-
-$(filter-out build/test,$(NATIVE_TESTS)): build/%_test: build/native/test/%.o $(SCORE_OBJECTS)
-build/daw_test build/player_test: build/native/posix/export.o build/audio.o
-
-# Optional desktop host: X11 and UI libraries are not dependencies of the ordinary player.
-build/daw-ui: build/native/posix/ui_main.o build/native/posix/ui.o build/native/player.o $(SCORE_OBJECTS) build/audio.o
-build/daw-ui build/editor build/ui_test: LDLIBS += -lX11
-
-.PHONY: gui test-ui
-gui: build/daw-ui
-	./build/daw-ui examples/gui.janet
-
-test-ui: build/ui_test
-	./build/ui_test
-
-$(WEBUI)/include/webui.h:
-	git clone --depth 1 --branch 2.4.2 https://github.com/webui-dev/webui.git $(WEBUI)
-	git -C $(WEBUI) checkout $(WEBUI_REV)
-
-# WebUI 2.4's HTTP server lacks Wasm/ES-module MIME types. Patch a build copy only.
-build/webui/GNUmakefile: $(WEBUI)/include/webui.h posix/webui.patch
-	mkdir -p build/webui
-	cp -R $(WEBUI)/src $(WEBUI)/include $(WEBUI)/bridge build/webui/
-	patch --silent build/webui/src/civetweb/civetweb.c posix/webui.patch
-	cp $(WEBUI)/GNUmakefile $@
-
-build/webui/dist/libwebui-2-static.a: build/webui/GNUmakefile
-	$(MAKE) -C build/webui CC=gcc
-
-build/editor: $(addprefix build/native/,posix/editor.o posix/controls.o posix/assets.o posix/ui.o player.o) $(SCORE_OBJECTS) build/audio.o build/webui/dist/libwebui-2-static.a
-
-.PHONY: editor test-editor
-editor: build/editor
-	./build/editor
-
-test-editor: build/editor test
+test-editor: gui test
 	node test/editor.mjs
 
-prog: check-plugins build/daw
-	./build/daw examples/prog/polpo.janet build/il_polpo_a_sette_gomiti.wav
+prog: check-plugins cli
+	mkdir -p renders
+	./build/cli examples/prog/polpo.janet renders/il_polpo_a_sette_gomiti.wav
 
-test-prog: prog
-	./build/daw examples/prog/polpo.janet build/polpo-repeat.wav
-	cmp build/polpo-repeat.wav build/il_polpo_a_sette_gomiti.wav
+test-prog: check-plugins cli | build/test
+	./build/cli examples/prog/polpo.janet build/test/polpo.wav
+	./build/cli examples/prog/polpo.janet build/test/polpo-repeat.wav
+	cmp build/test/polpo-repeat.wav build/test/polpo.wav
 
-clean:
-	rm -f $(NATIVE_PROGRAMS) $(NATIVE_TESTS) build/audio.o build/json.o build/perone.inc build/daw.inc build/termux_synth build/termux_test
-	rm -rf build/native build/fixture.perone build/effect.perone build/web build/webui
+build/test:
+	mkdir -p $@
 
 # Read-only audit of the bundles built in Brickworks; no plugin compilation here.
 BRICKWORKS_PERONE ?= ../brickworks/build/perone
 BW_BUNDLES = $(wildcard $(BRICKWORKS_PERONE)/*/build/*.perone)
-test-brickworks: build/test
+test-brickworks: build/test/loader
 	@test -n "$(BW_BUNDLES)" || { echo "No Perone bundles in $(BRICKWORKS_PERONE)"; exit 1; }
-	./build/test $(BW_BUNDLES)
+	./build/test/loader $(BW_BUNDLES)
 
-# Web uses the same Janet adapter, scheduler and mixer, with standalone Perone Wasm modules.
+# Wasm variants share sources, but keep separate objects for their memory models.
 EMCC ?= emcc
 WEB_FLAGS = -I. $(JANET_INCLUDES) -DJANET_SINGLE_THREADED -DPERONE_PLATFORM='"wasm32"' -DPERONE_SUFFIX='".wasm"'
-WEB_SOURCES = $(SCORE_SOURCES) web/host.c web/loader.c
-WEB_DEPS = $(WEB_SOURCES) $(SCORE_HEADERS) web/host.h build/daw.inc build/perone.inc
+WEB_SOURCES = $(SCORE_SOURCES) $(VIEW_SOURCES) web/host.c web/loader.c
+WEB_OBJECTS = $(addprefix build/obj/web-offline/,$(WEB_SOURCES:.c=.o) janet.o json.o)
+PLAYER_OBJECTS = $(addprefix build/obj/web-player/,$(WEB_SOURCES:.c=.o) player.o web/player_api.o audio.o janet.o json.o)
 WEB_LINK = -lm --no-entry -sMODULARIZE -sEXPORT_ES6 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=2097152
 WEB_METHODS = "FS","UTF8ToString","ccall","HEAPU8","HEAPU32","HEAPF32"
 VIEW_EXPORTS = "_score_prepare","_score_take_view","_view_free","_score_view_json","_free"
 SCORE_EXPORTS = "_score_new","_score_free","_score_listen"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'
-PLAYER_FLAGS = -pthread -sAUDIO_WORKLET -sWASM_WORKERS -sASYNCIFY -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
+PLAYER_FLAGS = -pthread -sWASM_WORKERS -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
 PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_player_time","_score_player","_player_free","_player_start","_player_stop","_player_pause","_player_rewind","_player_sync","_player_status","_player_context","_player_node"]'
 WEB_CONTENT ?= lib examples plugins
-.PHONY: web-editor
-web-editor: web
+
+.PHONY: web web-offline
+web: build/web/player.mjs
 	node web/catalog.mjs build/web/project.json $(WEB_CONTENT)
 
-.PHONY: web
-web: build/web/daw.mjs build/web/player.mjs
+web-offline: build/web/offline.mjs
 
-$(JANET)/build/c/janet.c: $(JANET)/Makefile
-	$(MAKE) -C $(JANET) HOSTCC="$(CC)" build/c/janet.c
-
-# Shared-memory objects are separate from the offline runtime's objects.
-build/web/player-janet.o build/web/player-json.o: WEB_THREAD_FLAGS = -pthread
-build/web/janet.o build/web/player-janet.o: $(JANET)/build/c/janet.c
+build/obj/web-offline/%.o: %.c Makefile | $(JANET)/Makefile
 	mkdir -p $(dir $@)
-	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) $(WEB_THREAD_FLAGS) -c $< -o $@
+	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) -MMD -MP -c $< -o $@
 
-build/web/json.o build/web/player-json.o: $(SPORK)/src/json.c $(JANET)/build/c/janet.c
+build/obj/web-player/%.o: %.c Makefile | $(JANET)/Makefile
 	mkdir -p $(dir $@)
-	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) $(WEB_THREAD_FLAGS) -DJANET_ENTRY_NAME=janet_json -c $< -o $@
+	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) -MMD -MP -c $< -o $@
 
-build/web/daw.mjs: $(WEB_DEPS) build/web/janet.o build/web/json.o Makefile
-	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) $(WEB_SOURCES) build/web/janet.o build/web/json.o $(WEB_LINK) \
-	    -sENVIRONMENT=web,worker,node -sEXPORTED_FUNCTIONS=$(WEB_EXPORTS) -sEXPORTED_RUNTIME_METHODS='[$(WEB_METHODS)]' -o $@
+$(PLAYER_OBJECTS): WEB_FLAGS += $(PLAYER_FLAGS) -Ibuild/generated/web
+build/obj/web-offline/daw.o build/obj/web-player/daw.o: build/generated/daw.inc
+build/obj/web-offline/script.o build/obj/web-player/script.o: build/generated/perone.inc
+
+build/obj/web-offline/janet.o build/obj/web-player/janet.o: $(JANET)/build/c/janet.c Makefile
+	mkdir -p $(dir $@)
+	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) -MMD -MP -c $< -o $@
+
+build/obj/web-offline/json.o build/obj/web-player/json.o: $(SPORK)/src/json.c Makefile | $(JANET)/Makefile
+	mkdir -p $(dir $@)
+	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) -DJANET_ENTRY_NAME=janet_json -MMD -MP -c $< -o $@
+
+build/web/offline.mjs: $(WEB_OBJECTS) Makefile
+	mkdir -p $(dir $@)
+	$(EMCC) $(CFLAGS) $(LDFLAGS) $(WEB_OBJECTS) $(WEB_LINK) -sENVIRONMENT=web,worker,node \
+	    -sEXPORTED_FUNCTIONS=$(WEB_EXPORTS) -sEXPORTED_RUNTIME_METHODS='[$(WEB_METHODS)]' -o $@
 
 # Miniaudio 0.11.25 loses its worklet stack pointer and uses the unaligned deallocator.
 # Patch only the generated web copy; keep the downloaded/native header intact.
-build/web/miniaudio.h: $(MINIAUDIO) web/miniaudio.patch
+build/generated/web/miniaudio.h: $(MINIAUDIO) web/miniaudio.patch
 	mkdir -p $(dir $@)
 	cp $< $@.tmp
 	patch --silent $@.tmp web/miniaudio.patch
 	mv $@.tmp $@
 
-build/web/player.mjs: $(WEB_DEPS) player.c player.h web/player_api.c web/runtime.js web/audio.js audio.c audio.h build/web/miniaudio.h build/web/player-janet.o build/web/player-json.o Makefile
-	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) $(PLAYER_FLAGS) -Ibuild/web $(WEB_SOURCES) player.c web/player_api.c audio.c \
-	    build/web/player-janet.o build/web/player-json.o $(WEB_LINK) --post-js web/runtime.js --js-library web/audio.js \
-	    -sENVIRONMENT=web,worker,worklet -sEXPORTED_FUNCTIONS=$(PLAYER_EXPORTS) \
-	    -sEXPORTED_RUNTIME_METHODS='[$(WEB_METHODS),"emscriptenGetAudioObject"]' -o $@
+build/obj/web-player/audio.o build/obj/web-player/player.o build/obj/web-player/web/player_api.o: build/generated/web/miniaudio.h
+build/web/player.mjs: $(PLAYER_OBJECTS) web/runtime.js web/audio.js Makefile
+	mkdir -p $(dir $@)
+	$(EMCC) $(CFLAGS) $(LDFLAGS) $(PLAYER_FLAGS) $(PLAYER_OBJECTS) $(WEB_LINK) -sAUDIO_WORKLET -sASYNCIFY \
+	    --post-js web/runtime.js --js-library web/audio.js -sENVIRONMENT=web,worker,worklet \
+	    -sEXPORTED_FUNCTIONS=$(PLAYER_EXPORTS) -sEXPORTED_RUNTIME_METHODS='[$(WEB_METHODS),"emscriptenGetAudioObject"]' -o $@
+
+-include $(wildcard build/obj/*/*.d build/obj/*/*/*.d)
 
 # Test fixtures implement the same standalone ABI, without a Tibia checkout.
 WEB_FIXTURE_FLAGS = -O2 -UNDEBUG -I. --no-entry -sSTANDALONE_WASM -sPURE_WASI -sMALLOC=emmalloc -sALLOW_MEMORY_GROWTH -Wl,--export=__wasm_call_ctors,--export=perone_get_api,--export=malloc,--export=free,--export=calloc,--export=realloc,--export-table,--growable-table
-$(TEST_BUNDLE)/wasm32/fixture.wasm: test/perone/plugin.c perone.h
+WEB_FIXTURES = $(TEST_BUNDLE)/wasm32/fixture.wasm $(TEST_EFFECT)/wasm32/fixture.wasm
+$(TEST_BUNDLE)/wasm32/fixture.wasm: test/perone/plugin.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(WEB_FIXTURE_FLAGS) $< -o $@
 
-$(TEST_EFFECT)/wasm32/fixture.wasm: test/perone/plugin.c perone.h
+$(TEST_EFFECT)/wasm32/fixture.wasm: test/perone/plugin.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(WEB_FIXTURE_FLAGS) -DPERONE_TEST_EFFECT $< -o $@
 
-.PHONY: test-web
-test-web: web build/daw build/view_json_test $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/product.json $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/wasm32/fixture.wasm $(TEST_EFFECT)/wasm32/fixture.wasm
+.PHONY: test-web test-browser test-polpo-web test-trace test-editor-web test-editor-ui
+test-web: build/web/offline.mjs build/web/player.mjs cli build/test/view_json $(NATIVE_FIXTURES) $(WEB_FIXTURES)
 	node test/request.mjs
 	node test/web.mjs
 	node test/perone-controls.mjs
 	node test/view-json.mjs
 
-.PHONY: test-browser
 test-browser: test-web
 	node test/browser.mjs
 
 # Production bundles must already contain their separately compiled wasm32 binaries.
-.PHONY: test-polpo-web
-test-polpo-web: web
+test-polpo-web: build/web/offline.mjs build/web/player.mjs
 	node test/browser.mjs test/polpo.html
 
-# Trace semantics and the shared editor; the editor test uses prebuilt production Wasm bundles.
-.PHONY: test-trace test-editor-web test-editor-ui
 test-trace: test-web
 	node test/trace.mjs
 
-test-editor-web: web-editor
+test-editor-web: web | build/test
 	node test/editor-web.mjs
 
 # Self-contained UI fixture: the exact same ES module drives native and Wasm DSPs.
-test-editor-ui: build/editor test-web
+test-editor-ui: gui test-web
 	node test/editor-ui.mjs
+
+clean:
+	rm -rf build

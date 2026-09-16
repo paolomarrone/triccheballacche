@@ -6,9 +6,9 @@ import {traceScore, readTrace, activeLines} from "./trace-host.mjs";
 const diagnostics = [];
 const host = await createHost({printErr: message => diagnostics.push(String(message))});
 for (const path of ["lib/trace.janet", "test/trace-score.janet", "test/trace-helper.janet", "lib/pattern.janet",
-    "test/schedule.janet", "test/playback.janet", "build/fixture.perone/product.json",
-    "build/effect.perone/product.json", "build/fixture.perone/wasm32/fixture.wasm",
-    "build/effect.perone/wasm32/fixture.wasm"])
+    "test/schedule.janet", "test/playback.janet", "build/test/fixture.perone/product.json",
+    "build/test/effect.perone/product.json", "build/test/fixture.perone/wasm32/fixture.wasm",
+    "build/test/effect.perone/wasm32/fixture.wasm"])
     await addFile(host, path, fs.readFileSync(path));
 
 const path = "test/trace-score.janet", source = fs.readFileSync(path, "utf8");
@@ -37,7 +37,7 @@ for (const rate of [44100, 48000]) {
     assert.deepEqual(traced, plain, `Tracing changed PCM at ${rate} Hz`);
     assert.equal(host.perone.instances.size, 0);
     const trace = readTrace(host);
-    fs.writeFileSync("build/trace-fixture.json", JSON.stringify(trace, null, 2));
+    fs.writeFileSync("build/test/trace-fixture.json", JSON.stringify(trace, null, 2));
     assert.equal(trace.events.length, 17); // Also includes three events collected inside reusable helpers.
     assert.equal(trace["fallback-events"], 1);
     assert.equal(trace["pushed-events"], 3);

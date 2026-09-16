@@ -10,7 +10,7 @@
 static int plugin(Session *s, int effect, float gain) {
 	char *binary;
 	PluginConfig config;
-	assert(!read_bundle(effect ? "build/effect.perone" : "build/fixture.perone", &binary, &config));
+	assert(!read_bundle(effect ? "build/test/effect.perone" : "build/test/fixture.perone", &binary, &config));
 	config.defaults[1] = gain;
 	int id = session_plugin(s, binary, &config);
 	free(binary);

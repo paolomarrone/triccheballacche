@@ -9,11 +9,12 @@ browser hosts share the scheduler, mixer, player, editor and score projection.
 Run commands from the repository root:
 
 ```sh
-make                    # Build the native host and Janet DAW.
+make                    # Build the native CLI.
 make test               # Core tests with local fixtures.
 make -C plugins         # Build example plugins separately; see prerequisites below.
-./build/daw examples/hello.janet build/hello.wav
-./build/daw --play examples/hello.janet 48000
+mkdir -p renders
+./build/cli examples/hello.janet renders/hello.wav
+./build/cli --play examples/hello.janet 48000
 make prog               # Render Il polpo a sette gomiti.
 ```
 
@@ -27,23 +28,36 @@ Plugins are built separately with Node.js, `dot`, Tibia and, for the original
 Brickworks examples, Brickworks. See [plugin builds](plugins/README.md).
 The host only loads precompiled bundles; it needs neither DSP sources nor the generator.
 
+| Build command | Output |
+| --- | --- |
+| `make` or `make cli` | `build/cli`: score playback and WAV export. |
+| `make gui` | `build/gui`: desktop editor and native plugin windows. |
+| `make web` | `build/web/player.{mjs,wasm}` and the browser project catalog. |
+| `make web-offline` | `build/web/offline.{mjs,wasm}`: offline browser/Node rendering. |
+| `make tools` | `build/tools/perone-host`: single-plugin diagnostics. |
+
+These commands build without launching. Tests and their artifacts live under
+`build/test/`, objects under `build/obj/`, and generated sources under
+`build/generated/`. Keep exported audio in `renders/`; it is ignored by Git.
+The browser editor needs only the playback runtime; offline rendering is optional.
+
 ## Editors
 
 The desktop editor uses [WebUI](https://github.com/webui-dev/webui) and native audio.
-Its optional build needs X11 development libraries, GCC and `patch`; WebUI 2.4.2
+Its optional build needs X11 development libraries and `patch`; WebUI 2.4.2
 is fetched at a pinned revision. Node.js is not a desktop runtime dependency.
 
 ```sh
-make build/editor
-./build/editor examples/prog/polpo.janet
-./build/editor --serve examples/prog/polpo.janet  # Print a URL without opening a browser.
+make gui
+./build/gui examples/prog/polpo.janet
+./build/gui --serve examples/prog/polpo.janet  # Print a URL without opening a browser.
 ```
 
 For the browser, install Emscripten, Node.js and `patch`, then build the Wasm DSPs:
 
 ```sh
 make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
-make web-editor
+make web
 node test/server.mjs
 ```
 
@@ -52,7 +66,7 @@ Open <http://localhost:8000/editor/index.html>. Polpo is the default score;
 `WEB_CONTENT`, for example:
 
 ```sh
-make web-editor WEB_CONTENT="lib examples plugins ../brickworks/build/perone ../asid/plugin/perone/build ../tibia/out/perone/c/build"
+make web WEB_CONTENT="lib examples plugins ../brickworks/build/perone ../asid/plugin/perone/build ../tibia/out/perone/c/build"
 ```
 
 The catalog copies assets into `build/web/`; `?project=...` selects a different
@@ -101,7 +115,7 @@ score. See [limits](#architecture-and-limits) and [tracking details](test/README
 ## Score API
 
 Save this as `score.janet` in the repository root and run
-`./build/daw score.janet build/score.wav`:
+`./build/cli score.janet renders/score.wav`:
 
 ```janet
 (def synth (daw/plugin "plugins/synth_mono/build/plugin.perone" {:vcf_cutoff 900}))
@@ -268,8 +282,8 @@ expanded sections update together. The **≡** button switches to generated cont
 On Linux/X11, **↗** toggles the original native window when a `*-ui.so` is present.
 Native windows remain open across track selection and panel hiding. Opening a
 native window collapses that plugin's inline UI; expanding it closes the window.
-`make gui` runs `examples/gui.janet` with the original Tibia and A-SID windows;
-`build/daw-ui` accepts other scores. All DSP and UI binaries must be built separately.
+Run `./build/gui examples/gui.janet` to try the original Tibia and A-SID UIs.
+All DSP and UI binaries must be built separately.
 
 A web UI declares `product.ui.web = "ui/index.js"`. That ES module exports
 `create(element, callbacks)` and returns a view with mandatory `free()` and optional
@@ -322,12 +336,11 @@ Scores read `BRICKWORKS_PERONE`, `TIBIA_PERONE` and `ASID_PERONE` where applicab
 Defaults are `../brickworks/build/perone`, `../tibia/out/perone/c/build/tibia-test.perone`
 and `../asid/plugin/perone/build/asid.perone`. Include these bundles in the web
 catalog when needed. The [historical Polpo WAV](examples/prog/il_polpo_a_sette_gomiti.wav)
-is preserved; `make prog` writes the current arrangement to `build/`.
+is preserved; `make prog` writes the current arrangement to `renders/`.
 
-`make run` plays an eight-second standalone synth demo. `build/host` accepts a
-bundle with `--wav output.wav` or `--input` for microphone processing.
-`make keys` runs the independent 16-voice terminal synth at 48 kHz:
-`a w s e d f t g y h u j k`, with `q` to quit.
+`make tools` builds `build/tools/perone-host`, a standalone plugin diagnostic host.
+Pass it a bundle to play an eight-second demo, add `--wav renders/demo.wav` to
+export it, or `--input` to process microphone input.
 
 ## Architecture and limits
 
@@ -338,6 +351,7 @@ bundle with `--wav output.wav` or `--input` for microphone processing.
 | `posix/` | Native loader, file export, CLI, X11 and WebUI backend. |
 | `web/` | Wasm loader, AudioWorklet lifecycle and browser editor backend. |
 | `editor/` | Shared HTML, controller, plugin panel and timeline. |
+| `tools/` | Standalone Perone diagnostic host. |
 | `plugins/`, `test/`, `examples/` | Separate plugin builds, verification and scores. |
 
 Core files contain no platform branches or direct POSIX calls. Native Linux and
@@ -392,8 +406,10 @@ Preparing from `source` also captures the immutable score projection; `takeView(
 transfers it once, and the caller must release it with `view_free`. Projection
 queries and serialization stay outside the audio thread.
 
-Native objects are shared under `build/native/`, with compiler-generated header
-dependencies. `make clean` preserves renders; plugin cleanup is separate.
+Native programs share objects under `build/obj/native/`. Wasm playback and offline
+rendering use separate object directories under `build/obj/`; all three builds
+track header dependencies. `make clean` removes `build/`, preserving `renders/`,
+`.deps/` and independently built plugins.
 Use English for prose, comments and UI text; keep musical names.
 Local C uses tabs displayed at four columns, Janet two spaces, and JavaScript
 four spaces. `.editorconfig` and `.clang-format` define formatting;

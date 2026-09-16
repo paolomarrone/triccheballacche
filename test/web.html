@@ -15,8 +15,8 @@ try {
     if (!crossOriginIsolated) throw Error("Run node test/server.mjs (COOP/COEP headers required).");
     const host = await createPlayerHost({printErr: () => {}}), reference = await createHost();
     for (const path of ["lib/pattern.janet", "lib/trace.janet", "test/schedule.janet", "test/playback.janet", "test/routing.janet",
-        "build/fixture.perone/product.json", "build/effect.perone/product.json",
-        "build/fixture.perone/wasm32/fixture.wasm", "build/effect.perone/wasm32/fixture.wasm"]) {
+        "build/test/fixture.perone/product.json", "build/test/effect.perone/product.json",
+        "build/test/fixture.perone/wasm32/fixture.wasm", "build/test/effect.perone/wasm32/fixture.wasm"]) {
         const response = await fetch("../" + path);
         if (!response.ok) throw Error("Cannot load " + path);
         const bytes = new Uint8Array(await response.arrayBuffer());

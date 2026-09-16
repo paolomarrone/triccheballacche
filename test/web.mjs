@@ -6,8 +6,8 @@ import {Perone} from "../web/perone.js";
 
 const host = await createHost({printErr: () => {}});
 for (const path of ["lib/music.janet", "lib/pattern.janet", "test/music.janet", "test/pattern.janet",
-    "test/daw.janet", "test/schedule.janet", "test/playback.janet", "test/routing.janet", "build/fixture.perone/product.json", "build/effect.perone/product.json",
-    "build/fixture.perone/wasm32/fixture.wasm", "build/effect.perone/wasm32/fixture.wasm"])
+    "test/daw.janet", "test/schedule.janet", "test/playback.janet", "test/routing.janet", "build/test/fixture.perone/product.json", "build/test/effect.perone/product.json",
+    "build/test/fixture.perone/wasm32/fixture.wasm", "build/test/effect.perone/wasm32/fixture.wasm"])
     await addFile(host, path, fs.readFileSync(path));
 
 function pcm(file) {
@@ -23,9 +23,9 @@ function pcm(file) {
 
 for (const rate of [44100, 48000]) {
     for (const score of ["test/schedule.janet", "test/playback.janet", "test/routing.janet", "test/daw.janet"]) {
-        const file = `build/web/reference-${rate}.wav`;
+        const file = `build/test/reference-${rate}.wav`;
         try {
-            const result = spawnSync("./build/daw", [score, file, String(rate)], {encoding: "utf8"});
+            const result = spawnSync("./build/cli", [score, file, String(rate)], {encoding: "utf8"});
             assert.equal(result.status, 0, result.stderr);
             const native = pcm(file), wasm = renderScore(host, score, rate);
             assert.equal(wasm.length, native.length);
@@ -38,12 +38,12 @@ for (const rate of [44100, 48000]) {
 }
 
 await addFile(host, "test/bad.janet", new TextEncoder().encode(
-    '(daw/plugin "build/fixture.perone") (error "failure after allocation")'));
+    '(daw/plugin "build/test/fixture.perone") (error "failure after allocation")'));
 assert.throws(() => renderScore(host, "test/bad.janet", 48000));
 assert.equal(host.perone.instances.size, 0);
-await addFile(host, "build/unloaded.perone/product.json", fs.readFileSync("test/perone/product.json"));
+await addFile(host, "build/test/unloaded.perone/product.json", fs.readFileSync("test/perone/product.json"));
 await addFile(host, "test/bad.janet", new TextEncoder().encode(
-    '(daw/plugin "build/fixture.perone") (daw/plugin "build/unloaded.perone") (daw/end 1)'));
+    '(daw/plugin "build/test/fixture.perone") (daw/plugin "build/test/unloaded.perone") (daw/end 1)'));
 assert.throws(() => renderScore(host, "test/bad.janet", 48000));
 assert.equal(host.perone.instances.size, 0);
 assert.throws(() => renderScore(host, "test/schedule.janet", 384001));
@@ -54,7 +54,7 @@ for (const tail of [
     '(daw/through p f) (daw/output p) (daw/end 1)',
     '(daw/through p f) (daw/through p f) (daw/output f) (daw/end 1)']) {
     await addFile(host, "test/invalid-graph.janet", new TextEncoder().encode(
-        '(def p (daw/plugin "build/fixture.perone")) (def f (daw/plugin "build/effect.perone")) ' + tail));
+        '(def p (daw/plugin "build/test/fixture.perone")) (def f (daw/plugin "build/test/effect.perone")) ' + tail));
     assert.throws(() => renderScore(host, "test/invalid-graph.janet", 48000));
     assert.equal(host.perone.instances.size, 0, "Invalid graph leaked DSP instances");
 }

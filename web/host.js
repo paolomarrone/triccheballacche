@@ -1,7 +1,7 @@
 import {Perone} from "./perone.js";
 
 export async function createHost(options = {}, factory) {
-    factory ||= (await import("../build/web/daw.mjs")).default;
+    factory ||= (await import("../build/web/offline.mjs")).default;
     const host = await factory(options);
     host.perone = new Perone(host);
     return host;

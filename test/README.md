@@ -1,8 +1,9 @@
 # Tests
 
 Run from the repository root. Core tests build local Perone fixtures and need no
-Tibia or Brickworks checkout. Integration targets require production bundles to
-be built separately; see [plugin builds](../plugins/README.md).
+Tibia or Brickworks checkout. Test executables, fixtures, temporary renders and
+reports live under `build/test/` and are removed by `make clean`. Integration targets
+require production bundles to be built separately; see [plugin builds](../plugins/README.md).
 
 | Command | Coverage and additional requirements |
 | --- | --- |
@@ -14,7 +15,7 @@ be built separately; see [plugin builds](../plugins/README.md).
 | `make test-browser` | AudioWorklet PCM, playback and cleanup in Chromium; includes `test-web`. |
 | `make test-polpo-web` | Original Polpo score: live/offline PCM comparison and cleanup; Chromium and its four prebuilt Wasm plugins. |
 | `make test-trace` | Source provenance and unchanged PCM; includes `test-web`. |
-| `make test-editor` | Native editor in Chromium, with local fixtures; X11 development libraries, GCC, `patch` and an audio device. |
+| `make test-editor` | Native editor in Chromium, with local fixtures; X11 development libraries, `patch` and an audio device. |
 | `make test-editor-web` | Polpo in the shared browser editor; Node.js, Chromium and Polpo's Wasm plugins. |
 | `make test-editor-ui` | The same custom UI with native and Wasm DSPs; editor/browser prerequisites, no external plugin checkout. |
 | `make test-ui` | Original Tibia C/C++ and A-SID UIs, mouse gestures and DSP feedback; X11 display and prebuilt DSP/UI bundles. |
@@ -54,7 +55,7 @@ or downloads, diagnostics and recovery, source tracking, scrolling and selection
 They check timeline persistence, notes retained while dragging with delayed replies,
 independent time/track zoom, stale replies, large times, unknown ends and bounded
 requests/canvas sizes. `chromium.mjs` shares browser startup, DevTools and
-cleanup; logs, reports and screenshots go under `build/`. Unicode fixtures retain
+cleanup; logs, reports and screenshots go under `build/test/`. Unicode fixtures retain
 characters such as `音` to test encoding independently of the interface language.
 
 ## Source tracking
@@ -94,7 +95,7 @@ plugin sections, track selection, collapse, generic controls, stale/invalid call
 and restart. Stop/Play must retain the GUI object and allow parameter edits while
 stopped; Run replaces it. Asynchronous creation must preserve early gestures
 across Stop and free a view that arrives after disposal. Screenshots are saved as
-`build/editor-ui-{native,web}.png`.
+`build/test/editor-ui-{native,web}.png`.
 The same test checks track audition buttons on both backends: independent chain
 selection, mute/solo precedence, Stop/Play persistence and reset on a new Run.
 

@@ -1,7 +1,7 @@
 # Source-tracing fixture: valid unchanged both with and without the tracer.
 (import ../lib/pattern :as p)
 (import ./trace-helper :as external)
-(def synth (daw/plugin "build/fixture.perone" {:gain 0.25}))
+(def synth (daw/plugin "build/test/fixture.perone" {:gain 0.25}))
 (daw/output (daw/track synth))
 
 (def first (p/steps 0.25 [60 nil 64])) # first origin

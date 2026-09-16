@@ -223,7 +223,7 @@ static void test_disconnected_inputs(void) {
 }
 
 static void test_lifecycle(void) {
-	const char *path = "build/fixture.perone";
+	const char *path = "build/test/fixture.perone";
 	const char *stages[] = {"alloc", "init", "memory", "abi", "function"};
 	for (size_t i = 0; i < sizeof(stages) / sizeof(*stages); ++i) {
 		assert(!setenv("PERONE_TEST_FAIL", stages[i], 1));
@@ -250,7 +250,7 @@ static void test_notifications(void) {
 	Engine e = {0};
 	PluginConfig config;
 	char *binary;
-	assert(!read_bundle("build/fixture.perone", &binary, &config));
+	assert(!read_bundle("build/test/fixture.perone", &binary, &config));
 	config.to_ui = config.to_dsp = 16;
 	assert(!open_engine(&e, binary, &config, DEFAULT_SAMPLE_RATE));
 	free(binary);
@@ -299,14 +299,14 @@ static void test_notifications(void) {
 static void test_modules(void) {
 	Modules modules = {0};
 	Engine first = {.modules = &modules}, second = {.modules = &modules};
-	assert(!open_bundle(&first, "build/fixture.perone", DEFAULT_SAMPLE_RATE));
+	assert(!open_bundle(&first, "build/test/fixture.perone", DEFAULT_SAMPLE_RATE));
 	Module *module = first.dsp->module;
-	assert(!open_bundle(&second, "./build/../build/fixture.perone", DEFAULT_SAMPLE_RATE));
+	assert(!open_bundle(&second, "./build/test/../test/fixture.perone", DEFAULT_SAMPLE_RATE));
 	assert(second.dsp->module == module && second.dsp->instance != first.dsp->instance);
 	close_engine(&first);
 	close_engine(&second);
 	first.modules = &modules;
-	assert(!open_bundle(&first, "build/fixture.perone", DEFAULT_SAMPLE_RATE));
+	assert(!open_bundle(&first, "build/test/fixture.perone", DEFAULT_SAMPLE_RATE));
 	assert(first.dsp->module == module); // Cache outlives every instance.
 	modules_free(&modules);
 	modules_free(&modules);
@@ -360,7 +360,7 @@ int main(int argc, char **argv) {
 	test_modules();
 	test_notifications();
 	Engine missing = {0};
-	assert(open_bundle(&missing, "build/nonexistent.so", DEFAULT_SAMPLE_RATE) != 0);
+	assert(open_bundle(&missing, "build/test/nonexistent.so", DEFAULT_SAMPLE_RATE) != 0);
 	close_engine(&missing);
 	puts("All tests passed.");
 	return 0;

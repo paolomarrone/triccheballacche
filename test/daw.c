@@ -14,7 +14,7 @@
 #include <unistd.h>
 
 static int script(Session *s, Output *cfg, const char *source) {
-	char path[] = "build/daw-test-XXXXXX";
+	char path[] = "build/test/daw-test-XXXXXX";
 	int fd = mkstemp(path);
 	assert(fd >= 0);
 	FILE *f = fdopen(fd, "w");
@@ -31,14 +31,14 @@ static void test_buffer_score(void) {
 	const char *path = "test/unsaved.janet";
 	const char *source = "(import ../lib/music)\n"
 	                     "(assert (= (dyn :current-file) \"test/unsaved.janet\"))\n"
-	                     "(def p (daw/plugin \"build/fixture.perone\" {:gain 0.25}))\n"
+	                     "(def p (daw/plugin \"build/test/fixture.perone\" {:gain 0.25}))\n"
 	                     "(daw/output (daw/track p)) (gccollect) (daw/end (music/seconds 120 1))";
 	assert(!prepare_score(&s, &cfg, path, source, &diagnostics, NULL) && !diagnostics);
 	float audio[2];
 	assert(!session_render(&s, audio, 1) && audio[0] == .25f && audio[1] == -.25f);
 	session_free(&s);
 	const char *bad[] = {
-	    "\n(", "\nunknown-binding", "(daw/plugin \"build/fixture.perone\")\n(error \"音: failure\")", ""};
+	    "\n(", "\nunknown-binding", "(daw/plugin \"build/test/fixture.perone\")\n(error \"音: failure\")", ""};
 	const char *expected[] = {"parse error", "unknown-binding", "音: failure", "Missing (daw/end"};
 	for (int i = 0; i < 4; ++i) {
 		ScoreView view;
@@ -94,7 +94,7 @@ static void test_external_metadata(void) {
 	Session s = {0};
 	Output cfg;
 	assert(!script(&s, &cfg,
-	    "(def p (daw/plugin \"build/fixture.perone\" {:gain 0.25})) "
+	    "(def p (daw/plugin \"build/test/fixture.perone\" {:gain 0.25})) "
 	    "(def row ((daw/info p) 1)) (assert (= (row :label) \"Intensity \\\"音\\\"\")) "
 	    "(assert (= (get-in row [:scale-points :Full]) 1)) "
 	    "(assert (= (row :default) 0.5)) "
@@ -113,7 +113,7 @@ static void test_sample_rate(void) {
 	Session s = {.sample_rate = 48000};
 	Output cfg;
 	assert(!script(&s, &cfg,
-	    "(def p (daw/plugin \"build/fixture.perone\" {:gain 0.25 :mode 3})) "
+	    "(def p (daw/plugin \"build/test/fixture.perone\" {:gain 0.25 :mode 3})) "
 	    "(daw/output (daw/track p)) (daw/param p 0.001 :gain 0.75) (daw/end 0.01)"));
 	assert(s.frames == 480 && s.nodes[0].events[0].time == 48);
 	float audio[100];
@@ -342,7 +342,7 @@ static void test_listen(void) {
 static void test_initial_parameters(void) {
 	Session s = {0};
 	float out[8];
-	int source = mock(&s, 3, 1), fx = session_bundle(&s, "build/effect.perone");
+	int source = mock(&s, 3, 1), fx = session_bundle(&s, "build/test/effect.perone");
 	assert(fx >= 0 && !session_set(&s, fx, 1, .5f)); // Before the second mono instance exists.
 	assert(session_track(&s, source, &fx, 1, 0) >= 0);
 	assert(!session_param(&s, fx, 2, 2, 0));
@@ -397,7 +397,7 @@ static void test_master(void) {
 	Session s = {0};
 	float audio[64];
 	int source = mock(&s, 0, 1), tr = session_track(&s, source, NULL, 0, 0);
-	int fx = session_bundle(&s, "build/effect.perone");
+	int fx = session_bundle(&s, "build/test/effect.perone");
 	assert(fx >= 0 && !session_set(&s, tr, 1, -1));
 	assert(session_track(&s, tr, &fx, 1, 1) >= 0);
 	assert(s.nodes[fx].dsp[0].dsp != s.nodes[fx].dsp[1].dsp);
@@ -413,7 +413,7 @@ static void test_master(void) {
 }
 
 static void stereo_pipeline(Session *s) {
-	int source = mock(s, 3, 1), mono = session_bundle(s, "build/effect.perone");
+	int source = mock(s, 3, 1), mono = session_bundle(s, "build/test/effect.perone");
 	int fx[] = {mono, mock(s, 4, 1)};
 	int tr = session_track(s, source, fx, 2, 0), stereo = mock(s, 4, 1);
 	int master = session_track(s, tr, &stereo, 1, 1);
@@ -473,7 +473,7 @@ static void test_channel_transitions(void) {
 	}
 	Session s = {0};
 	float out[2];
-	int source = mock(&s, 3, 1), fx[] = {session_bundle(&s, "build/effect.perone"), mock(&s, 5, 1)};
+	int source = mock(&s, 3, 1), fx[] = {session_bundle(&s, "build/test/effect.perone"), mock(&s, 5, 1)};
 	assert(session_track(&s, source, fx, 2, 0) >= 0);
 	output_tracks(&s);
 	assert(session_end(&s, 1) < 0); // No implicit fold-down, validated before allocating mono adapters.
@@ -503,7 +503,7 @@ static void failed_exports(size_t frames, int overflow) {
 	for (int pcm16 = 0; pcm16 < 2; ++pcm16)
 		for (int normalize = 0; normalize < 2; ++normalize)
 			for (int existing = 0; existing < 2; ++existing) {
-				char directory[] = "build/export-test-XXXXXX", path[80];
+				char directory[] = "build/test/export-test-XXXXXX", path[80];
 				assert(mkdtemp(directory));
 				snprintf(path, sizeof(path), "%s/score.wav", directory);
 				const char previous[] = "previous export";
@@ -546,7 +546,7 @@ static void test_atomic_export(void) {
 		int status;
 		assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
 	}
-	char directory[] = "build/export-test-XXXXXX", path[80];
+	char directory[] = "build/test/export-test-XXXXXX", path[80];
 	assert(mkdtemp(directory));
 	snprintf(path, sizeof(path), "%s/score.wav", directory);
 	assert(!mkdir(path, 0700));
@@ -569,8 +569,8 @@ static void test_stereo_wav(void) {
 	int source = mock(&s, 3, .25f);
 	assert(session_track(&s, source, NULL, 0, 0) >= 0);
 	output_tracks(&s);
-	assert(!session_end(&s, 1025) && !write_score(&s, &cfg, "build/stereo-test.wav"));
-	FILE *f = fopen("build/stereo-test.wav", "rb");
+	assert(!session_end(&s, 1025) && !write_score(&s, &cfg, "build/test/stereo-test.wav"));
+	FILE *f = fopen("build/test/stereo-test.wav", "rb");
 	unsigned char header[44];
 	assert(f && fread(header, 1, 44, f) == 44 && header[22] == 2);
 	for (int i = 0; i < 1025; ++i) {
@@ -589,8 +589,8 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 	int source = mock(&s, 0, value), tr = session_track(&s, source, NULL, 0, 0);
 	assert(!session_set(&s, tr, 0, gain) && !session_set(&s, tr, 1, -1));
 	output_tracks(&s);
-	assert(!session_end(&s, 1025) && !write_score(&s, &cfg, "build/export-test.wav"));
-	FILE *f = fopen("build/export-test.wav", "rb");
+	assert(!session_end(&s, 1025) && !write_score(&s, &cfg, "build/test/export-test.wav"));
+	FILE *f = fopen("build/test/export-test.wav", "rb");
 	unsigned char header[44];
 	assert(f && fread(header, 1, sizeof(header), f) == sizeof(header));
 	assert(!memcmp(header, "RIFF", 4) && !memcmp(header + 8, "WAVEfmt ", 8));
@@ -651,7 +651,7 @@ int main(void) {
 	bad_script("unknown-binding");
 	bad_script("(daw/end 1) (error \"expected failure after end\")");
 	bad_script("(+ 1 2)");
-	bad_script("(daw/plugin \"build/fixture.perone\") (daw/end 1)");
+	bad_script("(daw/plugin \"build/test/fixture.perone\") (daw/end 1)");
 	puts("OK: parse/runtime errors, missing end and orphan plugins fail cleanly");
 	return 0;
 }

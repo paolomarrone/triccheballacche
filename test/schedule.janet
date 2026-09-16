@@ -1,6 +1,6 @@
 (import ../lib/pattern :as p)
 
-(def synth (daw/plugin "build/fixture.perone" {:gain 0.25}))
+(def synth (daw/plugin "build/test/fixture.perone" {:gain 0.25}))
 (daw/output (daw/track synth))
 
 (defn rejects [f]

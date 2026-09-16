@@ -18,9 +18,9 @@
 (def bypass ((perone/parameters [{:id "bypass" :direction "input" :isBypass true}]) 0))
 (assert (= [(bypass :min) (bypass :max) (bypass :default) (bypass :integer)] [0 1 0 true]))
 (rejects (fn [] (perone/value bypass 0.5)))
-(def path "build/fixture.perone")
+(def path "build/test/fixture.perone")
 (def synth (daw/plugin path {:gain 0.25}))
-(def filter (daw/plugin "build/effect.perone"))
+(def filter (daw/plugin "build/test/effect.perone"))
 (rejects (fn [] (daw/end 61))) # Unconnected plugins are never silently discarded.
 (def track (daw/track synth {:effects [filter]}))
 (def master (daw/master track))
@@ -43,7 +43,7 @@
 (rejects (fn [] (daw/plugin path {:meter -12})))
 (each f [
   (fn [] (apply daw/plugin []))
-  (fn [] (daw/plugin "build/nonexistent.so"))
+  (fn [] (daw/plugin "build/test/nonexistent.so"))
   (fn [] (daw/plugin path {:typo 1}))
   (fn [] (daw/plugin path {:gain -1}))
   (fn [] (daw/plugin path {:mode 1.5}))

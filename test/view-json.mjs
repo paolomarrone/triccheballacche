@@ -5,14 +5,14 @@ import {createHost, addFile} from "../web/host.js";
 
 const host = await createHost({printErr: () => {}});
 for (const path of ["lib/pattern.janet", "lib/trace.janet", "test/view-score.janet", "test/trace-helper.janet",
-    "build/fixture.perone/product.json", "build/effect.perone/product.json",
-    "build/fixture.perone/wasm32/fixture.wasm", "build/effect.perone/wasm32/fixture.wasm"])
+    "build/test/fixture.perone/product.json", "build/test/effect.perone/product.json",
+    "build/test/fixture.perone/wasm32/fixture.wasm", "build/test/effect.perone/wasm32/fixture.wasm"])
     await addFile(host, path, readFileSync(path));
 const queries = [["score"], ["range", 7, 0, 7, 0, 8, 100], ["range", 7, 0.2, 0.201, 0, 1, 50],
     ["status", 0.32, 1], ["note", 7, 0, 1], ["range", 6, 0, 1, 0, 1, 100],
     ["range", 7, 0, 1, 0, 1000, 100], ["range", 7, NaN, 1, 0, 1, 100], ["note", 7, 0, 1e30], ["unknown"]];
 for (const rate of [44100, 48000]) {
-    const native = spawnSync("./build/view_json_test", [String(rate)], {encoding: "utf8"});
+    const native = spawnSync("./build/test/view_json", [String(rate)], {encoding: "utf8"});
     assert.equal(native.status, 0, native.stderr);
     const expected = native.stdout.trim().split("\n").map(JSON.parse);
     const score = host.ccall("score_prepare", "number", ["string", "string", "number"],

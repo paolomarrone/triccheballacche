@@ -6,7 +6,7 @@
 
 void janet_json(JanetTable *env);
 static const char perone_source[] =
-#include "build/perone.inc"
+#include "build/generated/perone.inc"
     ;
 
 JanetTable *script_env(void) {

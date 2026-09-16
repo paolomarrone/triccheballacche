@@ -5,12 +5,12 @@ import {cp, mkdtemp, readFile, writeFile, rm} from "node:fs/promises";
 import {serve} from "./server.mjs";
 import {withBrowser} from "./chromium.mjs";
 
-const directory = await mkdtemp("build/editor-ui-"), entry = `${directory}/score.janet`;
+const directory = await mkdtemp("build/test/editor-ui-"), entry = `${directory}/score.janet`;
 let server, app;
 try {
     for (const [from, to] of [["fixture", "synth"], ["effect", "effect"]]) {
         const bundle = `${directory}/${to}.perone`;
-        await cp(`build/${from}.perone`, bundle, {recursive: true});
+        await cp(`build/test/${from}.perone`, bundle, {recursive: true});
         const metadata = JSON.parse(await readFile(`${bundle}/product.json`, "utf8"));
         if (to === "effect") {
             metadata.product.ui = {web: "ui/index.js"};
@@ -41,7 +41,7 @@ try {
     for (const mode of ["web", "native"]) {
         let url = wasm, errors = "";
         if (mode === "native") {
-            app = spawn("./build/editor", ["--serve", entry]);
+            app = spawn("./build/gui", ["--serve", entry]);
             app.stderr.on("data", data => errors += data);
             url = await new Promise((resolve, reject) => {
                 let text = "";
@@ -148,7 +148,7 @@ try {
             await evaluate("fixtureCallbacks[0].set_parameter(1, .9); fixtureCallbacks[0].msg_write(new Uint8Array([42]))");
             await new Promise(resolve => setTimeout(resolve, 150));
             assert(Math.abs(await evaluate(`Number(${fixture}.dataset.gain)`) - .3) < .0001, "Freed callbacks must not edit the DSP");
-            await writeFile(`build/editor-ui-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
+            await writeFile(`build/test/editor-ui-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
             const revision = await evaluate('document.querySelector("#timeline").dataset.revision');
             await evaluate(`globalThis.retainedUI = ${fixture}`);
             await click("stop");

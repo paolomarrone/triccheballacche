@@ -297,7 +297,7 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 	janet_cfuns_prefix(env, "native", api);
 	janet_def(env, "daw/script", janet_cstringv(path), NULL);
 	static const char daw_source[] =
-#include "build/daw.inc"
+#include "build/generated/daw.inc"
 	    ;
 	int result = janet_dostring(env, daw_source, "lib/daw.janet", NULL);
 	if (!result && view)

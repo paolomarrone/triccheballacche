@@ -12,7 +12,7 @@ export async function connect() {
     host = await createPlayerHost({printErr: message => log.push(message)});
     const url = new URL(options.get("project") || "../build/web/project.json", location.href);
     const response = await fetch(url, {cache: "no-store"});
-    if (!response.ok) throw Error("Web catalog missing: run make web-editor.");
+    if (!response.ok) throw Error("Web catalog missing: run make web.");
     const files = await response.json(), paths = new Set();
     for (const file of files) {
         const path = host.perone.path(file.path);
@@ -160,6 +160,6 @@ export async function close() {
 
 export function uiUrl(node) {
     const url = assets.get(host.perone.path(node.bundle + "/" + node.product.ui.web));
-    if (!url) throw Error("UI missing from the catalog: rebuild with make web-editor");
+    if (!url) throw Error("UI missing from the catalog: rebuild with make web");
     return url;
 }
