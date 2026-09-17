@@ -48,9 +48,10 @@ Pass the complete `.perone` directory to `build/tools/perone-host` or `daw/plugi
 travel with the binary. The host uses the unchanged Perone ABI from Tibia, with
 no DSP patches or pitch-bend compensation. See the [host contract and UI support](../README.md#perone-and-plugin-uis).
 
-The original examples in `../brickworks/build/perone` can also be loaded directly,
-including C++ variants. `examples/brickworks.janet` demonstrates this; no local
-plugin project or Janet wrapper is needed per module.
+The original examples in `../brickworks/build/perone` can also be loaded directly.
+`examples/brickworks.janet` demonstrates this; no local plugin project or Janet
+wrapper is needed per module. The default web catalog includes the 40 C examples;
+equivalent C++ variants remain supported by the host but are not published.
 
 From the host root, `make test-plugins` checks the six local prebuilt bundles,
 including synth pitch bend at 440/220/880/440 Hz and block-size independence.

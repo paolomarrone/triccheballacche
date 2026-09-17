@@ -41,7 +41,15 @@ try {
         await wait('!document.querySelector("#stop").disabled');
         await wait('Number(document.querySelector("#notes").dataset.notes) > 0');
         const revision = await evaluate('document.querySelector("#timeline").dataset.revision');
-        await evaluate(`(() => { const code = document.querySelector('#code'); code.scrollTop = 60 * 20; code.dispatchEvent(new Event('scroll')); })()`);
+        await wait(`(async () => {
+            const {frames = []} = await (await import('../web/editor.js')).command('status');
+            const frame = frames.find(([file]) => file === ${JSON.stringify(entry)});
+            if (!frame) return false;
+            const code = document.querySelector('#code');
+            code.scrollTop = (frame[1] - 1) * parseFloat(getComputedStyle(code).lineHeight);
+            code.dispatchEvent(new Event('scroll'));
+            return true;
+        })()`);
         await wait('document.querySelector("#marks").childElementCount > 0');
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
         const screenshot = await call("Page.captureScreenshot", {format: "png"});

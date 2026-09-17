@@ -53,20 +53,27 @@ make gui
 ./build/gui --serve examples/prog/polpo.janet  # Print a URL without opening a browser.
 ```
 
-For the browser, install Emscripten, Node.js and `patch`, then build the Wasm DSPs:
+For the browser, install Emscripten, Node.js and `patch`. Build the Perone `wasm32`
+bundles separately in Brickworks, A-SID and Tibia, then the local plugins:
 
 ```sh
-make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
+make -C plugins PERONE_PLATFORM=wasm32
 make web
 node test/server.mjs
 ```
 
 Open <http://localhost:8000/editor/index.html>. Polpo is the default score;
-`?score=examples/rame.janet` selects another file. Publish its dependencies with
-`WEB_CONTENT`, for example:
+`?score=examples/rame.janet` selects another file. The default catalog includes all
+scores, six local bundles, the 40 Brickworks C examples, A-SID and Tibia's C test
+product: 48 bundles. Brickworks C++ variants are excluded. The local `synth_mono`
+and `fx_svf` bundles remain available at the paths used by existing scores.
+All default examples have their dependencies in this catalog.
+
+Override `WEB_CONTENT` to publish a smaller or different project, for example
+Polpo with only the local plugins:
 
 ```sh
-make web WEB_CONTENT="lib examples plugins ../brickworks/build/perone ../asid/plugin/perone/build ../tibia/out/perone/c/build"
+make web WEB_CONTENT="lib examples/prog plugins"
 ```
 
 The catalog copies assets into `build/web/`; `?project=...` selects a different
@@ -324,7 +331,7 @@ input changes. Native and web UI lifecycle tests are described in the [test guid
 | [routing](examples/routing.janet) | Shared rhythm bus, parallel distortion/echo and a crossfade; local plugins. |
 | [automation](examples/automation.janet) | One minute of effect and mixer automation; local plugins. |
 | [patterns](examples/patterns.janet) | Repetition, reversal, transposition, stretching and a filter curve; Brickworks synth. |
-| [brickworks](examples/brickworks.janet) | Original C/C++ synth, compressor, mono-to-stereo pan and reverb bundles. |
+| [brickworks](examples/brickworks.janet) | Original C synth, compressor, mono-to-stereo pan and reverb bundles. |
 | [Rame](examples/rame.janet) | About 57 seconds of electro, using only Brickworks bundles. |
 | [Il polpo a sette gomiti](examples/prog/polpo.janet) | 30 seconds; local `synth_mono`, `drums`, `shape` and `echo`. |
 | [Denti di vetro](examples/denti.janet) | About 63 seconds of irregular IDM; Polpo's plugins plus A-SID. |
@@ -334,8 +341,8 @@ input changes. Native and web UI lifecycle tests are described in the [test guid
 
 Scores read `BRICKWORKS_PERONE`, `TIBIA_PERONE` and `ASID_PERONE` where applicable.
 Defaults are `../brickworks/build/perone`, `../tibia/out/perone/c/build/tibia-test.perone`
-and `../asid/plugin/perone/build/asid.perone`. Include these bundles in the web
-catalog when needed. The [historical Polpo WAV](examples/prog/il_polpo_a_sette_gomiti.wav)
+and `../asid/plugin/perone/build/asid.perone`. The default web catalog includes
+these bundles. The [historical Polpo WAV](examples/prog/il_polpo_a_sette_gomiti.wav)
 is preserved; `make prog` writes the current arrangement to `renders/`.
 
 `make tools` builds `build/tools/perone-host`, a standalone plugin diagnostic host.

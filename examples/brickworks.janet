@@ -1,14 +1,14 @@
-# Uses precompiled Brickworks bundles directly, including C++ and stereo plugins.
+# Uses precompiled Brickworks C bundles directly, including stereo plugins.
 (import ../lib/pattern :as p)
 
 (def root (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
 
 (defn bundle [name] (string root "/" name "/build/bw_example_" name ".perone"))
 
-(def synth (daw/plugin (bundle "synthpp_poly")))
+(def synth (daw/plugin (bundle "synth_poly")))
 (def comp (daw/plugin (bundle "fx_comp"))) # Optional sidechain stays disconnected.
 (def pan (daw/plugin (bundle "fx_pan")))
-(def reverb (daw/plugin (bundle "fxpp_reverb")))
+(def reverb (daw/plugin (bundle "fx_reverb")))
 (daw/output (daw/track synth {:effects [comp pan reverb] :gain 0.3}))
 (defn chord [pitches]
   (p/events 2 (map |[0 1.5 $] pitches)))

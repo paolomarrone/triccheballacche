@@ -26,13 +26,13 @@
   (array/push items [beat (+ beat duration) [:note node pitch 100]]))
 
 # Pads: pulse + detuned saw, chorus, mono-to-stereo pan, stereo reverb.
-(def pad (bw "synthpp_poly"
+(def pad (bw "synth_poly"
   {:volume 68 :vco1_wave 2 :vco1_pw 42 :vco2_level 68 :vco2_fine 7
    :vcf_cutoff 650 :vcf_resonance 5 :vcf_contour 12
    :vcf_attack 350 :vcf_decay 700 :vcf_sustain 55
    :vca_attack 240 :vca_decay 600 :vca_sustain 70 :vca_release 850}))
 (def chorus (bw "fx_chorus" {:rate 0.25 :depth 28}))
-(def pad-space (bw "fxpp_reverb" {:predelay 28 :damping 4200 :decay 72 :wet 27}))
+(def pad-space (bw "fx_reverb" {:predelay 28 :damping 4200 :decay 72 :wet 27}))
 (def pad-track (daw/track pad
   {:gain 0.26 :effects [chorus (bw "fx_pan" {:pan -15}) pad-space]}))
 (array/push tracks pad-track)
@@ -52,7 +52,7 @@
   {:pulse_width 32 :cutoff 1500 :resonance 13 :decay 130 :sustain 0 :release 90}))
 (def phaser (bw "fx_phaser" {:rate 0.17 :amount 1.4 :center 1200}))
 (def arp-pan (bw "fx_pan"))
-(def arp-space (bw "fxpp_reverb" {:predelay 60 :damping 5800 :decay 65 :wet 20}))
+(def arp-space (bw "fx_reverb" {:predelay 60 :damping 5800 :decay 65 :wet 20}))
 (array/push tracks
   (daw/track arp {:gain 0.45 :effects [phaser arp-pan arp-space]}))
 
@@ -61,7 +61,7 @@
    :portamento 38 :vcf_cutoff 2800 :vcf_resonance 8 :vcf_contour 10
    :vcf_decay 260 :vcf_sustain 30
    :vca_attack 12 :vca_decay 230 :vca_sustain 55 :vca_release 240}))
-(def lead-space (bw "fxpp_reverb" {:predelay 85 :damping 4600 :decay 73 :wet 22}))
+(def lead-space (bw "fx_reverb" {:predelay 85 :damping 4600 :decay 73 :wet 22}))
 (array/push tracks
   (daw/track lead {:gain 0.38 :effects [(bw "fx_pan" {:pan 22}) lead-space]}))
 
@@ -75,7 +75,7 @@
    :vca_decay 150 :vca_sustain 0 :vca_release 85}))
 (array/push tracks
   (daw/track snare {:gain 1.9 :pan -0.1
-    :effects [(bw "fxpp_reverb" {:predelay 9 :damping 3800 :decay 35 :wet 9})]}))
+    :effects [(bw "fx_reverb" {:predelay 9 :damping 3800 :decay 35 :wet 9})]}))
 (def hat (bw "synth_mono"
   {:vco1_level 0 :noise_level 100 :vcf_cutoff 11000
    :vca_decay 38 :vca_sustain 0 :vca_release 25}))
