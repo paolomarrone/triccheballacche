@@ -1,5 +1,7 @@
 import {timeline} from "./timeline.js";
 import {plugins} from "./plugins.js";
+import {library} from "./library.js";
+import {files} from "./files.js";
 
 const byId = id => document.getElementById(id);
 const path = byId("path"), code = byId("code"), views = byId("views"), errors = byId("errors");
@@ -49,6 +51,7 @@ function dirty() {
 }
 
 function update() {
+    browser.status(ready && !busy);
     controls?.status(prepared, busy);
     projection.status(prepared, busy);
     for (const id of ["open", "save", "run", "views"]) byId(id).disabled = !ready || busy;
@@ -95,10 +98,11 @@ function request(op, ...args) {
     return result;
 }
 
-async function action(op) {
+async function action(op, entry = path.value, file) {
     if (!ready || busy) return;
-    if (op === "open" && dirty() && !confirm("Open another file and discard unsaved changes?")) return;
-    if (["open", "save", "run"].includes(op) && !path.value.trim()) {
+    const opening = op === "open" || op === "import";
+    if (opening && dirty() && !confirm("Open another file and discard unsaved changes?")) return;
+    if ((opening || ["save", "run"].includes(op)) && !entry.trim()) {
         showError("Enter a score path.");
         return;
     }
@@ -108,16 +112,19 @@ async function action(op) {
     update();
     try {
         if (op === "run") controls.dispose();
-        const result = await request(op, path.value, ["save", "run"].includes(op) ? code.value : "");
+        if (file?.size > 8 * 1024 * 1024) throw Error("Score too large (at most 8 MiB)");
+        const source = file ? await file.text() : ["save", "run"].includes(op) ? code.value : "";
+        const result = await request(op, entry, source);
         if (op === "run") {
             revision = result.score.revision;
             projection.score(result.score);
             tracedSource = code.value;
             tracedPath = result.path;
             controls.score(result.score, result.nativeAvailable);
+            browser.score(result.score);
         }
-        if (op === "open") code.value = result.text;
-        if (op === "open" || op === "save") {
+        if (opening) code.value = result.text;
+        if (opening || op === "save") {
             path.value = savedPath = result.path;
             saved = code.value;
         }
@@ -128,6 +135,10 @@ async function action(op) {
         update();
     }
 }
+
+const browser = library(request, entry => action("open", entry), showError);
+const pickFile = files(request, entry => action("open", entry),
+    (file, directory) => action("import", `${directory.replace(/\/$/, "")}/${file.name}`, file));
 
 const projection = timeline(request, origins => {
     if (!tracking()) return;
@@ -141,14 +152,23 @@ const projection = timeline(request, origins => {
 }, index => { views.checked = true; controls?.track(index); }, showError);
 new ResizeObserver(paint).observe(code);
 
-for (const op of ["open", "save", "run", "play", "stop"]) byId(op).addEventListener("click", () => action(op));
+for (const op of ["save", "run", "play", "stop"]) byId(op).addEventListener("click", () => action(op));
+byId("open").onclick = () => pickFile(path.value, backend.canUpload);
+for (const button of document.querySelectorAll("[data-close]")) button.onclick = () => button.closest("dialog").close();
 views.addEventListener("change", () => controls?.show(views.checked));
 for (const event of ["input", "click", "keyup", "select"]) code.addEventListener(event, update);
 code.addEventListener("scroll", paint);
 window.addEventListener("resize", paint);
 window.addEventListener("pagehide", () => { controls?.dispose(); backend?.close?.().catch(showError); });
 path.addEventListener("input", update);
+path.addEventListener("keydown", event => {
+    if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        action("open");
+    }
+});
 document.addEventListener("keydown", event => {
+    if (event.defaultPrevented || document.querySelector("dialog[open]")) return;
     let op;
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") op = "run";
     if ((event.ctrlKey || event.metaKey) && event.code === "Space" && prepared) op = "play";
@@ -179,7 +199,7 @@ async function poll() {
 export async function startEditor(adapter) {
     backend = adapter;
     controls = plugins(request, adapter, showError);
-    byId("save").textContent = backend.saveLabel;
+    byId("save").setAttribute("aria-label", backend.saveLabel);
     byId("save").title = backend.saveTitle;
     try {
         await backend.connect();
@@ -188,6 +208,7 @@ export async function startEditor(adapter) {
         const result = await request("open");
         path.value = savedPath = result.path;
         code.value = saved = result.text;
+        await browser.load();
     } catch (error) {
         showError(error);
     }

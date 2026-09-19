@@ -33,7 +33,7 @@ try {
         await call("Page.navigate", {url: `http://127.0.0.1:${server.address().port}/editor/index.html?score=${encodeURIComponent(entry)}`});
         await wait('document.querySelector("#run")?.disabled === false');
         assert(await evaluate('crossOriginIsolated && !globalThis.webui'));
-        assert.equal(await evaluate('document.querySelector("#save").textContent'), "Download");
+        assert.equal(await evaluate('document.querySelector("#save").getAttribute("aria-label")'), "Download");
         assert(await evaluate('document.querySelector("#plugin-views").getBoundingClientRect().width > 0'));
         assert.equal(await evaluate('getComputedStyle(document.querySelector("#sheet")).display'), "flex");
         const source = await evaluate('document.querySelector("#code").value');
@@ -90,11 +90,11 @@ try {
         }
         assert.equal(contents, downloaded);
         assert.equal(await readFile(entry, "utf8"), source, "Download must not modify server files");
-        await click("open");
+        await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
         await wait('!document.querySelector("#run").disabled');
         assert.equal(await evaluate('document.querySelector("#code").value'), downloaded, "Downloads also update the session filesystem");
         await set("path", "examples/absent.janet");
-        await click("open");
+        await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
         await wait('document.querySelector("#errors").textContent.includes("missing")');
         assert.equal(await evaluate('document.querySelector("#code").value'), downloaded);
         assert.deepEqual(diagnostics, []);

@@ -9,11 +9,15 @@
     <button id="run" title="Evaluate score and play · Ctrl+Enter" aria-label="Run" disabled>Run</button>
     <button id="play" title="Play prepared score from the start · Ctrl+Space" aria-label="Play" disabled>▶</button>
     <button id="stop" title="Stop · Esc" aria-label="Stop" disabled>■</button>
-    <input id="path" type="text" aria-label="Score path" spellcheck="false" placeholder="examples/gui.janet" disabled>
-    <span id="modified" title="Unsaved changes" aria-label="Unsaved changes"></span>
-    <button id="open" title="Open score" disabled>Open</button>
-    <button id="save" title="Save · Ctrl+S" disabled>Save</button>
+    <div id="file-bar">
+        <input id="path" type="text" aria-label="Score path" title="Enter a path and press Enter to open" spellcheck="false" placeholder="examples/gui.janet" disabled>
+        <span id="modified" title="Unsaved changes" aria-label="Unsaved changes"></span>
+        <button id="open" class="icon" title="Open file" aria-label="Open file" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9V5h6l2 2h10v2M3 9h19l-4 11H3z"/></svg></button>
+        <button id="save" class="icon" title="Save · Ctrl+S" aria-label="Save" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21H3V3h14l4 4v14zM7 3v6h9V3M7 21v-8h10v8"/></svg></button>
+    </div>
+    <select id="examples" aria-label="Examples" disabled><option value="">Examples</option></select>
     <label id="plugin-views" title="Show plugin UIs"><input id="views" type="checkbox" disabled> GUI</label>
+    <button id="settings" class="icon" title="Settings" aria-label="Settings" aria-haspopup="dialog" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-1 3-3 1-2 4 2 2v3l3 2 1 3h6l1-3 3-2v-3l2-2-2-4-3-1-1-3z"/><circle cx="12" cy="12" r="3"/></svg></button>
 </nav>
 <main>
     <div id="workspace">
@@ -43,4 +47,27 @@
     <output id="time" title="Rendered time">0.00 s</output>
     <span id="position" title="Line:column">1:1</span>
 </footer>
+<dialog id="settings-dialog" aria-labelledby="settings-title">
+    <header><h2 id="settings-title">Settings</h2><button class="icon" data-close title="Close settings" aria-label="Close settings">×</button></header>
+    <div id="settings-body">
+        <nav aria-label="Settings categories"><button id="settings-plugins" aria-controls="settings-catalog" aria-current="page">Plugins</button></nav>
+        <section id="settings-catalog" aria-label="Plugins" tabindex="-1">
+            <h3>Plugin sources</h3>
+            <ul id="plugin-paths"></ul>
+            <h3 id="catalog-title">Available plugins</h3>
+            <div id="catalog-list"></div>
+        </section>
+    </div>
+</dialog>
+<dialog id="file-dialog" aria-labelledby="file-title">
+    <header><h2 id="file-title">Open file</h2><button class="icon" data-close title="Cancel" aria-label="Cancel">×</button></header>
+    <form id="file-location">
+        <button id="file-up" type="button" title="Parent directory" aria-label="Parent directory">↑</button>
+        <input id="file-directory" type="text" aria-label="Directory" spellcheck="false" autocomplete="off">
+        <button type="submit">Go</button>
+    </form>
+    <div id="file-list" aria-label="Files"></div>
+    <p id="file-error" role="alert" hidden></p>
+    <footer id="file-local" hidden><button id="file-upload">Choose from device…</button><input id="file-input" type="file" accept=".janet,text/plain" hidden></footer>
+</dialog>
 </html>

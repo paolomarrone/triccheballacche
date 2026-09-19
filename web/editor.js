@@ -2,9 +2,11 @@ import {createPlayerHost, prepareScore, attachPlayer, closePlayer} from "./playe
 import {addFile} from "./host.js";
 
 export const saveLabel = "Download", saveTitle = "Download a copy of the score · Ctrl+S";
+export const canUpload = true;
 const options = new URLSearchParams(location.search);
 const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();
+let library;
 let host, player, playing = false, view = 0, revision = 0, time = 0, failure = "", log = [];
 
 export async function connect() {
@@ -29,6 +31,11 @@ export async function connect() {
     }));
     const failed = loaded.find(result => result.status === "rejected");
     if (failed) throw failed.reason;
+    const entries = files.filter(file => file.path.endsWith(".perone/product.json") ||
+        file.path.startsWith("examples/") && file.path.endsWith(".janet")).map(file => ({
+            path: file.path, text: file.path.endsWith(".json") ? host.FS.readFile(host.perone.path(file.path), {encoding: "utf8"}) : undefined
+        }));
+    library = {paths: [url.href], files: entries};
 }
 
 function query(op, args = []) {
@@ -95,9 +102,18 @@ function checkedText(text) {
 
 // The shared controller serializes commands, including asynchronous player cleanup.
 export async function command(op, ...args) {
+    if (op === "library") return library;
     let result = {}, error = "", path = ["range", "note", "listen"].includes(op) ? "" : args[0] || entry;
     try {
-        if (op === "listen") {
+        if (op === "files") {
+            path = host.perone.path(args[0] || ".");
+            result.files = host.FS.readdir(path).filter(name => !name.startsWith(".")).map(name => ({
+                name, directory: host.FS.isDir(host.FS.stat(`${path}/${name}`).mode)
+            }));
+        } else if (op === "import") {
+            result.text = checkedText(args[1]);
+            await addFile(host, path, new TextEncoder().encode(result.text));
+        } else if (op === "listen") {
             const [version, track, flags] = args;
             if (!player || version !== revision) throw Error("Stale track view");
             player.listen(track, flags);

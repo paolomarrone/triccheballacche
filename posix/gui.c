@@ -5,17 +5,14 @@
 #include "util.h"
 #include "json_write.h"
 #include "score_view_json.h"
+#include "files.h"
 #include "webui.h"
-#include <errno.h>
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-
-enum { MAX_SOURCE = 8 * 1024 * 1024 };
 
 // WebUI callbacks borrow their event until the main thread has answered it.
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -96,64 +93,6 @@ static void finish(Editor *editor) {
 	session_free(&editor->session);
 }
 
-static const char *read_text(const char *path, char **text) {
-	struct stat info;
-	if (stat(path, &info))
-		return strerror(errno);
-	if (!S_ISREG(info.st_mode))
-		return "Path is not a regular file";
-	FILE *file = fopen(path, "rb");
-	if (!file)
-		return strerror(errno);
-	long size = -1;
-	if (!fseek(file, 0, SEEK_END))
-		size = ftell(file);
-	const char *error = "Cannot read file (at most 8 MiB of text)";
-	if (size >= 0 && size <= MAX_SOURCE && !fseek(file, 0, SEEK_SET)) {
-		*text = malloc((size_t)size + 1);
-		if (*text && fread(*text, 1, size, file) == (size_t)size && !ferror(file) && !memchr(*text, 0, size)) {
-			(*text)[size] = 0;
-			error = NULL;
-		}
-	}
-	fclose(file);
-	if (error) {
-		free(*text);
-		*text = NULL;
-	}
-	return error;
-}
-
-static const char *save_text(const char *path, const char *text) {
-	// Follow an existing symlink and preserve permissions; publish only a complete write.
-	char *resolved = realpath(path, NULL);
-	const char *target = resolved ? resolved : path;
-	char *temporary = malloc(strlen(target) + sizeof(".XXXXXX"));
-	if (!temporary) {
-		free(resolved);
-		return "Out of memory";
-	}
-	sprintf(temporary, "%s.XXXXXX", target);
-	struct stat info;
-	int exists = !stat(target, &info), fd = mkstemp(temporary), result = -1;
-	if (fd >= 0) {
-		FILE *file = fdopen(fd, "wb");
-		if (file) {
-			result = (exists && fchmod(fd, info.st_mode & 0777)) || fputs(text, file) < 0;
-			result |= fclose(file) != 0;
-		} else {
-			close(fd);
-		}
-		if (!result)
-			result = rename(temporary, target);
-		if (result)
-			unlink(temporary);
-	}
-	free(temporary);
-	free(resolved);
-	return result ? "Cannot save file; the previous file is preserved" : NULL;
-}
-
 static double decimal(webui_event_t *request, int index) {
 	const char *value = webui_get_string_at(request, index);
 	char *end;
@@ -204,6 +143,12 @@ static void reply(
 
 static void command(Editor *editor, webui_event_t *event) {
 	const char *op = webui_get_string_at(event, 0);
+	if (!strcmp(op, "library") || !strcmp(op, "files")) {
+		char *json = !strcmp(op, "library") ? library_json() : directory_json(webui_get_string_at(event, 1));
+		webui_return_string(event, json ? json : "{\"error\":\"Cannot read library\"}");
+		free(json);
+		return;
+	}
 	if (!strcmp(op, "listen")) {
 		double revision = decimal(event, 1), track = decimal(event, 2), flags = decimal(event, 3);
 		const char *error = NULL;
@@ -233,9 +178,9 @@ static void command(Editor *editor, webui_event_t *event) {
 	if (webui_get_size_at(event, 2) > MAX_SOURCE) {
 		error = "Score too large (at most 8 MiB)";
 	} else if (!strcmp(op, "open")) {
-		error = read_text(path, &text);
+		error = file_read(path, &text);
 	} else if (!strcmp(op, "save")) {
-		error = save_text(path, source);
+		error = file_save(path, source);
 	} else if (!strcmp(op, "run")) {
 		error = pause_editor(editor);
 		free(editor->error);

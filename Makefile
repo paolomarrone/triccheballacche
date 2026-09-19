@@ -74,8 +74,9 @@ build/obj/native/json.o: $(SPORK)/src/json.c Makefile | $(JANET)/Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -DJANET_ENTRY_NAME=janet_json -MMD -MP -c $< -o $@
 
 build/obj/native/test/%.o: CFLAGS += -UNDEBUG
-$(addprefix build/obj/native/,daw.o script.o trace.o posix/ui.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
+$(addprefix build/obj/native/,daw.o script.o trace.o posix/files.o posix/ui.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
 build/obj/native/script.o: build/generated/perone.inc
+build/obj/native/posix/files.o: build/generated/library.inc
 build/obj/native/daw.o: build/generated/daw.inc
 $(addprefix build/obj/native/,audio.o player.o posix/cli.o posix/export.o posix/gui.o tools/perone-host.o test/player.o): $(MINIAUDIO)
 $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): CPPFLAGS += -I$(WEBUI)/include
@@ -87,7 +88,7 @@ $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
 	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(filter %.a,$^) $(LDLIBS) -o $@
 
 build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
-build/gui: $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o posix/ui.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
+build/gui: $(addprefix build/obj/native/,posix/gui.o posix/files.o posix/controls.o posix/assets.o posix/ui.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
 build/tools/perone-host: build/obj/native/tools/perone-host.o $(ENGINE_OBJECTS) build/obj/native/audio.o
 build/gui build/test/ui: LDLIBS += -lX11
 
@@ -257,7 +258,7 @@ $(TEST_EFFECT)/wasm32/fixture.wasm: test/perone/plugin.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(WEB_FIXTURE_FLAGS) -DPERONE_TEST_EFFECT $< -o $@
 
-.PHONY: test-web test-browser test-polpo-web test-trace test-editor-web test-editor-ui
+.PHONY: test-web test-browser test-polpo-web test-trace test-editor-web test-editor-ui test-library
 test-web: build/web/offline.mjs build/web/player.mjs cli build/test/view_json $(NATIVE_FIXTURES) $(WEB_FIXTURES)
 	node test/request.mjs
 	node test/web.mjs
@@ -276,6 +277,10 @@ test-trace: test-web
 
 test-editor-web: web | build/test
 	node test/editor-web.mjs
+
+# The published library must have both native and Wasm versions of its production bundles.
+test-library: gui web | build/test
+	node test/library.mjs
 
 # Self-contained UI fixture: the exact same ES module drives native and Wasm DSPs.
 test-editor-ui: gui test-web

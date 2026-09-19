@@ -197,11 +197,11 @@ try {
         assert.equal(await evaluate('statusHasTrace'), false, "Never transfer the complete source report");
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
         await set("path", `${directory}/absent.janet`);
-        await click("open");
+        await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
         await waitFor('!document.querySelector("#errors").hidden');
         assert.equal(await evaluate('document.querySelector("#code").value'), changed);
         await set("path", path);
-        await click("open");
+        await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
         await waitFor('document.querySelector("#errors").hidden && !document.querySelector("#run").disabled');
         const responses = await evaluate(`Promise.all(Array.from({length: 8}, () =>
             webui.call("command", "status").then(JSON.parse)))`);

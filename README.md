@@ -94,6 +94,21 @@ Desktop saves replace the file atomically; web **Download** saves a local copy
 and updates the session filesystem. Reloading restores the published files.
 Scores are UTF-8 text without NUL bytes, up to 8 MiB.
 
+The path bar contains **Open** and **Save** icons. Open selects a Janet file;
+pressing Enter in the path field opens the typed path. **Examples** loads a score
+immediately from its dropdown. Replacing an unsaved buffer asks for confirmation.
+The shared file picker browses the desktop filesystem or the web session's files.
+On the web, **Choose from device** imports a local file into the selected session
+directory; its relative imports must already be available there.
+
+The top-right **Settings** icon opens a modal with a **Plugins** category: plugin
+sources, available bundles and instance counts from the last successful Run.
+The browser uses its published catalog; the desktop discovers local plugins,
+Brickworks C bundles, A-SID, Tibia C and files under `examples/`, honoring the
+plugin path environment variables below. Discovery reads metadata without
+creating DSPs. Reload after adding bundles. The right panel controls the selected
+track's plugin instances.
+
 Active event origins light up automatically, including note generators inside
 functions. Editing suspends tracking until the buffer matches the running score
 or is rerun. The timeline shows tracks, effect chains and MIDI notes from the last
