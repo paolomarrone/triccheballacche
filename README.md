@@ -43,9 +43,12 @@ The browser editor needs only the playback runtime; offline rendering is optiona
 
 ## Editors
 
-The desktop editor uses [WebUI](https://github.com/webui-dev/webui) and native audio.
-Its optional build needs X11 development libraries and `patch`; WebUI 2.4.2
-is fetched at a pinned revision. Node.js is not a desktop runtime dependency.
+The desktop editor uses [WebUI](https://github.com/webui-dev/webui)'s embedded
+WebView and native audio, with its own window title and icon. Its optional build
+needs X11 development libraries; WebUI 2.5 prerelease is fetched at a pinned revision.
+On Linux, the window uses GTK 3 and WebKitGTK 4.1 (or 4.0) runtime libraries.
+Node.js is not a desktop runtime dependency. `--serve` runs without a WebView and
+prints a localhost URL for opening the same editor in a browser.
 
 ```sh
 make gui
@@ -436,7 +439,7 @@ Use English for prose, comments and UI text; keep musical names.
 Local C uses tabs displayed at four columns, Janet two spaces, and JavaScript
 four spaces. `.editorconfig` and `.clang-format` define formatting;
 `make format-check` uses clang-format 21 and excludes upstream/generated files.
-The build patches copies of WebUI (asset MIME types) and miniaudio (worklet stack
-cleanup); `web/audio.js` handles Emscripten's already-closed AudioContext case.
+The build patches a copy of miniaudio for worklet stack cleanup;
+`web/audio.js` handles Emscripten's already-closed AudioContext case.
 Sources and dependencies retain their respective licenses.
 See the [test guide](test/README.md) for commands, prerequisites and coverage.

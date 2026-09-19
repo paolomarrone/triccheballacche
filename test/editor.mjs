@@ -109,6 +109,14 @@ try {
         await set("code", "# new draft\n" + changed);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert((await evaluate('document.querySelector("#state").textContent')).includes("tracking paused"));
+        assert.equal(await evaluate(`(() => {
+            const original = window.confirm;
+            let asked = false;
+            window.confirm = () => { asked = true; return false; };
+            window.dispatchEvent(new Event("close-request"));
+            window.confirm = original;
+            return asked && webui.isConnected() && document.title.startsWith("* ") && document.title.endsWith("triccheballacche");
+        })()`), true, "Cancelling window close preserves the unsaved draft and connection");
         await set("code", changed);
         await waitFor(`document.querySelector('#marks [data-line="${producer}"]')`);
         await set("path", `${directory}/another.janet`);

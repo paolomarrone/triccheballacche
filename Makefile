@@ -13,8 +13,8 @@ JANET ?= .deps/janet
 JANET_INCLUDES = -I$(JANET)/src/include -I$(JANET)/src/conf
 SPORK ?= .deps/spork
 SPORK_REV = 0667f96b74de52747ffe5e19e185563ebf53816b
-WEBUI ?= .deps/webui
-WEBUI_REV = ac4ea8cd7b11daf3d96c65db03e6c02e1e0bd6d2
+WEBUI_REV = 52f9e75b92faf9a23fd150b3c60051c4ec85fc69
+WEBUI ?= .deps/webui-$(WEBUI_REV)
 PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
@@ -94,22 +94,25 @@ build/gui build/test/ui: LDLIBS += -lX11
 
 # Only the GUI needs WebUI. Compile its two sources once, without an unused shared library.
 $(WEBUI)/include/webui.h:
-	git clone --depth 1 --branch 2.4.2 https://github.com/webui-dev/webui.git $(WEBUI)
+	git init $(WEBUI)
+	git -C $(WEBUI) fetch --depth 1 https://github.com/webui-dev/webui.git $(WEBUI_REV)
 	git -C $(WEBUI) checkout $(WEBUI_REV)
-
-# WebUI 2.4's HTTP server lacks Wasm/ES-module MIME types. Patch a build copy only.
-build/generated/webui/civetweb.c: $(WEBUI)/include/webui.h posix/webui.patch
-	mkdir -p $(dir $@)
-	cp $(WEBUI)/src/civetweb/civetweb.c $@
-	patch --silent $@ posix/webui.patch
 
 build/obj/native/vendor/webui.o: $(WEBUI)/include/webui.h Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -w -DNO_SSL -I$(WEBUI)/include -MMD -MP -c $(WEBUI)/src/webui.c -o $@
 
-build/obj/native/vendor/civetweb.o: build/generated/webui/civetweb.c Makefile
+build/obj/native/vendor/civetweb.o: $(WEBUI)/include/webui.h Makefile
 	mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -w -DNDEBUG -DNO_SSL -DNO_CACHING -DNO_CGI -DUSE_WEBSOCKET -I$(WEBUI)/src/civetweb -MMD -MP -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -w -DNDEBUG -DNO_SSL -DNO_CACHING -DNO_CGI -DUSE_WEBSOCKET -I$(WEBUI)/src/civetweb -MMD -MP -c $(WEBUI)/src/civetweb/civetweb.c -o $@
+
+ifeq ($(TARGET_OS),Darwin)
+build/gui: build/obj/native/vendor/wkwebview.o
+build/gui: LDLIBS += -framework Cocoa -framework WebKit
+build/obj/native/vendor/wkwebview.o: $(WEBUI)/include/webui.h Makefile
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -w -MMD -MP -c $(WEBUI)/src/webview/wkwebview.m -o $@
+endif
 
 # Tests link only the components they exercise. Fixtures are independent of Tibia.
 $(NATIVE_TESTS): build/test/%: build/obj/native/test/%.o

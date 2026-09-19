@@ -3,10 +3,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>triccheballacche</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="stylesheet" href="style.css">
 <script src="/webui.js"></script>
 <script type="module">
-// WebUI 2.4 must load before DOMContentLoaded. Reuse the same editor document and controller.
+// Load the bridge before DOMContentLoaded; reuse the shared editor document and controller.
 try {
     const response = await fetch("index.html");
     if (!response.ok) throw Error("Cannot load the editor");

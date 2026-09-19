@@ -58,10 +58,16 @@ const void *assets_read(const char *url, int *length) {
 		goto done;
 	FILE *file = fopen(resolved, "rb");
 	if (file) {
-		data = webui_malloc(info.st_size + 1);
-		if (data && fread(data, 1, info.st_size, file) == (size_t)info.st_size && !ferror(file)) {
-			((char *)data)[info.st_size] = 0;
-			*length = info.st_size;
+		char header[512];
+		int size = snprintf(header, sizeof(header),
+		    "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nCache-Control: no-store\r\n\r\n",
+		    webui_get_mime_type(resolved), (long long)info.st_size);
+		if (size > 0 && size < (int)sizeof(header))
+			data = webui_malloc(size + info.st_size + 1);
+		if (data && fread((char *)data + size, 1, info.st_size, file) == (size_t)info.st_size && !ferror(file)) {
+			memcpy(data, header, size);
+			*length = size + info.st_size;
+			((char *)data)[*length] = 0;
 		} else {
 			webui_free(data);
 			data = NULL;

@@ -7,6 +7,7 @@
 #include "score_view_json.h"
 #include "files.h"
 #include "webui.h"
+#include <locale.h>
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
@@ -19,6 +20,7 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t answered = PTHREAD_COND_INITIALIZER;
 static webui_event_t *pending;
 static int closing;
+static int frontend_ready;
 static volatile sig_atomic_t stopped;
 
 typedef struct {
@@ -37,6 +39,15 @@ typedef struct {
 static void stop(int signal) {
 	(void)signal;
 	stopped = 1;
+}
+
+static bool close_window(size_t window) {
+	if (stopped || !frontend_ready) {
+		stopped = 1;
+		return true;
+	}
+	webui_run(window, "window.dispatchEvent(new Event('close-request'))");
+	return false;
 }
 
 static void request(webui_event_t *event) {
@@ -142,7 +153,13 @@ static void reply(
 }
 
 static void command(Editor *editor, webui_event_t *event) {
+	frontend_ready = 1;
 	const char *op = webui_get_string_at(event, 0);
+	if (!strcmp(op, "close")) {
+		stopped = 1;
+		webui_return_string(event, "{}");
+		return;
+	}
 	if (!strcmp(op, "library") || !strcmp(op, "files")) {
 		char *json = !strcmp(op, "library") ? library_json() : directory_json(webui_get_string_at(event, 1));
 		webui_return_string(event, json ? json : "{\"error\":\"Cannot read library\"}");
@@ -272,6 +289,7 @@ int main(int argc, char **argv) {
 	Editor editor = {.entry = argc > arg ? argv[arg] : "examples/gui.janet"};
 	size_t window = webui_new_window();
 	webui_set_timeout(0);
+	webui_set_config(show_wait_connection, false);
 	webui_set_public(window, false);
 	if (!webui_set_root_folder(window, "editor")) {
 		fputs("Run from the repository root: cannot find editor/\n", stderr);
@@ -280,17 +298,21 @@ int main(int argc, char **argv) {
 	webui_bind(window, "command", request);
 	webui_set_file_handler(window, assets_read);
 	webui_set_size(window, 1000, 760);
+	webui_set_icon_file(window, "editor/icon.svg");
+	webui_set_close_handler_wv(window, close_window);
 	signal(SIGINT, stop);
 	signal(SIGTERM, stop);
-	int shown = webui_show_browser(window, "native.html", serve ? NoBrowser : AnyBrowser);
+	int shown = serve ? *webui_start_server(window, "native.html") != 0 : webui_show_wv(window, "native.html");
+	// The WebView toolkit may initialize the locale; score numbers and JSON use decimal points.
+	setlocale(LC_NUMERIC, "C");
 	if (!serve && !shown) {
-		fputs("Cannot open the editor browser. Try --serve and open its URL.\n", stderr);
+		fputs("Cannot open the native editor. Install the WebView runtime or use --serve.\n", stderr);
 		stopped = 1;
 	}
-	printf("Editor: %s/native.html\n", webui_get_url(window));
+	printf("Editor: http://localhost:%zu/native.html\n", webui_get_port(window));
 	fflush(stdout);
-	int connected = shown;
-	while (!stopped) {
+	int connected = 0;
+	while (!stopped && webui_wait_async()) {
 		int visible = webui_is_shown(window);
 		if (connected && !visible)
 			break;

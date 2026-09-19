@@ -65,7 +65,7 @@ function update() {
         tracking() ? `Playing${partial ? " · partial origins" : ""}` : "Playing · tracking paused: rerun your changes";
     const before = code.value.slice(0, code.selectionStart).split("\n");
     byId("position").textContent = `${before.length}:${before.at(-1).length + 1}`;
-    document.title = `${dirty() ? "* " : ""}${savedPath || "triccheballacche"}`;
+    document.title = `${dirty() ? "* " : ""}${savedPath ? savedPath + " · " : ""}triccheballacche`;
     paint();
 }
 
@@ -160,6 +160,11 @@ for (const event of ["input", "click", "keyup", "select"]) code.addEventListener
 code.addEventListener("scroll", paint);
 window.addEventListener("resize", paint);
 window.addEventListener("pagehide", () => { controls?.dispose(); backend?.close?.().catch(showError); });
+window.addEventListener("close-request", () => {
+    if (dirty() && !confirm("Close and discard unsaved changes?")) return;
+    window.onbeforeunload = null;
+    request("close").catch(error => { window.onbeforeunload = beforeUnload; showError(error); });
+});
 path.addEventListener("input", update);
 path.addEventListener("keydown", event => {
     if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {

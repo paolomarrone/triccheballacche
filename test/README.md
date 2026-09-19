@@ -15,7 +15,7 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | `make test-browser` | AudioWorklet PCM, playback and cleanup in Chromium; includes `test-web`. |
 | `make test-polpo-web` | Original Polpo score: live/offline PCM comparison and cleanup; Chromium and its four prebuilt Wasm plugins. |
 | `make test-trace` | Source provenance and unchanged PCM; includes `test-web`. |
-| `make test-editor` | Native editor in Chromium, with local fixtures; X11 development libraries, `patch` and an audio device. |
+| `make test-editor` | Native backend via `--serve` in Chromium, with local fixtures; X11 development libraries and an audio device. |
 | `make test-editor-web` | Polpo in the shared browser editor; Node.js, Chromium and Polpo's Wasm plugins. |
 | `make test-editor-ui` | The same custom UI with native and Wasm DSPs; editor/browser prerequisites, no external plugin checkout. |
 | `make test-library` | Shared Settings, catalog, examples dropdown, file picker, uploads and unsaved edits; all 48 default bundles built for native and Wasm, plus editor/browser prerequisites. |
