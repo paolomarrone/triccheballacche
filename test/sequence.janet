@@ -1,0 +1,8 @@
+(import ../lib/pattern :as p)
+(def tone (daw/plugin :tone "build/test/fixture.perone" {:gain 0.25}))
+(def effect (daw/plugin :filter "build/test/effect.perone" {:gain 0.8 :decay 0.3}))
+(daw/output (daw/track tone {:effects [effect]}))
+(daw/tempo 137)
+(def notes (p/loop (p/map |[:note tone $ 100] (p/steps (/ 1 3) [60 64 nil 67]))))
+(def gain (p/loop (p/map |[:param tone :gain $] (p/curve 3 7 |(+ 0.2 (* 0.6 $))))))
+(daw/score (p/parallel [notes gain]) {:duration 5})

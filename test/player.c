@@ -244,6 +244,26 @@ static void test_lifecycle(void) {
 	puts("OK: player validation, init/start/render failures, stop and device-before-session cleanup");
 }
 
+static void test_live_clock(void) {
+	const unsigned rates[] = {44100, 96000};
+	for (size_t i = 0; i < sizeof(rates) / sizeof(*rates); ++i) {
+		Session s = {.sample_rate = rates[i]}, next = {.sample_rate = rates[i], .describe = 1};
+		Output output;
+		assert(!load_score(&s, &output, "test/sequence.janet"));
+		assert(!load_score(&next, &output, "test/sequence.janet"));
+		Player *p = player_new(&s);
+		assert(p);
+		uint64_t position = rates[i] * 165 / 100;
+		atomic_store(&p->position, position);
+		assert(!player_update(p, &next, 1, NULL));
+		assert(s.pending->at == sequence_boundary(s.sequence, position + rates[i] / 10));
+		player_free(p);
+		session_free(&s);
+		session_free(&next);
+	}
+	puts("OK: live revisions use the player's sample clock at 44.1 and 96 kHz");
+}
+
 static void test_cli(void) {
 	char *args[] = {"cli", "--play", "test/playback.janet", "48000"};
 	reference(args[2], 48000);
@@ -281,6 +301,7 @@ static void test_cli(void) {
 int main(void) {
 	test_pcm();
 	test_lifecycle();
+	test_live_clock();
 	test_cli();
 	return 0;
 }

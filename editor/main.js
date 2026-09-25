@@ -7,6 +7,7 @@ const byId = id => document.getElementById(id);
 const path = byId("path"), code = byId("code"), views = byId("views"), errors = byId("errors");
 const numbers = byId("numbers"), marks = byId("marks");
 let backend, controls, ready = false, busy = false, playing = false, prepared = false, saved = "", savedPath = "", queue = Promise.resolve();
+let live = false, pending;
 let revision = 0, frames = [], partial = false, tracedSource, tracedPath, seconds = 0, displayedSource, lineCount = 1, painted = "";
 
 function tracking() {
@@ -62,7 +63,7 @@ function update() {
     code.readOnly = busy;
     byId("modified").textContent = dirty() ? "●" : "";
     byId("state").textContent = !ready ? "Connecting…" : busy ? "Please wait…" : !playing ? "Stopped" :
-        tracking() ? `Playing${partial ? " · partial origins" : ""}` : "Playing · tracking paused: rerun your changes";
+        pending ? "Playing · revision queued" : tracking() ? `Playing${partial ? " · partial origins" : ""}` : "Playing · tracking paused: rerun your changes";
     const before = code.value.slice(0, code.selectionStart).split("\n");
     byId("position").textContent = `${before.length}:${before.at(-1).length + 1}`;
     document.title = `${dirty() ? "* " : ""}${savedPath ? savedPath + " · " : ""}triccheballacche`;
@@ -78,8 +79,23 @@ function showError(error) {
 function request(op, ...args) {
     const result = queue.then(async () => {
         const response = await backend.command(op, ...args);
+        // Any command may observe the audio boundary, including Stop or another Run.
+        // Adopt that revision before its pending source can be replaced by a new submission.
+        if (pending && Number.isInteger(response.revision) && response.revision !== revision) {
+            const result = response.score ? response : await backend.command("score");
+            if (result.error) throw Error(result.error);
+            revision = result.score.revision;
+            projection.revise(result.score);
+            controls.revise(result.score);
+            browser.score(result.score);
+            tracedSource = pending.source;
+            tracedPath = pending.path;
+            pending = undefined;
+        }
+        if (response.queued === false) pending = undefined;
         if (typeof response.playing === "boolean") playing = response.playing;
         if (typeof response.prepared === "boolean") prepared = response.prepared;
+        if (typeof response.live === "boolean") live = response.live;
         if (Number.isFinite(response.time)) {
             seconds = response.time;
             byId("time").textContent = `${seconds.toFixed(2)} s`;
@@ -111,14 +127,17 @@ async function action(op, entry = path.value, file) {
     showError("");
     update();
     try {
-        if (op === "run") controls.dispose();
+        if (op === "run" && !(live && playing)) controls.dispose();
         if (file?.size > 8 * 1024 * 1024) throw Error("Score too large (at most 8 MiB)");
         const source = file ? await file.text() : ["save", "run"].includes(op) ? code.value : "";
         const result = await request(op, entry, source);
-        if (op === "run") {
+        if (op === "run" && result.queued) {
+            pending = {source, path: result.path};
+        } else if (op === "run") {
+            pending = undefined;
             revision = result.score.revision;
             projection.score(result.score);
-            tracedSource = code.value;
+            tracedSource = source;
             tracedPath = result.path;
             controls.score(result.score, result.nativeAvailable);
             browser.score(result.score);
@@ -195,7 +214,10 @@ function beforeUnload(event) {
 
 async function poll() {
     if (ready && !busy) {
-        try { await request("status"); await controls.poll(); }
+        try {
+            await request("status");
+            await controls.poll();
+        }
         catch (error) { showError(error); }
     }
     setTimeout(poll, 50);

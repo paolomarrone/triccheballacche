@@ -27,9 +27,12 @@
   (or p (error (string "unknown parameter " key))))
 
 (defn daw/plugin
-  "Instantiate a .perone bundle with optional initial parameter values."
-  [path &opt params]
-  (default params {})
+  "Instantiate a Perone bundle. An optional leading keyword gives the node a stable live identity."
+  [id-or-path & args]
+  (def named (keyword? id-or-path))
+  (assert (<= (length args) (if named 2 1)) "too many plugin arguments")
+  (def path (if named (args 0) id-or-path))
+  (def params (or (get args (if named 1 0)) {}))
   (assert (dictionary? params) "expected initial parameter dictionary")
   (def plugin (perone/read path))
   (def defaults (array ;(plugin :defaults)))
@@ -37,6 +40,7 @@
     (def p (daw/parameter (plugin :parameters) key))
     (put defaults (p :index) (perone/value p value)))
   (def id (native/plugin (plugin :binary) (plugin :layout) defaults))
+  (when named (native/key id (string id-or-path)))
   (put daw/nodes id (plugin :parameters))
   (put daw/products id (plugin :product))
   id)
@@ -97,3 +101,38 @@
         (daw/param node time key value))
       (error "expected :note or :param command")))
   end)
+
+(var- daw/bpm 120)
+(defn daw/tempo
+  "Set the score tempo in quarter notes per minute. Live revisions keep the current tempo."
+  [bpm]
+  (assert (and (perone/finite? bpm) (> bpm 0)) "BPM must be finite and positive")
+  (set daw/bpm bpm))
+
+(defn daw/score
+  "Prepare finite or repeating patterns. :duration bounds export in seconds; :quantum sets the update grid in beats."
+  [pattern &opt options]
+  (default options {})
+  (assert (dictionary? options) "expected score options")
+  (each key (keys options)
+    (assert (find |(= key $) [:duration :quantum]) "unknown score option"))
+  (assert (and (dictionary? pattern)
+               (or (indexed? (pattern :streams)) (indexed? (pattern :events)))) "expected a pattern")
+  (def sources (or (pattern :streams) [{:offset 0 :period nil :events (pattern :events)}]))
+  (def unit (/ 60 daw/bpm))
+  (native/sequence daw/bpm (or (options :quantum) 4))
+  (eachp [si source] sources
+    (def period (* unit (or (source :period) 0)))
+    (each [a b command] (source :events)
+      (assert (and (indexed? command) (= (length command) 4)) "expected a note or parameter command")
+      (def [kind node key value] command)
+      (def start (* unit (+ (source :offset) a)))
+      (def end (* unit (+ (source :offset) b)))
+      (case kind
+        :note (native/cue node start end period -1 key value si)
+        :param (do
+          (assert (= a b) "parameter must be a point event")
+          (def p (daw/parameter (daw/info node) key))
+          (native/cue node start end period (p :index) (perone/value p value) 0 si))
+        (error "expected :note or :param"))))
+  (native/seal (or (options :duration) (when (pattern :length) (* unit (pattern :length))))))

@@ -8,8 +8,9 @@
 (defn install [env entry]
   (assert (nil? (root-env :trace/push)) "source tracing is already installed")
   (def originals @{})
-  (each name '[events steps curve serial parallel map stretch reverse]
+  (each name '[events steps curve serial parallel map stretch reverse loop]
     (put originals name (get-in module [name :value])))
+  (def streams (get-in module ['streams :value]))
   (def pattern-source ((disasm (originals 'events)) :source))
   (def annotations @{})
   (def locations @[])
@@ -20,6 +21,9 @@
   (var captures 0)
   (var fallback-events 0)
   (var pushed-events 0)
+
+  (defn values [pattern]
+    (seq [source :in (streams pattern) [_ _ value] :in (source :events)] value))
 
   (defn origin [&opt fiber]
     (def stack (debug/stack (or fiber (fiber/current))))
@@ -60,7 +64,7 @@
     (if-let [stored (annotations pattern)]
       stored
       (do
-        (+= fallback-events (length (pattern :events)))
+        (+= fallback-events (length (values pattern)))
         ((originals 'map) (fn [_] [fallback]) pattern))))
 
   (eachp [name f] originals
@@ -82,13 +86,19 @@
             'map (provenance (args 1) source)
             'stretch (f (args 0) (provenance (args 1) source))
             'reverse (f (provenance (args 0) source))
+            'loop (f (provenance (args 0) source))
             ((originals 'map) (fn [_] [source]) result)))
-        (def previous (annotations result))
+        (def previous (when (annotations result) (values (annotations result))))
         (put annotations result
           (if previous
-            ((originals 'events) (trace :length)
-              (seq [[i [a b sources]] :pairs (trace :events)]
-                [a b (distinct (tuple ;(((previous :events) i) 2) ;sources))]))
+            (do
+              (var i 0)
+              ((originals 'map)
+                (fn [sources]
+                  (def combined (distinct (tuple ;(previous i) ;sources)))
+                  (++ i)
+                  combined)
+                trace))
             trace))
         result))
     (put module name (table/setproto @{:value wrapped} (module name))))
@@ -112,6 +122,24 @@
             [(+ start (* a (/ 60 bpm))) (+ start (* b (/ 60 bpm)))
              (((trace :events) i) 2) (command 0) (command 1) (orders (command 1))])
           (update orders (command 1) + (if (= (command 0) :note) 2 1)))
+        result)))
+
+  (replace 'daw/score
+    (fn [score]
+      (fn [pattern &opt options]
+        (def source (origin))
+        (def trace (provenance pattern source))
+        (def sources (streams pattern))
+        (def traces (streams trace))
+        (def result (score pattern options))
+        (def orders @{})
+        (eachp [si stream] sources
+          (eachp [ei [a b command]] (stream :events)
+            (def node (command 1))
+            (def order (or (orders node) 0))
+            (array/push emitted
+              [a b ((((traces si) :events) ei) 2) (command 0) node order])
+            (put orders node (+ order 1))))
         result)))
 
   # schedule was compiled before these replacements, so scheduled notes are not recorded twice.

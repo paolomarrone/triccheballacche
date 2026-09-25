@@ -26,8 +26,8 @@ static ma_result wav_seek(ma_encoder *encoder, ma_int64 offset, ma_seek_origin o
 }
 
 int write_score(Session *s, const Output *cfg, const char *path) {
-	if (!s->sealed || s->time) {
-		s->error = "export requires a fresh, sealed session";
+	if (!s->sealed || s->time || s->frames == UINT64_MAX) {
+		s->error = "export requires a fresh, finite session; set :duration for a repeating score";
 		return -1;
 	}
 	s->error = NULL;

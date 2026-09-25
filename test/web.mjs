@@ -6,7 +6,7 @@ import {Perone} from "../web/perone.js";
 
 const host = await createHost({printErr: () => {}});
 for (const path of ["lib/music.janet", "lib/pattern.janet", "test/music.janet", "test/pattern.janet",
-    "test/daw.janet", "test/schedule.janet", "test/playback.janet", "test/routing.janet", "build/test/fixture.perone/product.json", "build/test/effect.perone/product.json",
+    "test/daw.janet", "test/sequence.janet", "test/schedule.janet", "test/playback.janet", "test/routing.janet", "build/test/fixture.perone/product.json", "build/test/effect.perone/product.json",
     "build/test/fixture.perone/wasm32/fixture.wasm", "build/test/effect.perone/wasm32/fixture.wasm"])
     await addFile(host, path, fs.readFileSync(path));
 
@@ -22,7 +22,7 @@ function pcm(file) {
 }
 
 for (const rate of [44100, 48000]) {
-    for (const score of ["test/schedule.janet", "test/playback.janet", "test/routing.janet", "test/daw.janet"]) {
+    for (const score of ["test/schedule.janet", "test/playback.janet", "test/routing.janet", "test/daw.janet", "test/sequence.janet"]) {
         const file = `build/test/reference-${rate}.wav`;
         try {
             const result = spawnSync("./build/cli", [score, file, String(rate)], {encoding: "utf8"});

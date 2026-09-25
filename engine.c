@@ -1,15 +1,20 @@
 #include "engine.h"
 #include <math.h>
 
-int open_engine(Engine *e, const char *path, const PluginConfig *c, unsigned sample_rate) {
-	if (e->dsp || !sample_rate || sample_rate > 384000 || c->input < 0 || c->input > 2 || c->output < 1 ||
-	    c->output > 2 || c->inputs < c->input || c->inputs > MAX_INPUTS || c->input_offset < 0 ||
-	    c->input_offset > MAX_INPUTS || c->input_offset + c->input > c->inputs || c->midi < -1 || c->nparams < 0 ||
-	    c->nparams > MAX_PARAMS)
-		return -1;
+int engine_config_valid(const PluginConfig *c) {
+	if (c->input < 0 || c->input > 2 || c->output < 1 || c->output > 2 || c->inputs < c->input ||
+	    c->inputs > MAX_INPUTS || c->input_offset < 0 || c->input_offset > MAX_INPUTS ||
+	    c->input_offset + c->input > c->inputs || c->midi < -1 || c->nparams < 0 || c->nparams > MAX_PARAMS)
+		return 0;
 	for (int i = 0; i < c->nparams; ++i)
 		if (!(c->outputs & (UINT64_C(1) << i)) && !isfinite(c->defaults[i]))
-			return -1;
+			return 0;
+	return 1;
+}
+
+int open_engine(Engine *e, const char *path, const PluginConfig *c, unsigned sample_rate) {
+	if (e->dsp || !sample_rate || sample_rate > 384000 || !engine_config_valid(c))
+		return -1;
 	DSP *dsp = open_dsp(e->modules, path, c, sample_rate, BLOCK);
 	if (!dsp)
 		return -1;

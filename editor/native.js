@@ -14,6 +14,7 @@ export async function connect() {
 export async function command(op, ...args) {
     if (op === "message") args[2] = args[2].map(byte => byte.toString(16).padStart(2, "0")).join("");
     const reply = JSON.parse(await webui.call("command", op, ...args));
+    if (reply.view?.score) reply.view.score.controlRevision = reply.controlRevision;
     return {...reply, ...reply.view, error: reply.error || reply.view?.error || ""};
 }
 

@@ -9,7 +9,7 @@ typedef struct {
 	Session *session;
 	size_t tail, latency; // Silence requested after the last score block, to flush the device queue.
 	atomic_int status;
-	atomic_size_t position;
+	_Atomic uint64_t position;
 } Player;
 
 // Borrows a fresh, sealed session. Pause before replacing it at the same address; free before destroying it.
@@ -19,6 +19,8 @@ int player_start(Player *player);
 int player_status(Player *player);
 // Rendered seconds, published by the audio callback; device latency is not subtracted.
 double player_time(Player *player);
+// Publish a revision using the sample clock, with a 100 ms preparation margin.
+int player_update(Player *player, Session *description, unsigned revision, int *mapping);
 // Silences later callbacks; player_free waits for the device to stop.
 void player_stop(Player *player);
 // Pause the device and wait for callbacks to finish. Web callers also await AudioContext.suspend().

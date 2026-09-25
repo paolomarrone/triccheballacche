@@ -16,9 +16,7 @@ static void callback(ma_device *device, void *out, const void *in, ma_uint32 fra
 		else
 			status = 1;
 	} else {
-		size_t n = s->frames - s->time;
-		if (n > frames)
-			n = frames;
+		size_t n = s->frames - s->time < frames ? (size_t)(s->frames - s->time) : frames;
 		if (session_render(s, out, n)) {
 			memset(out, 0, frames * 2 * sizeof(float));
 			status = -1;
@@ -30,7 +28,7 @@ static void callback(ma_device *device, void *out, const void *in, ma_uint32 fra
 }
 
 Player *player_new(Session *s) {
-	if (!s->sealed || s->time) {
+	if (!s->audio || s->describe || s->time) {
 		s->error = "playback requires a fresh, sealed session";
 		return NULL;
 	}
@@ -79,6 +77,11 @@ int player_status(Player *p) {
 
 double player_time(Player *p) {
 	return (double)atomic_load(&p->position) / p->session->sample_rate;
+}
+
+int player_update(Player *p, Session *description, unsigned revision, int *mapping) {
+	uint64_t earliest = atomic_load(&p->position) + p->session->sample_rate / 10;
+	return session_update(p->session, description, earliest, revision, mapping);
 }
 
 void player_stop(Player *p) {

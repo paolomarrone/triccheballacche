@@ -16,6 +16,7 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | `make test-polpo-web` | Original Polpo score: live/offline PCM comparison and cleanup; Chromium and its four prebuilt Wasm plugins. |
 | `make test-trace` | Source provenance and unchanged PCM; includes `test-web`. |
 | `make test-editor` | Native backend via `--serve` in Chromium, with local fixtures; X11 development libraries and an audio device. |
+| `make test-live` | Infinite playback and quantized revisions in both editors, UI continuity, errors, evaluation timeout and restart; editor/browser prerequisites. |
 | `make test-editor-web` | Polpo in the shared browser editor; Node.js, Chromium and Polpo's Wasm plugins. |
 | `make test-editor-ui` | The same custom UI with native and Wasm DSPs; editor/browser prerequisites, no external plugin checkout. |
 | `make test-library` | Shared Settings, catalog, examples dropdown, file picker, uploads and unsaved edits; all 48 default bundles built for native and Wasm, plus editor/browser prerequisites. |
@@ -105,3 +106,15 @@ concurrent acknowledgements, stereo copies, automation precedence, overflow and
 reattachment without losing accepted changes. `request.mjs` ensures a late reply
 cannot acknowledge a later request. `test-ui` adds real X11 embedding, deferred
 widget creation, resizing and shutdown with the original upstream UIs.
+
+## Live sequences
+
+`test/sequence.c` checks bounded periodic scheduling, sample timing across the
+wasm32 counter boundary, block-size independence, DSP reuse, note-offs crossing
+revisions, same-pitch retriggers, rounded loop boundaries and worker snapshot round trips. Truncated
+snapshots must fail without leaking their partially decoded descriptions.
+`test/pattern.janet` compares whole-window queries with arbitrary partitions,
+including pickups, overhangs, points, independent periods and bounded output.
+`test/live-editor.mjs` runs the same scenario against both editors: submit a new
+pattern without restarting playback or the inline UI, retain audio after errors,
+interrupt runaway Janet, cancel pending changes, and restart the active revision.

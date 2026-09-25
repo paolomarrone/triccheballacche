@@ -1,6 +1,7 @@
 #ifndef SESSION_H
 #define SESSION_H
 #include "engine.h"
+#include "sequence.h"
 #include <stdatomic.h>
 
 enum { MAX_NODES = 128, MAX_TRACKS = 32, MAX_FX = 8 };
@@ -13,7 +14,7 @@ typedef struct {
 
 typedef struct {
 	Engine dsp[2]; // A mono effect on stereo audio uses independent L/R instances.
-	char *path, *name;
+	char *path, *name, *key;
 	Input *inputs;
 	int ninputs, channels;
 	unsigned upstream, downstream; // Track ancestry, compiled once for solo routing.
@@ -37,7 +38,13 @@ typedef struct {
 	int output, has_output, order[MAX_NODES], norder;
 	float *audio;         // One reusable block per node; shared outputs are rendered once.
 	unsigned sample_rate; // Set before preparation; zero selects DEFAULT_SAMPLE_RATE.
-	size_t frames, time;
+	uint64_t frames, time;
+	int describe; // Leave a sealed description; session_activate creates the audio resources.
+	_Atomic(Sequence *) sequence;
+	_Atomic(Sequence *) pending, retired;
+	atomic_uint revision;
+	uint64_t (*held)[128]; // Note-off obligations survive a musical revision.
+	uint64_t next_off;
 	const char *error;
 } Session;
 
@@ -50,7 +57,15 @@ int session_output(Session *s, int source);
 int session_track(Session *s, int source, const int *effects, int count, int master);
 int session_param(Session *s, int id, size_t time, int param, float value);
 int session_note(Session *s, int id, size_t time, size_t end, int pitch, int velocity);
-int session_end(Session *s, size_t frames);
+int session_end(Session *s, uint64_t frames);
+int session_activate(Session *s);
+// One control thread publishes a sealed description's sequence, transferring ownership on success.
+// mapping receives description-to-runtime node IDs. Audio applies the sequence at its boundary.
+int session_update(Session *s, Session *description, uint64_t earliest, unsigned revision, int *mapping);
+// Release the previous sequence on the control thread after the audio has retired it.
+void session_collect(Session *s);
+// Discard an unplayed revision after stopping the audio callback.
+void session_cancel(Session *s);
 int session_render(Session *s, float *stereo, size_t frames);
 // Safe during rendering; the caller owns session lifetime. Invalid requests leave it unchanged.
 int session_listen(Session *s, int track, int flags);

@@ -88,7 +88,7 @@ try {
             assert.equal(await evaluate('document.querySelector("#stop").disabled'), false, "Escape closes Settings without stopping playback");
             assert.equal(await evaluate('document.activeElement.id'), "settings");
             const examples = await evaluate('[...document.querySelector("#examples").options].map(option => option.value).filter(Boolean).sort()');
-            assert.equal(examples.length, 11);
+            assert.equal(examples.length, 12);
             assert(examples.includes(entry));
             if (inventory) assert.deepEqual({plugins, examples}, inventory, "Both backends expose the same library");
             inventory = {plugins, examples};

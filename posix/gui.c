@@ -6,6 +6,7 @@
 #include "json_write.h"
 #include "score_view_json.h"
 #include "files.h"
+#include "prepare.h"
 #include "webui.h"
 #include <locale.h>
 #include <math.h>
@@ -26,8 +27,8 @@ static volatile sig_atomic_t stopped;
 typedef struct {
 	Session session;
 	Modules modules;
-	ScoreView score;
-	unsigned revision;
+	ScoreView score, queued;
+	unsigned revision, control_revision;
 	Player *player;
 	int playing;
 	Controls controls;
@@ -62,6 +63,19 @@ static void request(webui_event_t *event) {
 	pthread_mutex_unlock(&mutex);
 }
 
+static void accept_revision(Editor *editor) {
+	unsigned revision = atomic_load(&editor->session.revision);
+	if (editor->queued.nnodes && revision > editor->revision) {
+		score_view_free(&editor->score);
+		editor->score = editor->queued;
+		editor->queued = (ScoreView){0};
+		editor->revision = revision;
+		score_view_activate(&editor->score, &editor->session);
+		assets_set(&editor->score, editor->control_revision);
+		session_collect(&editor->session);
+	}
+}
+
 static const char *pause_editor(Editor *editor) {
 	const char *error = NULL;
 	if (editor->player) {
@@ -74,6 +88,9 @@ static const char *pause_editor(Editor *editor) {
 		editor->time = (double)editor->session.time / editor->session.sample_rate;
 	}
 	editor->playing = 0;
+	accept_revision(editor);
+	session_cancel(&editor->session);
+	score_view_free(&editor->queued);
 	return error;
 }
 
@@ -91,6 +108,7 @@ static const char *play_editor(Editor *editor) {
 	}
 	editor->playing = 1;
 	editor->time = 0;
+	editor->score.active_from = 0;
 	free(editor->error);
 	editor->error = NULL;
 	return NULL;
@@ -135,6 +153,9 @@ static void reply(
 		if (editor->controls.native[i])
 			json_print(&json, "%s%d", count++ ? "," : "", i);
 	json_print(&json, "]");
+	json_print(&json, ",\"controlRevision\":%u", editor->control_revision);
+	json_print(&json, ",\"queued\":%s,\"live\":%s", editor->queued.nnodes ? "true" : "false",
+	    editor->session.sequence ? "true" : "false");
 	if (score) {
 		json_print(&json, ",\"nativeAvailable\":[");
 		for (int i = 0, count = 0; i < editor->session.nnodes; ++i)
@@ -154,6 +175,7 @@ static void reply(
 
 static void command(Editor *editor, webui_event_t *event) {
 	frontend_ready = 1;
+	accept_revision(editor);
 	const char *op = webui_get_string_at(event, 0);
 	if (!strcmp(op, "close")) {
 		stopped = 1;
@@ -179,7 +201,11 @@ static void command(Editor *editor, webui_event_t *event) {
 		return;
 	}
 	if (!strcmp(op, "watch") || !strcmp(op, "controls") || !strcmp(op, "parameter") || !strcmp(op, "message")) {
-		controls_command(&editor->controls, &editor->session, &editor->score, editor->revision, event);
+		controls_command(&editor->controls, &editor->session, &editor->score, editor->control_revision, event);
+		return;
+	}
+	if (!strcmp(op, "score")) {
+		reply(event, editor, NULL, NULL, "", 1);
 		return;
 	}
 	if (!strcmp(op, "range") || !strcmp(op, "note")) {
@@ -199,7 +225,9 @@ static void command(Editor *editor, webui_event_t *event) {
 	} else if (!strcmp(op, "save")) {
 		error = file_save(path, source);
 	} else if (!strcmp(op, "run")) {
-		error = pause_editor(editor);
+		int live = editor->playing && editor->session.sequence;
+		if (editor->queued.nnodes)
+			error = "Wait for the pending revision to become active";
 		free(editor->error);
 		editor->error = NULL;
 		double previous_time = editor->time;
@@ -210,11 +238,26 @@ static void command(Editor *editor, webui_event_t *event) {
 			error = "Out of memory";
 		if (!error) {
 			next->sample_rate = 48000;
+			next->describe = 1;
 			next->modules = &editor->modules;
-			if (prepare_score(next, &output, path, source, &diagnostics, &score))
+			if (prepare_background(next, &output, path, source, &diagnostics, &score))
 				error = diagnostics ? diagnostics : next->error ? next->error : "Preparation failed";
 		}
-		if (!error) {
+		if (!error && live) {
+			int mapping[MAX_NODES];
+			if (player_update(editor->player, next, editor->revision + 1, mapping))
+				error = next->error;
+			else {
+				score_view_remap(&score, mapping);
+				editor->queued = score;
+				score = (ScoreView){0};
+			}
+		} else if (!error) {
+			error = pause_editor(editor);
+			if (!error && session_activate(next))
+				error = next->error;
+		}
+		if (!error && !live) {
 			controls_close(&editor->controls, &editor->session);
 			session_free(&editor->session);
 			editor->session = *next;
@@ -227,7 +270,8 @@ static void command(Editor *editor, webui_event_t *event) {
 				editor->score = score;
 				score = (ScoreView){0};
 				++editor->revision;
-				assets_set(&editor->score, editor->revision);
+				editor->control_revision = editor->revision;
+				assets_set(&editor->score, editor->control_revision);
 				changed = 1;
 			}
 		}
@@ -257,6 +301,7 @@ static void poll_player(Editor *editor) {
 	if (!editor->session.sealed)
 		return;
 	const char *error = NULL;
+	accept_revision(editor);
 
 	if (controls_poll(&editor->controls, &editor->session) < 0)
 		error = "Plugin UI control error";
@@ -338,6 +383,7 @@ int main(int argc, char **argv) {
 	finish(&editor);
 	modules_free(&editor.modules);
 	score_view_free(&editor.score);
+	score_view_free(&editor.queued);
 	free(editor.error);
 	webui_exit();
 	webui_clean();

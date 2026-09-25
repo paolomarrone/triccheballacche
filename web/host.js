@@ -19,7 +19,9 @@ export function renderScore(host, path, sampleRate) {
     const score = host.ccall("score_new", "number", ["string", "number"], [path, sampleRate]);
     if (!score) throw Error("Score preparation failed; see Janet diagnostics");
     try {
-        const frames = host._score_frames(score), audio = new Float32Array(frames * 2);
+        const frames = host._score_frames(score);
+        if (!frames) throw Error("Export requires a finite score; set :duration");
+        const audio = new Float32Array(frames * 2);
         const pointer = host._score_buffer(score) / 4;
         let peak = 0;
         for (let position = 0; position < audio.length;) {

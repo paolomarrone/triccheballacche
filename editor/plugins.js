@@ -43,13 +43,13 @@ export function plugins(request, adapter, fail) {
     async function windowView(entry) {
         if (!availableProject || busy || entry.pending) return;
         entry.pending = true;
-        const opening = !native.has(entry.id), revision = score.revision;
+        const opening = !native.has(entry.id), revision = score.controlRevision ?? score.revision;
         entry.details.open = false;
         detach(entry);
         buttons(entry);
         try {
             await request("watch", revision, entry.id, opening ? "native" : "off");
-            if (score.revision === revision) opening ? native.add(entry.id) : native.delete(entry.id);
+            if ((score.controlRevision ?? score.revision) === revision) opening ? native.add(entry.id) : native.delete(entry.id);
         } catch (error) { fail(error); }
         finally { entry.pending = false; buttons(entry); }
     }
@@ -109,7 +109,7 @@ export function plugins(request, adapter, fail) {
         detach(entry);
         fail("");
         const id = entry.id, node = score.nodes[id];
-        const token = entry.token = {revision: score.revision, ready: false};
+        const token = entry.token = {revision: score.controlRevision ?? score.revision, ready: false};
         if (native.has(id)) {
             await request("watch", token.revision, id, "off");
             native.delete(id); buttons(entry);
@@ -214,6 +214,9 @@ export function plugins(request, adapter, fail) {
             available = new Set(nativeAvailable); native.clear();
             track = Math.min(track, Math.max(0, next.tracks.length - 1));
             render();
+        },
+        revise(next) {
+            score = next;
         },
         track(index) {
             if (index === track) show(true);

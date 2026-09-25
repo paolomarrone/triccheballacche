@@ -18,8 +18,9 @@ typedef struct {
 } ScoreSummary;
 
 typedef struct {
-	double start, end, max_end, min_note_end;
-	size_t order, first_origin, norigins;
+	double start, end, period, max_end, min_note_end;
+	uint64_t order;
+	size_t first_origin, norigins;
 	ScoreSummary summary;
 	int pitch, velocity; // pitch -1: parameter; -2: note-off, removed when indexing.
 } ScoreEvent;
@@ -40,7 +41,8 @@ typedef struct {
 	ScoreNode nodes[MAX_NODES];
 	Track tracks[MAX_TRACKS + 1];
 	int nnodes, ntracks, output;
-	double end;
+	double end, active_from; // Source tracking starts at this revision's activation, not at hypothetical earlier notes.
+	int repeating;
 	ScoreOrigin *origins;
 	size_t norigins, *references, nreferences;
 } ScoreView;
@@ -49,11 +51,13 @@ typedef struct {
 int score_view_init(ScoreView *view, const Session *session);
 int score_view_index(ScoreView *view);
 void score_view_free(ScoreView *view);
+void score_view_remap(ScoreView *view, const int *mapping);
+void score_view_activate(ScoreView *view, const Session *session);
 // Overlapping events in [from, to). Sources use an 80 ms pulse; notes retain their exact duration.
 // Returning zero from visit stops the query. Subtrees outside the interval are skipped.
 void score_view_visit(const ScoreView *view, int node, double from, double to, int notes_only,
     int (*visit)(const ScoreEvent *, void *), void *context);
 // Exact overlap counts and pitch bounds; fully covered subtrees are aggregated at once.
 ScoreSummary score_view_summary(const ScoreView *view, int node, double from, double to);
-const ScoreEvent *score_view_find(const ScoreView *view, int node, size_t order);
+const ScoreEvent *score_view_find(const ScoreView *view, int node, uint64_t order);
 #endif

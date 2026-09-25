@@ -9,6 +9,15 @@ Player *score_player(Score *score) {
 	return p;
 }
 
+const char *player_update_score(Player *player, Score *next, unsigned revision) {
+	int mapping[MAX_NODES];
+	if (player_update(player, &next->session, revision, mapping))
+		return next->session.error;
+	if (next->view)
+		score_view_remap(next->view, mapping);
+	return NULL;
+}
+
 int player_context(Player *p) {
 	return p->device.webaudio.audioContext;
 }

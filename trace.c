@@ -2,7 +2,7 @@
 
 // A C call retains the Janet caller's frame, including a tail call.
 // lib/trace.janet installs this observer only during traced score preparation.
-static JanetCFunction push;
+static _Thread_local JanetCFunction push;
 
 static Janet traced_push(int32_t argc, Janet *argv) {
 	Janet result = push(argc, argv);

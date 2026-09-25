@@ -1,4 +1,5 @@
-import {createPlayerHost, prepareScore, attachPlayer, closePlayer} from "./player.js";
+import {createPlayerHost, attachPlayer, closePlayer} from "./player.js";
+import {prepareBackground} from "./prepare.js";
 import {addFile} from "./host.js";
 
 export const saveLabel = "Download", saveTitle = "Download a copy of the score · Ctrl+S";
@@ -7,6 +8,7 @@ const options = new URLSearchParams(location.search);
 const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();
 let library;
+let queued = 0, controlRevision = 0;
 let host, player, playing = false, view = 0, revision = 0, time = 0, failure = "", log = [];
 
 export async function connect() {
@@ -47,22 +49,49 @@ function query(op, args = []) {
     finally { host._free(pointer); }
 }
 
+function acceptRevision() {
+    if (queued && player.revision > revision) {
+        host._view_free(view);
+        view = queued;
+        player.activateView(view);
+        queued = 0;
+        revision = player.revision;
+    }
+}
+
 async function stop() {
     playing = false;
     if (player) {
         await player.stop();
         time = player.time;
+        acceptRevision();
+        player.cancel();
+        host._view_free(queued);
+        queued = 0;
     }
 }
 
 async function run(path, source) {
-    await stop();
+    if (queued) throw Error("Wait for the pending revision to become active");
+    const live = playing && player?.live;
     const previousTime = time;
     failure = "";
     log = [];
     let nextScore = 0, replacing = false;
     try {
-        nextScore = prepareScore(host, path, 48000, source);
+        nextScore = await prepareBackground(host, path, source, 48000);
+        if (live) {
+            player.update(nextScore, revision + 1);
+            queued = host._score_take_view(nextScore);
+            host._score_free(nextScore);
+            nextScore = 0;
+            return {};
+        }
+        await stop();
+        host.perone.deferred = true;
+        try {
+            if (host._score_activate(nextScore)) throw Error("Cannot activate plugin graph");
+        } finally { host.perone.deferred = false; }
         replacing = true;
         player = undefined;
         await closePlayer(host);
@@ -77,6 +106,7 @@ async function run(path, source) {
         view = next;
         playing = true;
         ++revision;
+        controlRevision = revision;
         time = 0;
         return query("score");
     } catch (error) {
@@ -103,6 +133,7 @@ function checkedText(text) {
 // The shared controller serializes commands, including asynchronous player cleanup.
 export async function command(op, ...args) {
     if (op === "library") return library;
+    acceptRevision();
     let result = {}, error = "", path = ["range", "note", "listen"].includes(op) ? "" : args[0] || entry;
     try {
         if (op === "files") {
@@ -119,7 +150,7 @@ export async function command(op, ...args) {
             player.listen(track, flags);
         } else if (["watch", "controls", "parameter", "message"].includes(op)) {
             const [version, node, ...values] = args;
-            if (!player || version !== revision) throw Error("Stale plugin view");
+            if (!player || version !== controlRevision) throw Error("Stale plugin view");
             if (op === "watch") {
                 if (!["off", "web"].includes(values[0])) throw Error("Invalid view type");
                 await player.control("watch", node, values[0] === "web");
@@ -142,12 +173,13 @@ export async function command(op, ...args) {
         else if (op === "play") {
             if (!player) throw Error("Run a score before playing");
             await stop();
-            try { await player.restart(); }
+            try { await player.restart(); player.activateView(view); }
             catch (error) { await stop(); throw error; }
             playing = true;
             time = 0;
             failure = "";
         } else if (op === "stop") await stop();
+        else if (op === "score") result = query("score");
         else if (op === "status") {
             if (player && playing) {
                 try {
@@ -163,7 +195,8 @@ export async function command(op, ...args) {
             result = query("status", [playing ? player.time : time, playing]);
         } else throw Error("Unknown command: " + op);
     } catch (cause) { error = String(cause.message || cause); }
-    return {...result, path, revision, time: playing ? player.time : time, playing, prepared: Boolean(player), error: error || result.error || ""};
+    if (result.score) result.score.controlRevision = controlRevision;
+    return {...result, queued: !!queued, live: !!player?.live, path, revision, time: playing ? player.time : time, playing, prepared: Boolean(player), error: error || result.error || ""};
 }
 
 export async function close() {
@@ -171,7 +204,7 @@ export async function close() {
     playing = false;
     player = undefined;
     try { await closePlayer(host); }
-    finally { host._view_free(view); view = 0; }
+    finally { host._view_free(view); host._view_free(queued); queued = view = 0; }
 }
 
 export function uiUrl(node) {

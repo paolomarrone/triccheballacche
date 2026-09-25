@@ -19,13 +19,13 @@ PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
 ENGINE_SOURCES = engine.c script.c trace.c
-SCORE_SOURCES = daw.c score_view.c session.c $(ENGINE_SOURCES)
+SCORE_SOURCES = daw.c score_view.c session.c sequence.c $(ENGINE_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c
 ENGINE_OBJECTS = $(addprefix build/obj/native/,engine.o posix/loader.o script.o trace.o json.o)
-SCORE_OBJECTS = $(addprefix build/obj/native/,daw.o score_view.o session.o) $(ENGINE_OBJECTS)
+SCORE_OBJECTS = $(addprefix build/obj/native/,daw.o score_view.o session.o sequence.o) $(ENGINE_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host
-NATIVE_TESTS = $(addprefix build/test/,loader daw player routing score_view plugins ui view_json)
+NATIVE_TESTS = $(addprefix build/test/,loader daw player routing score_view plugins ui view_json sequence)
 FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h tools/*.c test/*.c test/perone/*.c web/*.c web/*.h plugins/*/plugin.h))
 
 .PHONY: all cli gui tools clean format format-check
@@ -74,7 +74,7 @@ build/obj/native/json.o: $(SPORK)/src/json.c Makefile | $(JANET)/Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -DJANET_ENTRY_NAME=janet_json -MMD -MP -c $< -o $@
 
 build/obj/native/test/%.o: CFLAGS += -UNDEBUG
-$(addprefix build/obj/native/,daw.o script.o trace.o posix/files.o posix/ui.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
+$(addprefix build/obj/native/,daw.o script.o trace.o posix/files.o posix/prepare.o posix/ui.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
 build/obj/native/script.o: build/generated/perone.inc
 build/obj/native/posix/files.o: build/generated/library.inc
 build/obj/native/daw.o: build/generated/daw.inc
@@ -88,7 +88,7 @@ $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
 	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(filter %.a,$^) $(LDLIBS) -o $@
 
 build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
-build/gui: $(addprefix build/obj/native/,posix/gui.o posix/files.o posix/controls.o posix/assets.o posix/ui.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
+build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o posix/ui.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
 build/tools/perone-host: build/obj/native/tools/perone-host.o $(ENGINE_OBJECTS) build/obj/native/audio.o
 build/gui build/test/ui: LDLIBS += -lX11
 
@@ -117,11 +117,12 @@ endif
 # Tests link only the components they exercise. Fixtures are independent of Tibia.
 $(NATIVE_TESTS): build/test/%: build/obj/native/test/%.o
 build/test/loader build/test/ui: $(ENGINE_OBJECTS)
-build/test/routing: build/obj/native/session.o $(ENGINE_OBJECTS)
-build/test/daw build/test/player build/test/plugins build/test/view_json: $(SCORE_OBJECTS)
+build/test/routing: build/obj/native/session.o build/obj/native/sequence.o $(ENGINE_OBJECTS)
+build/test/daw build/test/player build/test/plugins build/test/view_json build/test/sequence: $(SCORE_OBJECTS)
 build/test/daw build/test/player: build/obj/native/posix/export.o build/obj/native/audio.o
 build/test/score_view: build/obj/native/score_view.o
 build/test/view_json: $(VIEW_OBJECTS)
+build/test/sequence: build/obj/native/snapshot.o
 
 TEST_BUNDLE = build/test/fixture.perone
 TEST_EFFECT = build/test/effect.perone
@@ -143,12 +144,13 @@ $(TEST_EFFECT)/product.json: test/perone/effect.json
 	cp $< $@
 
 .PHONY: test test-plugins test-ui test-editor test-prog test-brickworks check-plugins prog
-test: $(addprefix build/test/,loader daw player routing score_view) $(NATIVE_FIXTURES)
+test: $(addprefix build/test/,loader daw player routing score_view sequence) $(NATIVE_FIXTURES)
 	./build/test/loader
 	./build/test/daw
 	./build/test/routing
 	./build/test/player
 	./build/test/score_view
+	./build/test/sequence
 
 TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
 check-plugins:
@@ -187,16 +189,16 @@ test-brickworks: build/test/loader
 # Wasm variants share sources, but keep separate objects for their memory models.
 EMCC ?= emcc
 WEB_FLAGS = -I. $(JANET_INCLUDES) -DJANET_SINGLE_THREADED -DPERONE_PLATFORM='"wasm32"' -DPERONE_SUFFIX='".wasm"'
-WEB_SOURCES = $(SCORE_SOURCES) $(VIEW_SOURCES) web/host.c web/loader.c
+WEB_SOURCES = $(SCORE_SOURCES) $(VIEW_SOURCES) snapshot.c web/host.c web/loader.c
 WEB_OBJECTS = $(addprefix build/obj/web-offline/,$(WEB_SOURCES:.c=.o) janet.o json.o)
 PLAYER_OBJECTS = $(addprefix build/obj/web-player/,$(WEB_SOURCES:.c=.o) player.o web/player_api.o audio.o janet.o json.o)
 WEB_LINK = -lm --no-entry -sMODULARIZE -sEXPORT_ES6 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=2097152
 WEB_METHODS = "FS","UTF8ToString","ccall","HEAPU8","HEAPU32","HEAPF32"
-VIEW_EXPORTS = "_score_prepare","_score_take_view","_view_free","_score_view_json","_free"
+VIEW_EXPORTS = "_score_prepare","_score_describe","_score_pack_web","_score_pack_length","_score_import","_score_revision","_score_live","_score_cancel","_score_activate","_malloc","_score_take_view","_view_free","_score_view_json","_score_view_activate_web","_free"
 SCORE_EXPORTS = "_score_new","_score_free","_score_listen"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sWASM_WORKERS -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
-PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_player_time","_score_player","_player_free","_player_start","_player_stop","_player_pause","_player_rewind","_player_sync","_player_status","_player_context","_player_node"]'
+PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_player_time","_score_player","_player_update_score","_player_free","_player_start","_player_stop","_player_pause","_player_rewind","_player_sync","_player_status","_player_context","_player_node"]'
 # Publish C Brickworks examples only; fxpp_* and synthpp_* are duplicate C++ variants.
 WEB_CONTENT ?= lib examples plugins \
 	$(BRICKWORKS_PERONE)/fx_*/build/*.perone $(BRICKWORKS_PERONE)/synth_*/build/*.perone \
@@ -261,7 +263,7 @@ $(TEST_EFFECT)/wasm32/fixture.wasm: test/perone/plugin.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(WEB_FIXTURE_FLAGS) -DPERONE_TEST_EFFECT $< -o $@
 
-.PHONY: test-web test-browser test-polpo-web test-trace test-editor-web test-editor-ui test-library
+.PHONY: test-web test-browser test-polpo-web test-trace test-editor-web test-editor-ui test-library test-live
 test-web: build/web/offline.mjs build/web/player.mjs cli build/test/view_json $(NATIVE_FIXTURES) $(WEB_FIXTURES)
 	node test/request.mjs
 	node test/web.mjs
@@ -270,6 +272,9 @@ test-web: build/web/offline.mjs build/web/player.mjs cli build/test/view_json $(
 
 test-browser: test-web
 	node test/browser.mjs
+
+test-live: gui test-web
+	node test/live-editor.mjs
 
 # Production bundles must already contain their separately compiled wasm32 binaries.
 test-polpo-web: build/web/offline.mjs build/web/player.mjs

@@ -400,12 +400,12 @@ static void test_master(void) {
 	int fx = session_bundle(&s, "build/test/effect.perone");
 	assert(fx >= 0 && !session_set(&s, tr, 1, -1));
 	assert(session_track(&s, tr, &fx, 1, 1) >= 0);
-	assert(s.nodes[fx].dsp[0].dsp != s.nodes[fx].dsp[1].dsp);
 	assert(!session_set(&s, fx, 2, .5f));
 	assert(!session_param(&s, fx, 3, 1, .5f));
 	assert(!session_param(&s, fx, 3, 2, 0));
 	output_tracks(&s);
 	assert(!session_end(&s, 32) && !session_render(&s, audio, 32));
+	assert(s.nodes[fx].dsp[0].dsp != s.nodes[fx].dsp[1].dsp);
 	for (int i = 0; i < 32; ++i)
 		assert(fabsf(audio[2 * i] - (i < 3 ? powf(.5f, i + 1) : .5f)) < 1e-6f && audio[2 * i + 1] == 0);
 	session_free(&s);

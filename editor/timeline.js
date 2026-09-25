@@ -152,7 +152,7 @@ export function timeline(request, select, selectTrack, error) {
                 context.globalAlpha = opacity * (0.4 + 0.6 * velocity / 127);
                 context.fillRect(x, top, Math.max(1, right - x), noteHeight);
                 context.globalAlpha = 1;
-                if (selected?.node === track[0] && selected?.order === order) {
+                if (selected?.node === track[0] && selected?.order === order && selected?.start === a) {
                     context.strokeStyle = foreground;
                     context.strokeRect(x - 1, top - 1, Math.max(1, right - x) + 2, noteHeight + 2);
                 }
@@ -263,7 +263,7 @@ export function timeline(request, select, selectTrack, error) {
         const found = hit(...point(event));
         if (!found) return;
         const revision = score.revision;
-        selected = {node: found.node, order: found.note[0]};
+        selected = {node: found.node, order: found.note[0], start: found.note[1]};
         const selection = selected;
         detail.textContent = noteText(found.note);
         draw();
@@ -344,6 +344,11 @@ export function timeline(request, select, selectTrack, error) {
             }));
             buttons();
             resize();
+        },
+        revise(value) {
+            score = value;
+            selected = undefined;
+            changed();
         },
         position(seconds, active) {
             if (time === seconds && playing === active) return;

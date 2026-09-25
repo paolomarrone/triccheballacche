@@ -1,4 +1,5 @@
 #include "host.h"
+#include "snapshot.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -23,11 +24,12 @@ void score_free(Score *score) {
 	}
 }
 
-static Score *prepare(const char *path, const char *source, unsigned sample_rate, int project) {
+static Score *prepare(const char *path, const char *source, unsigned sample_rate, int project, int describe) {
 	Score *score = calloc(1, sizeof(*score));
 	if (!score)
 		return NULL;
 	score->session.sample_rate = sample_rate;
+	score->session.describe = describe;
 	if (project && !(score->view = calloc(1, sizeof(ScoreView)))) {
 		score_free(score);
 		return NULL;
@@ -41,15 +43,15 @@ static Score *prepare(const char *path, const char *source, unsigned sample_rate
 }
 
 Score *score_new(const char *path, unsigned sample_rate) {
-	return prepare(path, NULL, sample_rate, 0);
+	return prepare(path, NULL, sample_rate, 0, 0);
 }
 
 Score *score_prepare(const char *path, const char *source, unsigned sample_rate) {
-	return prepare(path, source, sample_rate, 1);
+	return prepare(path, source, sample_rate, 1, 0);
 }
 
 size_t score_frames(Score *score) {
-	return score->session.frames;
+	return score->session.frames == UINT64_MAX ? 0 : score->session.frames;
 }
 
 float score_normalize(Score *score) {
@@ -62,9 +64,7 @@ float *score_buffer(Score *score) {
 
 int score_render(Score *score) {
 	Session *s = &score->session;
-	size_t n = s->frames - s->time;
-	if (n > BLOCK)
-		n = BLOCK;
+	size_t n = s->frames - s->time < BLOCK ? (size_t)(s->frames - s->time) : BLOCK;
 	return session_render(s, score->buffer, n) ? -1 : (int)n;
 }
 
@@ -74,4 +74,45 @@ DSP *score_dsp(Score *score, int node) {
 
 int score_listen(Score *score, int track, int flags) {
 	return session_listen(&score->session, track, flags);
+}
+
+Score *score_describe(const char *path, const char *source, unsigned sample_rate) {
+	return prepare(path, source, sample_rate, 1, 1);
+}
+
+static size_t packed_length;
+void *score_pack_web(Score *s) {
+	return score_pack(&s->session, &s->output, s->view, &packed_length);
+}
+size_t score_pack_length(void) {
+	return packed_length;
+}
+
+Score *score_import(const void *data, size_t length) {
+	Score *s = calloc(1, sizeof(*s));
+	if (!s)
+		return NULL;
+	s->view = calloc(1, sizeof(ScoreView));
+	if (!s->view || score_unpack(&s->session, &s->output, s->view, data, length)) {
+		score_free(s);
+		return NULL;
+	}
+	return s;
+}
+int score_activate(Score *s) {
+	return session_activate(&s->session);
+}
+int score_live(Score *s) {
+	return s->session.sequence != NULL;
+}
+unsigned score_revision(Score *s) {
+	return atomic_load(&s->session.revision);
+}
+void score_cancel(Score *s) {
+	session_cancel(&s->session);
+}
+
+void score_view_activate_web(Score *score, ScoreView *view) {
+	score_view_activate(view, &score->session);
+	session_collect(&score->session);
 }

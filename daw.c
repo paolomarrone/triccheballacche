@@ -7,9 +7,9 @@
 #include <string.h>
 
 // Only the synchronous Janet adapter has a current context; the C engine does not.
-static Session *current;
-static Output *output;
-static ScoreView *projection;
+static _Thread_local Session *current;
+static _Thread_local Output *output;
+static _Thread_local ScoreView *projection;
 
 static int checked(int result) {
 	if (result < 0)
@@ -62,11 +62,36 @@ static Janet plugin(int32_t argc, Janet *argv) {
 	return janet_wrap_integer(checked(session_plugin(current, janet_getcstring(argv, 0), &config)));
 }
 
+static void node_key(int id, const char *key) {
+	for (int i = 0; i < current->nnodes; ++i)
+		if (current->nodes[i].key && !strcmp(current->nodes[i].key, key))
+			janet_panic("duplicate node identity");
+	if (!(current->nodes[id].key = copy_string(key)))
+		janet_panic("out of memory");
+}
+
+static Janet identity(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 2);
+	int id = handle(argv[0]);
+	if (current->sealed || current->nodes[id].key)
+		janet_panic("node identity already assigned");
+	node_key(id, janet_getcstring(argv, 1));
+	return janet_wrap_nil();
+}
+
+static void optional_key(int id, Janet opts, const char *fallback) {
+	Janet key = option(opts, "id", janet_wrap_nil());
+	if (!janet_checktype(key, JANET_NIL))
+		node_key(id, (const char *)janet_getkeyword(&key, 0));
+	else if (fallback)
+		node_key(id, fallback);
+}
+
 static Janet make_track(int32_t argc, Janet *argv, int master) {
 	janet_arity(argc, 1, 2);
 	int source = handle(argv[0]);
 	Janet opts = argc == 2 ? argv[1] : janet_wrap_nil();
-	const char *const keys[] = {"gain", "effects", "pan", "name", NULL};
+	const char *const keys[] = {"gain", "effects", "pan", "name", "id", NULL};
 	options(opts, keys);
 	float gain = number(option(opts, "gain", janet_wrap_number(1)), 0, 4);
 	float pan = number(option(opts, "pan", janet_wrap_number(0)), -1, 1);
@@ -84,6 +109,9 @@ static Janet make_track(int32_t argc, Janet *argv, int master) {
 	int id = checked(session_track(current, source, ids, count, master));
 	checked(session_set(current, id, 0, gain));
 	checked(session_set(current, id, 1, pan));
+	const char *source_key = current->nodes[source].key;
+	JanetString fallback = source_key ? janet_formatc("track/%s", source_key) : NULL;
+	optional_key(id, opts, master ? "master" : (const char *)fallback);
 	if (label && !(current->nodes[id].name = copy_string(label)))
 		janet_panic("out of memory");
 	return janet_wrap_integer(id);
@@ -111,11 +139,12 @@ static Janet mix(int32_t argc, Janet *argv) {
 	for (int i = 0; i < inputs.len; ++i)
 		ids[i] = handle(inputs.items[i]);
 	Janet opts = argc == 2 ? argv[1] : janet_wrap_nil();
-	const char *const keys[] = {"gain", "pan", NULL};
+	const char *const keys[] = {"gain", "pan", "id", NULL};
 	options(opts, keys);
 	float gain = number(option(opts, "gain", janet_wrap_number(1)), 0, 4);
 	float pan = number(option(opts, "pan", janet_wrap_number(0)), -1, 1);
 	int id = checked(session_mix(current, ids, inputs.len));
+	optional_key(id, opts, NULL);
 	checked(session_set(current, id, 0, gain));
 	checked(session_set(current, id, 1, pan));
 	return janet_wrap_integer(id);
@@ -143,7 +172,12 @@ static Janet parameter(int32_t argc, Janet *argv) {
 
 static Janet event_count(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 1);
-	return janet_wrap_number(current->nodes[handle(argv[0])].count);
+	int id = handle(argv[0]);
+	size_t count = current->nodes[id].count;
+	if (current->sequence)
+		for (size_t i = 0; i < current->sequence->count; ++i)
+			count += current->sequence->cues[i].node == id;
+	return janet_wrap_number(count);
 }
 
 // Copy optional script annotations while Janet is alive. Event identity and timing come from Session.
@@ -257,6 +291,66 @@ static Janet end(int32_t argc, Janet *argv) {
 	return janet_wrap_nil();
 }
 
+static Janet sequence_begin(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 2);
+	if (current->sequence || current->sealed)
+		janet_panic("score already declared");
+	for (int i = 0; i < current->nnodes; ++i)
+		if (current->nodes[i].count)
+			janet_panic("use one score scheduling API per program");
+	Sequence *s = calloc(1, sizeof(*s));
+	if (!s)
+		janet_panic("out of memory");
+	current->sequence = s;
+	s->bpm = number(argv[0], 0.001, 100000);
+	s->quantum = number(argv[1], 0.001, 100000);
+	return janet_wrap_nil();
+}
+
+static Janet cue(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 8);
+	if (!current->sequence || current->sealed)
+		janet_panic("cue requires an open sequence");
+	Cue c = {.node = handle(argv[0]),
+	    .start = number(argv[1], -1e9, 1e9),
+	    .end = number(argv[2], -1e9, 1e9),
+	    .period = number(argv[3], 0, 1e9),
+	    .parameter = janet_getinteger(argv, 4),
+	    .stream = janet_getinteger(argv, 7)};
+	if (c.stream < 0 || c.stream >= 65536)
+		janet_panic("invalid event source");
+	if (c.parameter < 0) {
+		c.pitch = janet_getinteger(argv, 5);
+		c.velocity = janet_getinteger(argv, 6);
+		if (c.parameter != -1 || c.pitch < 0 || c.pitch > 127 || c.velocity < 1 || c.velocity > 127 ||
+		    current->nodes[c.node].dsp[0].config.midi < 0 || !current->nodes[c.node].path || c.end <= c.start)
+			janet_panic("invalid note cue");
+	} else {
+		Node *n = current->nodes + c.node;
+		const PluginConfig *config = &n->dsp[0].config;
+		if (c.parameter >= (n->path ? config->nparams : 2) ||
+		    (n->path && (config->outputs & (UINT64_C(1) << c.parameter))))
+			janet_panic("invalid parameter cue");
+		c.value = number(argv[5], -FLT_MAX, FLT_MAX);
+		if (!n->path && (c.value < (c.parameter ? -1 : 0) || c.value > (c.parameter ? 1 : 4)))
+			janet_panic("invalid mixer parameter");
+		if (c.end != c.start)
+			janet_panic("parameter must be a point event");
+	}
+	if (sequence_add(current->sequence, c))
+		janet_panic("invalid cue or sequence event limit exceeded");
+	return janet_wrap_nil();
+}
+
+static Janet seal(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 1);
+	if (!current->sequence)
+		janet_panic("missing sequence");
+	uint64_t frames = janet_checktype(argv[0], JANET_NIL) ? UINT64_MAX : sample(janet_getnumber(argv, 0));
+	checked(session_end(current, frames));
+	return janet_wrap_nil();
+}
+
 int prepare_score(Session *s, Output *cfg, const char *path, const char *source, char **diagnostics, ScoreView *view) {
 	if (diagnostics)
 		*diagnostics = NULL;
@@ -266,7 +360,8 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 		s->error = "score requires an empty session and a valid sample rate";
 		return 1;
 	}
-	const JanetReg api[] = {{"plugin", plugin, "(native/plugin binary layout defaults) -> plugin handle"},
+	const JanetReg api[] = {{"sequence", sequence_begin, NULL}, {"cue", cue, NULL}, {"seal", seal, NULL},
+	    {"key", identity, NULL}, {"plugin", plugin, "(native/plugin binary layout defaults) -> plugin handle"},
 	    {"track", track, "(native/track source &opt {:effects [...] :gain 1 :pan 0}) -> mixer handle"},
 	    {"master", master, "(native/master signal &opt options) -> mixer handle"},
 	    {"through", through, "(native/through signal effect) -> effect handle"},
@@ -311,7 +406,7 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 		result = janet_dostring(env, source ? source : "(dofile daw/script :env (curenv))", path, NULL);
 	}
 	if (!result && !s->sealed) {
-		janet_eprintf("Missing (daw/end seconds)\n");
+		janet_eprintf("Missing (daw/end seconds) or (daw/score pattern)\n");
 		result = 1;
 	}
 	if (!result && view)

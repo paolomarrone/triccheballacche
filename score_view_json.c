@@ -84,13 +84,13 @@ static void write_frames(Json *json, const Frames *frames) {
 }
 
 typedef struct {
-	const ScoreEvent *events[MAX_NOTES];
+	ScoreEvent events[MAX_NOTES];
 	size_t count;
 } Notes;
 
 static int collect_notes(const ScoreEvent *event, void *context) {
 	Notes *notes = context;
-	notes->events[notes->count++] = event;
+	notes->events[notes->count++] = *event;
 	return notes->count < MAX_NOTES;
 }
 
@@ -109,9 +109,9 @@ static const char *range(
 			score_view_visit(view, node, from, to, 1, collect_notes, &notes);
 			json_print(json, "\"notes\":[");
 			for (size_t j = 0; j < notes.count; ++j) {
-				const ScoreEvent *n = notes.events[j];
-				json_print(
-				    json, "%s[%zu,%.17g,%.17g,%d,%d]", j ? "," : "", n->order, n->start, n->end, n->pitch, n->velocity);
+				const ScoreEvent *n = notes.events + j;
+				json_print(json, "%s[%llu,%.17g,%.17g,%d,%d]", j ? "," : "", (unsigned long long)n->order, n->start,
+				    n->end, n->pitch, n->velocity);
 			}
 			json_print(json, "]}");
 		} else {
@@ -143,9 +143,9 @@ char *score_view_json(const ScoreView *view, unsigned revision, const char *op, 
 	} else if (!strcmp(op, "range")) {
 		error = range(&json, view, b, c, d, e, f);
 	} else if (!strcmp(op, "note")) {
-		const ScoreEvent *note = integer(b, 0, view->nnodes - 1) && integer(c, 0, view->nodes[(int)b].raw_count) &&
-		        c < view->nodes[(int)b].raw_count
-		    ? score_view_find(view, (int)b, (size_t)c)
+		const ScoreEvent *note =
+		    integer(b, 0, view->nnodes - 1) && integer(c, 0, 0x1p53 - 1) && c < view->nodes[(int)b].raw_count
+		    ? score_view_find(view, (int)b, (uint64_t)c)
 		    : NULL;
 		Frames frames = {.view = view};
 		if (note && note->pitch >= 0)

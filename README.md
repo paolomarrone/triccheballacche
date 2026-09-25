@@ -88,7 +88,9 @@ The test server supplies `Cross-Origin-Opener-Policy: same-origin` and
 Safari remain unverified.
 
 **Run** (Ctrl/Command+Enter) evaluates the current buffer at its original path,
-preserving relative imports, and starts the new score. **Play** (Ctrl/Command+Space)
+preserving relative imports. A running `daw/score` accepts compatible musical
+revisions on its beat grid without restarting audio or plugins. Otherwise Run
+prepares and starts a new session. **Play** (Ctrl/Command+Space)
 restarts the prepared score without evaluating Janet or recreating plugins.
 **Stop** (Esc) silences playback and keeps the project and its UIs ready.
 An evaluation error leaves the previous project available for Play.
@@ -128,14 +130,17 @@ precedence. Solo follows graph paths: a group retains its upstream sources; a
 source retains its downstream processing. Other parallel routes are excluded,
 including direct paths that share the same source. Audition changes fade over
 5 ms and leave score automation and DSP clocks running. Stop/Play preserves them;
-a new Run clears them. A track over a mix is a group row; its notes stay on the
+a new session clears them; live revisions preserve them. A track over a mix is a group row; its notes stay on the
 original source rows, and its plugin panel stops at upstream track boundaries.
 
 The editor uses a textarea and plain JavaScript. It does not yet provide syntax
-highlighting, MIDI editing, parameter curves or live replacement of a running
-score. Janet preparation is synchronous and cannot be interrupted by the editor.
-The view can navigate without a known end; the scheduler still requires a finite
-score. See [limits](#architecture-and-limits) and [tracking details](test/README.md#source-tracking).
+highlighting, MIDI editing or parameter curves. Preparation runs outside the audio
+thread: a native preparation thread or a browser Worker. CPU-bound Janet evaluation
+is interrupted after two seconds natively; browser preparation has a five-second
+timeout including Worker startup. Native blocking I/O and extensions remain trusted.
+The timeline projects the current musical revision, rather than recording a history
+of the performance. After a live update, tracking starts with events actually
+started by the new revision. See [live scores](#live-scores) and [tracking details](test/README.md#source-tracking).
 
 ## Score API
 
@@ -160,7 +165,7 @@ plugin paths are relative to the host's working directory.
 
 | Call | Contract |
 | --- | --- |
-| `daw/plugin path &opt params` | Create a plugin handle with optional initial parameter overrides. |
+| `daw/plugin path &opt params` | Create a plugin handle with optional initial parameter overrides. A leading keyword (`daw/plugin :bass path params`) gives it a stable live identity. |
 | `daw/through signal effect` | Bind an effect's input once; return its output handle. |
 | `daw/mix signals &opt options` | Sum one or more signals into a stereo gain/pan node. |
 | `daw/track signal &opt options` | Add effects and a visible mixer point with mute/solo. |
@@ -171,6 +176,8 @@ plugin paths are relative to the host's working directory.
 | `daw/info node` | Immutable parameter descriptions: index, name, label, direction, unit, range, default, integer flag, mapping and scale points. |
 | `daw/product node` | Complete immutable product metadata; `nil` for mixers. |
 | `daw/schedule start bpm pattern` | Emit a pattern in quarter-note beats; return its nominal end in seconds. |
+| `daw/tempo bpm` | Set the tempo for `daw/score`; default 120. |
+| `daw/score pattern &opt options` | Prepare finite or repeating music; options `:quantum` (beats, default 4) and `:duration` (seconds). |
 | `daw/end seconds &opt options` | Seal the score and set duration and export options. Playback/export follows successful preparation. |
 
 Mix options are `:gain` 0–4 (default 1) and `:pan` −1–1 (default 0).
@@ -189,7 +196,8 @@ its MIDI velocity does not. Track gain remains independent and automatable.
 
 ## Patterns and musical time
 
-`lib/pattern.janet` provides finite, immutable data without calling `daw/*`:
+`lib/pattern.janet` provides immutable musical data without calling `daw/*`.
+A finite phrase retains its simple representation:
 
 ```janet
 {:length 4 :events [[0 0.75 60] [1 1.5 64] [3 3.5 67]]}
@@ -209,10 +217,14 @@ copy and freeze containers, subject to Janet's limits for opaque values.
 | `p/parallel patterns` | Overlay at zero and take the largest length. |
 | `p/map f pattern` | Transform values only; a returned `nil` remains an event. |
 | `p/stretch factor pattern` | Scale times and length by a positive factor. |
-| `p/reverse pattern` | Map `[a b]` to `[length-b length-a]`, keeping values and insertion order. |
+| `p/reverse pattern` | Reflect a finite phrase around its length; reverse before looping. |
+| `p/loop pattern` | Repeat a positive-length finite phrase indefinitely. |
+| `p/query pattern from to &opt limit` | Whole events overlapping the half-open beat interval, with stable `:id`, `:start`, `:end`, `:value`; default limit 65536. |
 
 Serial and parallel preserve overhangs and list order; an empty list gives a
-zero-length pattern. Repetition and alternation use ordinary Janet functions.
+zero-length pattern. Finite repetition and alternation use ordinary Janet functions. Unbounded sources
+compose with `parallel`, `map` and `stretch`; only the last member of `serial` may
+be unbounded. Each loop keeps its own period and begins at occurrence zero.
 With `synth` already attached to a track, replace the scheduling calls above with:
 
 ```janet
@@ -245,6 +257,58 @@ scheduling error is caught, events already emitted remain in the session.
 | `music/degree root intervals n` | Zero-based scale degree, repeating by octaves, including negative degrees. |
 | `music/chord root intervals` | MIDI pitches in the given order; no voice allocation. |
 | `music/lerp a b x` | Linear interpolation without clamping `x`. |
+
+## Live scores
+
+[examples/live.janet](examples/live.janet) runs indefinitely on native and web:
+
+```janet
+(import ./lib/pattern :as p)
+(def bass (daw/plugin :bass "plugins/synth_mono/build/plugin.perone" {:vcf_cutoff 900}))
+(daw/output (daw/track bass {:gain 0.3}))
+(daw/tempo 132)
+(daw/score (p/loop (p/map |[:note bass $ 100] (p/steps 0.5 [36 nil 43 39]))))
+```
+
+Run again after editing the notes, automation or initial parameters. A compatible
+revision enters at the next `:quantum` boundary, preserving global phase, DSP state,
+UI instances and mute/solo. Preparation errors leave the current music running.
+Only one revision may be queued. Stop cancels a pending revision; Play rewinds the
+latest active revision. Changed declared parameters are applied at the boundary;
+unchanged declarations preserve the current values, including temporary UI edits.
+
+Plugin identities are explicit keywords. A track defaults to `track/<source-id>`;
+use `{:id :name}` for mixers or tracks that need an explicit identity. Updates require
+the same identities, plugin configurations, routing, visible track order, duration
+and tempo. Stop before changing these. Declaration order may change; identities
+map the new descriptions to the existing instances.
+
+Events are compiled into finite templates with optional repetition periods. The
+scheduler keeps one cursor per template in a heap and computes occurrence times
+from absolute positions, without accumulating rounding error. It allocates nothing
+and executes no Janet during audio processing. Memory is independent of elapsed
+time; the sample clock is 64-bit on native and Wasm. There is a 65536-template limit
+and periods/note lengths must be at least one sample. Timing remains exact to the
+nearest sample within the double-precision integer range.
+
+A revision replaces future note starts and parameter events. Already-started notes
+retain their note-offs. Retriggering the same pitch on the same plugin explicitly
+ends the previous note and replaces its deadline; an obsolete note-off cannot stop
+the replacement. This is a MIDI note policy, not independent per-note expression.
+
+Janet functions build a revision once; they are not callbacks invoked on every
+cycle. `p/query` is independent of previous queries and retains whole note intervals
+and stable `[source,event,cycle]` identities. Rendering skips note starts before
+zero. The timeline computes repetitions and density only for the requested window.
+Arbitrary stateful generators and changes to the audio graph during playback are
+outside this first live contract.
+
+Omitting `:duration` uses a finite pattern's nominal length, or runs an unbounded
+pattern until stopped. Export needs an explicit finite interval: add
+`{:duration 30}` to `daw/score` to render thirty seconds with the same scheduler.
+This also sets the playback duration. Allow extra time explicitly for effect tails.
+The existing `daw/note`, `daw/param`, `daw/schedule` and `daw/end` score API remains
+available; choose one scheduling API per score.
 
 ## Audio and export
 
@@ -335,7 +399,8 @@ duplicated mono effects report from the left instance.
 
 Collapsing a section or changing tracks releases its inline UI and invalidates
 its callbacks. Stop and Play preserve inline and native UIs; controls remain usable
-while stopped. Run replaces the plugin instances and their views.
+while stopped. A compatible live Run preserves plugin instances and their views;
+a new session replaces them.
 Asynchronous creation queues gestures until attachment; a view arriving after
 disposal is freed. Invalid callbacks or communication errors detach the web view.
 A new attachment clears old notifications and overflow while preserving accepted
@@ -345,6 +410,7 @@ input changes. Native and web UI lifecycle tests are described in the [test guid
 
 | Score | Content and required bundles |
 | --- | --- |
+| [live](examples/live.janet) | Unbounded bass and independent cutoff loop; quantized live revisions, local synth and echo. |
 | [hello](examples/hello.janet) | Minimal local synth score. |
 | [routing](examples/routing.janet) | Shared rhythm bus, parallel distortion/echo and a crossfade; local plugins. |
 | [automation](examples/automation.janet) | One minute of effect and mixer automation; local plugins. |
@@ -384,8 +450,11 @@ Wasm are verified. `TARGET_OS=Darwin` omits `-ldl`, but macOS remains unverified
 Windows still needs native loader, export and CLI backends. Desktop UI hosts
 currently require X11. Each native platform needs matching plugin binaries.
 
-Preparation validates channel layouts, orders the audio graph, allocates its buffers
-and sorts events, then closes Janet before audio starts.
+Preparation validates channel layouts, orders the audio graph and compiles events,
+then closes Janet. A description owns no DSP instances or audio buffers.
+Initial activation creates those resources in one place; compatible
+revisions replace only the sequence. Browser workers transfer owned descriptions
+using a private same-build snapshot, without sharing Janet objects or plugin pointers.
 The editor owns a cache of loaded modules; each prepared session owns its DSP
 instances, and the player owns the audio device. Stop retains all three.
 Play restores initial input parameters and mixer gain/pan, resets DSPs and event
@@ -395,18 +464,19 @@ including random generators; replay does not restore a serialized plugin snapsho
 Native binaries stay loaded until the editor closes, so restart it after rebuilding
 a plugin. Janet caches immutable bundle metadata within each evaluation and rereads
 it on Run. The web host caches compiled Wasm modules and creates DSP instances
-directly in the worklet, once per prepared score.
+directly in the worklet, once per activated session.
 The engine allocates no memory during processing; mixing buffers are independent
 of duration, while stored events are not. Current limits are 32 tracks, 128 nodes,
 8 effects in a track convenience call (longer paths use `daw/through`),
-64 parameters per plugin, 3600 seconds and one export per run.
+64 parameters per plugin, and one export per run. Finite exports and the original
+absolute-time API retain the 3600-second limit; unbounded `daw/score` playback does not.
 Sample rates range from 1 to 384000 Hz and remain fixed for the session.
 
 Plugins may have one main mono/stereo audio output, at most one main mono/stereo
 input, and one MIDI input. Optional sidechains remain disconnected, with at most
 8 total input channels. CV, required sidechains, extra main buses and required
 synchronized transport are rejected. Optional transport is left unused.
-Custom plugin state persistence and asynchronous score mutation are not exposed.
+Custom plugin state persistence and live graph replacement are not exposed.
 Scripts and plugins must be trusted; native crashes are not isolated.
 
 The browser uses the same miniaudio callback as native playback. Standalone DSP
