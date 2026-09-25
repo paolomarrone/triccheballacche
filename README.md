@@ -429,7 +429,7 @@ input changes. Native and web UI lifecycle tests are described in the [test guid
 | [Denti di vetro](examples/denti.janet) | About 63 seconds of irregular IDM; Polpo's plugins plus A-SID. |
 | [Sempiterno](examples/sempiterno.janet) | 92 seconds of organ techno/electro on Soto de Langa's three-part lauda, with driving percussion and a toccata; Brickworks, A-SID, local `drums`, `shape` and `echo`. |
 | [Oculus](examples/oculus.janet) | 161 seconds of techno trance in 4/4 at 150 BPM, using both complete voices of the supplied “Oculus non vidit” MIDI; detuned leads, rolling bass, acid sequences, double-time variations and the original cadence. Local `synth_mono`, `drums`, `shape` and `echo`; [source and arrangement notes](examples/oculus.md). |
-| [Campagnola Stomp](examples/campagnola.janet) | 137 seconds of solo honky-tonk piano on the supplied Gigione MIDI: habanera, stride, minor trio and a slowing final cadence. Requires the optional native [sampled piano](plugins/piano/README.md); [arrangement notes](examples/campagnola.md). |
+| [Campagnola Stomp](examples/campagnola.janet) | 138 seconds of solo honky-tonk piano on the supplied Gigione MIDI: habanera, ragtime and Charleston, a lyrical trio, a B-flat bridge, exchanges between hands and a slowing final cadence. Requires the optional native [sampled piano](plugins/piano/README.md); [arrangement notes](examples/campagnola.md). |
 | [Falalalan](examples/falalalan.janet) | 110 seconds of electro/techno at 144 BPM: a melody from the supplied MIDI, new bass and harmony, acid sequences, a dub passage and chopped variations; Brickworks, A-SID, local `drums`, `shape` and `echo`. |
 | [gui](examples/gui.janet) | 65 seconds of automation and UI feedback; local synth, Tibia and A-SID. |
 

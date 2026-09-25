@@ -1,8 +1,9 @@
-# Campagnola Stomp
+# Campagnola Stomp — versione 2
 
 Piano honky-tonk solo ispirato al tema strumentale di **A campagnola** del MIDI di
-Gigione fornito dall'utente. 4/4, 124 BPM, 68 battute, circa **2 minuti e 17 secondi**
-compresi rallentando e decadimento finale.
+Gigione fornito dall'utente. 4/4, tempo di riferimento 124 BPM, 68 battute, circa
+**2 minuti e 18 secondi** compresi rallentando e decadimento finale. Il trio si
+rilassa a circa 115 BPM, l'ultimo ritornello accelera leggermente a circa 127.
 
 Il riferimento stilistico è il pianismo di Jelly Roll Morton e
 [The Crave](https://imslp.org/wiki/The_Crave_(Morton,_Jelly_Roll)):
@@ -18,23 +19,29 @@ Questa è una rielaborazione del motivo strumentale presente nel file; non una
 trascrizione della voce cantata. Bassi, armonizzazioni, introduzione, trio e coda
 sono nuovi. Il primo tema conserva tutte le altezze e gli attacchi della frase;
 le durate più lunghe vengono accorciate per l'articolazione pianistica.
+Le sue 34 note mantengono esattamente tempi, durate e velocity della prima
+versione. Le riprese successive cambiano registro, mano, articolazione e
+accompagnamento; nel centro entrano due nuove sezioni melodiche.
 
-| Battute | Forma |
-| --- | --- |
-| 1–4 | Introduzione di habanera e lancio cromatico. |
-| 5–12 | Tema esposto, accompagnamento di habanera. |
-| 13–20 | Tema con stride, bassi all'ottava e piccole risposte. |
-| 21–28 | Secondo motivo cromatico del MIDI. |
-| 29–36 | Trio in minore, più raccolto. |
-| 37–40 | Break stop-time con corse della destra e silenzi. |
-| 41–48 | Tema con ottave e acciaccature. |
-| 49–56 | Risposta cromatica più fitta. |
-| 57–64 | Ultimo ritornello, dinamica più forte. |
-| 65–68 | Coda sul tema, rallentando e due accordi conclusivi. |
+| Tempo | Battute | Forma |
+| --- | --- | --- |
+| 0:00 | 1–4 | Introduzione di habanera e lancio cromatico. |
+| 0:08 | 5–12 | Tema completo esposto sull'habanera. |
+| 0:23 | 13–20 | Ripresa ragtime con anticipi, bassi rivoltati e accompagnamento Charleston più leggero. |
+| 0:39 | 21–28 | Motivo cromatico del MIDI, salti di registro, bassi in movimento e risposte separate da pause. |
+| 0:54 | 29–36 | Nuovo cantabile fra minore e relativo maggiore: frasi più lunghe, accordi arpeggiati e tempo più disteso. |
+| 1:11 | 37–44 | Nuovo ponte in si bemolle, accordo diminuito di passaggio e catena di dominanti per tornare in sol. |
+| 1:26 | 45–48 | Break stop-time: chiamate diseguali, risposta nel basso e pausa prima della ripresa. |
+| 1:34 | 49–56 | Tema in dialogo: prima alla sinistra, poi alla destra, infine nel registro acuto. |
+| 1:50 | 57–64 | Ritornello a ottave, bassi in movimento, registro crescente e piccolo slancio di tempo. |
+| 2:05 | 65–68 | Coda sul tema, rallentando e due accordi conclusivi. |
 
 Il piano campionato usa una seconda corda a +12 cent, miscelata al 34%.
 Il tocco e i tempi variano leggermente in modo riproducibile; non ci sono batteria,
 compressione da musica dance o riverbero aggiunto.
+La varietà viene anche dai vuoti: accompagnamenti a due appoggi, arpeggi spezzati,
+passaggi più aperti e una dinamica più raccolta nel cantabile. Gli unisoni fra le
+mani vengono uniti e ogni tasto viene rilasciato prima dell'attacco successivo.
 
 ## Esecuzione
 
