@@ -151,7 +151,7 @@
           (++ cycle)))))
   (freeze result))
 
-(defn loop
+(defn loop :shadow
   "Repeat a finite positive-length phrase forever, preserving pickups and overhangs."
   [pattern]
   (def p (checked pattern))

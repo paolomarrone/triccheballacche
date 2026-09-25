@@ -9,7 +9,8 @@ ifeq ($(shell uname -o 2>/dev/null),Android)
 LDLIBS += -landroid-spawn
 endif
 MINIAUDIO ?= $(firstword $(wildcard ../miniaudio.h) .deps/miniaudio.h)
-JANET ?= .deps/janet
+JANET_VERSION = 1.42.1
+JANET ?= .deps/janet-$(JANET_VERSION)
 JANET_INCLUDES = -I$(JANET)/src/include -I$(JANET)/src/conf
 SPORK ?= .deps/spork
 SPORK_REV = 0667f96b74de52747ffe5e19e185563ebf53816b
@@ -47,14 +48,14 @@ format-check:
 	mv $@.tmp $@
 
 $(JANET)/Makefile:
-	git clone --depth 1 --branch v1.41.2 https://github.com/janet-lang/janet.git $(JANET)
+	git clone --depth 1 --branch v$(JANET_VERSION) https://github.com/janet-lang/janet.git $(JANET)
 
 $(JANET)/build/c/janet.c: $(JANET)/Makefile
 	$(MAKE) -C $(JANET) HOSTCC="$(CC)" build/c/janet.c
 
-# Janet 1.41.2 does not mark top-level dynamic bindings during collection.
+# Janet 1.42.1 does not mark top-level dynamic bindings during collection.
 # Use the same corrected runtime for native and Wasm; leave the download untouched.
-build/generated/janet.c: $(JANET)/build/c/janet.c janet.patch
+build/generated/janet.c: $(JANET)/build/c/janet.c janet.patch Makefile
 	mkdir -p $(dir $@)
 	cp $< $@.tmp
 	patch --silent $@.tmp janet.patch

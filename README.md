@@ -18,7 +18,7 @@ mkdir -p renders
 make prog               # Render Il polpo a sette gomiti.
 ```
 
-The host needs a C compiler, make, git, curl and patch. It fetches Janet 1.41.2,
+The host needs a C compiler, make, git, curl and patch. It fetches Janet 1.42.1,
 miniaudio 0.11.25 (unless `../miniaudio.h` exists), and Spork's JSON module at a
 pinned revision into `.deps/`. Janet and JSON are linked statically; no Janet,
 Spork or jpm installation is needed. [janet.patch](janet.patch) fixes collection of
