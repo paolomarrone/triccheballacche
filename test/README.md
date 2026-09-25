@@ -9,7 +9,8 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | --- | --- |
 | `make test` | Native scheduler, Perone lifecycle, score API, patterns, routing, export, player and projection. No audio device required. |
 | `make test-plugins` | Six local prebuilt plugins, metadata, pitch bend and block-size independence. |
-| `make test-brickworks` | All prebuilt bundles under `BRICKWORKS_PERONE`, default `../brickworks/build/perone`. |
+| `make test-brickworks` | All prebuilt bundles under `BRICKWORKS_PERONE`, default `build/library/brickworks`. |
+| `make test-library-build` | Fetch/build the canonical C library, audit all DSPs, check offline incremental builds, compiler failure propagation, repair, native catalog discovery and an example render. Requires git, Node.js, npm and a C compiler. |
 | `make test-prog` | Two identical renders of Polpo; requires the local plugin bundles. |
 | `make test-web` | Native/Wasm PCM and projection parity, control queues and request handling; Emscripten, Node.js and `patch`. |
 | `make test-browser` | AudioWorklet PCM, playback and cleanup in Chromium; includes `test-web`. |

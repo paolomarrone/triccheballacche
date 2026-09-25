@@ -1,7 +1,7 @@
 # Uses precompiled Brickworks C bundles directly, including stereo plugins.
 (import ../lib/pattern :as p)
 
-(def root (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
+(def root (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks"))
 
 (defn bundle [name] (string root "/" name "/build/bw_example_" name ".perone"))
 

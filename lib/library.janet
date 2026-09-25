@@ -25,7 +25,7 @@
       (case (os/lstat path :mode)
         :directory (examples path)
         :file (when (string/has-suffix? ".janet" name) (array/push files {:path path}))))))
-(def brickworks (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
+(def brickworks (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks"))
 (def asid (or (os/getenv "ASID_PERONE") "../asid/plugin/perone/build/asid.perone"))
 (def tibia (or (os/getenv "TIBIA_PERONE") "../tibia/out/perone/c/build/tibia-test.perone"))
 (collection "plugins" (fn [_] true))

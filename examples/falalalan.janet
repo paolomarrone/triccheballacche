@@ -14,7 +14,7 @@
                      [69 0.5] [67 0.5] [65 0.5] [67 0.5] [64 1] [62 2]]))
 (def shards [69 67 69 65 64 62 64 65 67 69 69])
 
-(def root (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
+(def root (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks"))
 (defn bw [name &opt params]
   (daw/plugin (string root "/" name "/build/bw_example_" name ".perone") params))
 (defn shape [params] (daw/plugin "plugins/shape/build/plugin.perone" params))

@@ -11,6 +11,8 @@ Run commands from the repository root:
 ```sh
 make                    # Build the native CLI.
 make test               # Core tests with local fixtures.
+make -j4 library        # Fetch dependencies and build all 40 Brickworks C Perone plugins.
+make test-brickworks    # Load and process audio through those bundles.
 make -C plugins         # Build example plugins separately; see prerequisites below.
 mkdir -p renders
 ./build/cli examples/hello.janet renders/hello.wav
@@ -25,13 +27,20 @@ Spork or jpm installation is needed. [janet.patch](janet.patch) fixes collection
 top-level dynamic bindings in both runtimes, keeping error diagnostics valid after GC.
 On Termux: `pkg install clang make git curl patch libandroid-spawn`.
 
-Plugins are built separately with Node.js, `dot`, Tibia and, for the original
-Brickworks examples, Brickworks. See [plugin builds](plugins/README.md).
+`make library` needs Node.js and npm in addition to git, make and a C compiler
+(`pkg install nodejs` on Termux). It downloads pinned revisions of
+`Orastron/brickworks`, `paolomarrone/tibia`'s Perone branch and `dot` into
+`.deps/library/`, then builds the 40 C examples into `build/library/brickworks/`.
+The native catalog and Brickworks scores use that location by default. Subsequent
+builds use the cache and compiler dependency files. The library build is separate
+from the host and from the local plugin projects; see [plugin builds](plugins/README.md).
 The host only loads precompiled bundles; it needs neither DSP sources nor the generator.
 
 | Build command | Output |
 | --- | --- |
 | `make` or `make cli` | `build/cli`: score playback and WAV export. |
+| `make library` | Canonical Brickworks C Perone bundles in `build/library/brickworks/`. |
+| `make library-deps` | Download only the pinned library dependencies. |
 | `make gui` | `build/gui`: desktop editor and native plugin windows. |
 | `make web` | `build/web/player.{mjs,wasm}` and the browser project catalog. |
 | `make web-offline` | `build/web/offline.{mjs,wasm}`: offline browser/Node rendering. |
@@ -434,7 +443,7 @@ input changes. Native and web UI lifecycle tests are described in the [test guid
 | [gui](examples/gui.janet) | 65 seconds of automation and UI feedback; local synth, Tibia and A-SID. |
 
 Scores read `BRICKWORKS_PERONE`, `TIBIA_PERONE` and `ASID_PERONE` where applicable.
-Defaults are `../brickworks/build/perone`, `../tibia/out/perone/c/build/tibia-test.perone`
+Defaults are `build/library/brickworks`, `../tibia/out/perone/c/build/tibia-test.perone`
 and `../asid/plugin/perone/build/asid.perone`. The default web catalog includes
 these bundles. The [historical Polpo WAV](examples/prog/il_polpo_a_sette_gomiti.wav)
 is preserved; `make prog` writes the current arrangement to `renders/`.

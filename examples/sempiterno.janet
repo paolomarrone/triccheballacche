@@ -5,7 +5,7 @@
 
 (def tracks @[])
 
-(def root (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
+(def root (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks"))
 (defn bw [name &opt params]
   (daw/plugin (string root "/" name "/build/bw_example_" name ".perone") params))
 (defn shape [params] (daw/plugin "plugins/shape/build/plugin.perone" params))

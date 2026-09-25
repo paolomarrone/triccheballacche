@@ -2,7 +2,7 @@
 (import ../lib/music)
 (import ../lib/pattern :as p)
 
-(def root (or (os/getenv "BRICKWORKS_PERONE") "../brickworks/build/perone"))
+(def root (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks"))
 (def synth (daw/plugin (string root "/synth_mono/build/bw_example_synth_mono.perone")
   {:volume 65 :vco1_wave 2 :vcf_resonance 12 :vca_attack 8 :vca_release 100}))
 (daw/output (daw/track synth {:gain 0.4}))

@@ -188,12 +188,18 @@ test-prog: check-plugins cli | build/test
 build/test:
 	mkdir -p $@
 
-# Read-only audit of the bundles built in Brickworks; no plugin compilation here.
-BRICKWORKS_PERONE ?= ../brickworks/build/perone
+# Fetch/generate/compile the canonical plugin library independently of the host.
+include plugins/library.mk
+
+# Read-only audit of the bundles; no plugin compilation here.
 BW_BUNDLES = $(wildcard $(BRICKWORKS_PERONE)/*/build/*.perone)
 test-brickworks: build/test/loader
 	@test -n "$(BW_BUNDLES)" || { echo "No Perone bundles in $(BRICKWORKS_PERONE)"; exit 1; }
 	./build/test/loader $(BW_BUNDLES)
+
+.PHONY: test-library-build
+test-library-build: library cli build/test/loader | build/test
+	$(NODE) test/library-build.mjs "$(BW_SOURCE)" "$(BRICKWORKS_PERONE)" "$(PERONE_PLATFORM)" "$(MAKE)"
 
 # Wasm variants share sources, but keep separate objects for their memory models.
 EMCC ?= emcc
