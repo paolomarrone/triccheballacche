@@ -37,15 +37,17 @@ static void test_buffer_score(void) {
 	float audio[2];
 	assert(!session_render(&s, audio, 1) && audio[0] == .25f && audio[1] == -.25f);
 	session_free(&s);
-	const char *bad[] = {
-	    "\n(", "\nunknown-binding", "(daw/plugin \"build/test/fixture.perone\")\n(error \"音: failure\")", ""};
-	const char *expected[] = {"parse error", "unknown-binding", "音: failure", "Missing (daw/end"};
-	for (int i = 0; i < 4; ++i) {
+	const char *bad[] = {"\n(", "\nunknown-binding",
+	    "(daw/plugin \"build/test/fixture.perone\")\n(error \"音: failure\")",
+	    "(gccollect) (repeat 10000 (table 1 2)) (error \"Error after collection\")", ""};
+	const char *expected[] = {
+	    "parse error", "unknown-binding", "音: failure", "Error after collection", "Missing (daw/end"};
+	for (int i = 0; i < 5; ++i) {
 		ScoreView view;
 		assert(prepare_score(&s, &cfg, path, bad[i], &diagnostics, &view));
 		assert(!view.nnodes);
 		assert(diagnostics && strstr(diagnostics, expected[i]));
-		if (i < 3)
+		if (i < 4)
 			assert(strstr(diagnostics, path));
 		free(diagnostics);
 		session_free(&s);

@@ -41,6 +41,8 @@ silence, draining and export options without requiring audio hardware. Replays
 after partial and complete playback must match the original PCM, retain the device
 and DSPs, restore automation/defaults and discard stale edits and messages.
 Loader tests check canonical module reuse and cache/instance lifetime ordering.
+Diagnostic tests force garbage collection before errors and evaluation timeout,
+then prepare another score to check recovery in both editors.
 Routing tests cover shared DSP state, nested buses, branch-specific solo,
 sample-accurate crossfades, block invariance, rewind and graph rejection.
 Mixer tests cover mute/solo precedence, multiple solos, 5 ms fades, automation

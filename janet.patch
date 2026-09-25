@@ -1,0 +1,7 @@
+--- a/janet.c
++++ b/janet.c
+@@ -16298,2 +16298,4 @@
+     janet_mark_fiber(janet_vm.root_fiber);
++    if (janet_vm.top_dyns)
++        janet_mark(janet_wrap_table(janet_vm.top_dyns));
+     for (i = 0; i < orig_rootcount; i++)

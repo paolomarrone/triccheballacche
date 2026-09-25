@@ -21,7 +21,7 @@ SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_P
 ENGINE_SOURCES = engine.c script.c trace.c
 SCORE_SOURCES = daw.c score_view.c session.c sequence.c $(ENGINE_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c
-ENGINE_OBJECTS = $(addprefix build/obj/native/,engine.o posix/loader.o script.o trace.o json.o)
+ENGINE_OBJECTS = $(addprefix build/obj/native/,engine.o posix/loader.o script.o trace.o json.o janet.o)
 SCORE_OBJECTS = $(addprefix build/obj/native/,daw.o score_view.o session.o sequence.o) $(ENGINE_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host
@@ -52,8 +52,13 @@ $(JANET)/Makefile:
 $(JANET)/build/c/janet.c: $(JANET)/Makefile
 	$(MAKE) -C $(JANET) HOSTCC="$(CC)" build/c/janet.c
 
-$(JANET)/build/libjanet.a: $(JANET)/build/c/janet.c
-	$(MAKE) -C $(JANET) CC="$(CC)" CFLAGS="$(CFLAGS)" build/libjanet.a
+# Janet 1.41.2 does not mark top-level dynamic bindings during collection.
+# Use the same corrected runtime for native and Wasm; leave the download untouched.
+build/generated/janet.c: $(JANET)/build/c/janet.c janet.patch
+	mkdir -p $(dir $@)
+	cp $< $@.tmp
+	patch --silent $@.tmp janet.patch
+	mv $@.tmp $@
 
 $(SPORK)/src/json.c:
 	mkdir -p $(dir $@)
@@ -73,6 +78,10 @@ build/obj/native/json.o: $(SPORK)/src/json.c Makefile | $(JANET)/Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -DJANET_ENTRY_NAME=janet_json -MMD -MP -c $< -o $@
 
+build/obj/native/janet.o: build/generated/janet.c Makefile
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -MMD -MP -c $< -o $@
+
 build/obj/native/test/%.o: CFLAGS += -UNDEBUG
 $(addprefix build/obj/native/,daw.o script.o trace.o posix/files.o posix/prepare.o posix/ui.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
 build/obj/native/script.o: build/generated/perone.inc
@@ -82,10 +91,9 @@ $(addprefix build/obj/native/,audio.o player.o posix/cli.o posix/export.o posix/
 $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): CPPFLAGS += -I$(WEBUI)/include
 $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): $(WEBUI)/include/webui.h
 
-$(NATIVE_PROGRAMS) $(filter-out build/test/score_view,$(NATIVE_TESTS)): $(JANET)/build/libjanet.a
 $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(filter %.a,$^) $(LDLIBS) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(LDLIBS) -o $@
 
 build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
 build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o posix/ui.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
@@ -222,7 +230,7 @@ $(PLAYER_OBJECTS): WEB_FLAGS += $(PLAYER_FLAGS) -Ibuild/generated/web
 build/obj/web-offline/daw.o build/obj/web-player/daw.o: build/generated/daw.inc
 build/obj/web-offline/script.o build/obj/web-player/script.o: build/generated/perone.inc
 
-build/obj/web-offline/janet.o build/obj/web-player/janet.o: $(JANET)/build/c/janet.c Makefile
+build/obj/web-offline/janet.o build/obj/web-player/janet.o: build/generated/janet.c Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) -MMD -MP -c $< -o $@
 

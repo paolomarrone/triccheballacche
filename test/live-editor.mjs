@@ -63,11 +63,11 @@ try {
             assert(await evaluate(`parseFloat(document.querySelector('#time').textContent) >= ${time}`));
             assert(await evaluate('window.savedUI === document.querySelector(".plugin-body > div")'), "UI instance survives live revision");
             assert(await evaluate('document.querySelector("#errors").hidden'));
-            await edit('(error "live error")');
+            await edit('(gccollect) (repeat 10000 (table 1 2)) (error "live error")');
             await click("run");
             await wait('document.querySelector("#errors").textContent.includes("live error")');
             assert.equal(await evaluate('document.querySelector("#stop").disabled'), false, "Evaluation failure leaves audio running");
-            await edit('(while true nil)');
+            await edit('(gccollect) (while true nil)');
             await click("run");
             await wait('!document.querySelector("#run").disabled');
             assert(await evaluate('!document.querySelector("#errors").hidden'), "Runaway evaluation is interrupted");

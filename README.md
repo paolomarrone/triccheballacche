@@ -18,11 +18,12 @@ mkdir -p renders
 make prog               # Render Il polpo a sette gomiti.
 ```
 
-The host needs a C compiler, make, git and curl. It fetches Janet 1.41.2,
+The host needs a C compiler, make, git, curl and patch. It fetches Janet 1.41.2,
 miniaudio 0.11.25 (unless `../miniaudio.h` exists), and Spork's JSON module at a
 pinned revision into `.deps/`. Janet and JSON are linked statically; no Janet,
-Spork or jpm installation is needed. On Termux:
-`pkg install clang make git curl libandroid-spawn`.
+Spork or jpm installation is needed. [janet.patch](janet.patch) fixes collection of
+top-level dynamic bindings in both runtimes, keeping error diagnostics valid after GC.
+On Termux: `pkg install clang make git curl patch libandroid-spawn`.
 
 Plugins are built separately with Node.js, `dot`, Tibia and, for the original
 Brickworks examples, Brickworks. See [plugin builds](plugins/README.md).
