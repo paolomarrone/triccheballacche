@@ -136,7 +136,7 @@ original source rows, and its plugin panel stops at upstream track boundaries.
 The editor uses a textarea and plain JavaScript. It does not yet provide syntax
 highlighting, MIDI editing or parameter curves. Preparation runs outside the audio
 thread: a native preparation thread or a browser Worker. CPU-bound Janet evaluation
-is interrupted after two seconds natively; browser preparation has a five-second
+is interrupted after five seconds natively; browser preparation has a five-second
 timeout including Worker startup. Native blocking I/O and extensions remain trusted.
 The timeline projects the current musical revision, rather than recording a history
 of the performance. After a live update, tracking starts with events actually

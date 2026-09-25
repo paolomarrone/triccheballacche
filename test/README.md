@@ -19,7 +19,7 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | `make test-live` | Infinite playback and quantized revisions in both editors, UI continuity, errors, evaluation timeout and restart; editor/browser prerequisites. |
 | `make test-editor-web` | Polpo in the shared browser editor; Node.js, Chromium and Polpo's Wasm plugins. |
 | `make test-editor-ui` | The same custom UI with native and Wasm DSPs; editor/browser prerequisites, no external plugin checkout. |
-| `make test-library` | Shared Settings, catalog, examples dropdown, file picker, uploads and unsaved edits; all 48 default bundles built for native and Wasm, plus editor/browser prerequisites. |
+| `make test-library` | Shared Settings, catalog, examples dropdown, Sempiterno playback, file picker, uploads and unsaved edits; all 48 default bundles built for native and Wasm, plus editor/browser prerequisites. |
 | `make test-ui` | Original Tibia C/C++ and A-SID UIs, mouse gestures and DSP feedback; X11 display and prebuilt DSP/UI bundles. |
 | `make format-check` | Local C formatting with clang-format 21; excludes upstream headers and generated code. |
 

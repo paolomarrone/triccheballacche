@@ -52,7 +52,7 @@ int prepare_background(
 	while (!p.done) {
 		struct timespec deadline;
 		clock_gettime(CLOCK_REALTIME, &deadline);
-		deadline.tv_sec += 2;
+		deadline.tv_sec += 5;
 		if (pthread_cond_timedwait(&p.ready, &p.mutex, &deadline) == ETIMEDOUT && p.vm && !p.done)
 			janet_interpreter_interrupt(p.vm);
 	}

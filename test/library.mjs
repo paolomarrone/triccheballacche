@@ -154,9 +154,20 @@ try {
             await key("Escape", "Escape");
             assert.equal(await evaluate('document.querySelector("#code").value'), original);
             assert.equal(await readFile(entry, "utf8"), original, "Opening and browsing must never save files");
+            await click("#stop");
+            await wait('!document.querySelector("#run").disabled');
+            await set("examples", "examples/sempiterno.janet");
+            await wait('document.querySelector("#path").value === "examples/sempiterno.janet" && !document.querySelector("#run").disabled');
+            const revision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
+            await click("#run");
+            await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${revision}`);
+            await wait('parseFloat(document.querySelector("#time").textContent) > 0');
+            assert(await evaluate('document.querySelector("#errors").hidden'));
+            assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'));
+            await click("#stop");
             assert.deepEqual(diagnostics, []);
             await call("Page.navigate", {url: "about:blank"});
-            console.log(`OK: ${mode} Settings, catalog, examples, discard guard, file picker, paths/imports, uploads and modal shortcuts`);
+            console.log(`OK: ${mode} Settings, catalog, examples, Sempiterno playback, discard guard, file picker, paths/imports, uploads and modal shortcuts`);
         });
     }
 } finally {
