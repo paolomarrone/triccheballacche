@@ -12,8 +12,8 @@ registerProcessor("perone-setup", class extends AudioWorkletProcessor {
                 else if (data.type === "control") {
                     result = host.perone.control(...data.args);
                     if (data.player) host._player_sync(data.player);
-                } else if (data.type === "rewind") {
-                    if (host._player_rewind(data.player)) throw Error("Cannot rewind score");
+                } else if (data.type === "seek") {
+                    if (host._player_seek(data.player, data.seconds)) throw Error("Cannot seek score");
                 } else throw Error("Unknown worklet request");
                 this.port.postMessage({type: data.type, id: data.id, result});
             } catch (error) {

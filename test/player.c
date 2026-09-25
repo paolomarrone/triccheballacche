@@ -171,7 +171,7 @@ static void test_pcm(void) {
 				float value;
 				assert(read_dsp(original, 1, &value) && value == .9f);
 				edit_dsp(original, 1, .8f); // A queued gesture must not override the prepared defaults.
-				assert(!player_rewind(p) && !s.time && !player_time(p));
+				assert(!player_seek(p, 0) && !s.time && !player_time(p));
 				assert(read_dsp(original, 1, &value) && value == s.nodes[0].dsp[0].config.defaults[1]);
 				assert(s.nodes[0].dsp[0].dsp == original && opened == devices);
 				emitted = 0;
@@ -211,7 +211,7 @@ static void test_lifecycle(void) {
 	player_stop(p);
 	player_stop(p);
 	pump(128);
-	assert(player_status(p) == 2 && !s.time && player_start(p));
+	assert(player_status(p) == 2 && !s.time && !player_start(p));
 	player_free(p);
 	p = player_new(&s);
 	assert(p && !player_start(p));
@@ -220,7 +220,7 @@ static void test_lifecycle(void) {
 	assert(time == 128);
 	player_stop(p);
 	pump(128);
-	assert(s.time == time && player_status(p) == 2 && player_start(p));
+	assert(s.time == time && player_status(p) == 2 && !player_start(p));
 	mode = STOP_FAIL;
 	assert(player_pause(p) && s.error);
 	player_free(p);
@@ -237,7 +237,9 @@ static void test_lifecycle(void) {
 		assert(audio[i] == 0);
 	player_free(p);
 	s.time = 1;
-	assert(!player_new(&s) && s.error);
+	p = player_new(&s);
+	assert(p && player_time(p) == 1.0 / s.sample_rate);
+	player_free(p);
 	session_free(&s);
 	player_free(NULL);
 	assert(opened == closed);
@@ -262,6 +264,41 @@ static void test_live_clock(void) {
 		session_free(&next);
 	}
 	puts("OK: live revisions use the player's sample clock at 44.1 and 96 kHz");
+}
+
+static void test_transport(void) {
+	reference("test/playback.janet", 48000);
+	Session s = {.sample_rate = 48000};
+	Output output;
+	assert(!load_score(&s, &output, "test/playback.janet"));
+	Player *p = player_new(&s);
+	assert(p && !player_start(p));
+	pump(256);
+	assert(player_seek(p, .01) && s.time == 256); // Seeking requires a quiesced callback.
+	assert(!player_pause(p));
+	float silence[32];
+	device->onData(device, silence, NULL, 16);
+	for (int i = 0; i < 32; ++i)
+		assert(silence[i] == 0);
+	assert(s.time == 256);
+	mode = START_FAIL;
+	assert(player_start(p) && player_status(p) == 2 && s.time == 256);
+	mode = NORMAL;
+	assert(!player_start(p));
+	pump(256); // Resume must preserve the effect's accumulated state, matching uninterrupted PCM.
+	free(expected);
+	expected = NULL;
+	assert(!player_pause(p));
+	const double invalid[] = {-1, NAN, INFINITY, 1, 0x1p53};
+	for (size_t i = 0; i < sizeof(invalid) / sizeof(*invalid); ++i)
+		assert(player_seek(p, invalid[i]) && s.time == 512 && player_status(p) == 2);
+	assert(!player_seek(p, .015) && s.time == 720 && player_time(p) == .015 && player_status(p) == 2);
+	assert(p->tail == p->latency && !player_start(p));
+	pump(16);
+	assert(!player_pause(p) && !player_seek(p, 0) && !s.time);
+	player_free(p);
+	session_free(&s);
+	puts("OK: Stop/Play preserves DSP history; seek publishes the sample clock and rejects invalid positions");
 }
 
 static void test_cli(void) {
@@ -302,6 +339,7 @@ int main(void) {
 	test_pcm();
 	test_lifecycle();
 	test_live_clock();
+	test_transport();
 	test_cli();
 	return 0;
 }

@@ -12,7 +12,7 @@ typedef struct {
 	_Atomic uint64_t position;
 } Player;
 
-// Borrows a fresh, sealed session. Pause before replacing it at the same address; free before destroying it.
+// Borrows a prepared session. Pause before replacing it at the same address; free before destroying it.
 Player *player_new(Session *session);
 int player_start(Player *player);
 // 0: ready/rendering, 1: finished, -1: failed, 2: stopped.
@@ -25,7 +25,7 @@ int player_update(Player *player, Session *description, unsigned revision, int *
 void player_stop(Player *player);
 // Pause the device and wait for callbacks to finish. Web callers also await AudioContext.suspend().
 int player_pause(Player *player);
-// Caller has quiesced audio. Restore the prepared score, keeping the device and all DSP instances.
-int player_rewind(Player *player);
+// Caller has quiesced audio. Seek in seconds, retaining the device and DSP instances; remains stopped.
+int player_seek(Player *player, double seconds);
 void player_free(Player *player);
 #endif

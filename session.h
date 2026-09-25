@@ -69,8 +69,9 @@ void session_cancel(Session *s);
 int session_render(Session *s, float *stereo, size_t frames);
 // Safe during rendering; the caller owns session lifetime. Invalid requests leave it unchanged.
 int session_listen(Session *s, int track, int flags);
-// No audio callback may be using the session during rewind or stopped UI synchronization.
-int session_rewind(Session *s);
+// No audio callback may be using the session during seek or stopped UI synchronization.
+// Seek to an absolute sample, restoring controls and held notes. DSP history is reset.
+int session_seek(Session *s, uint64_t from);
 void session_sync(Session *s);
 void session_free(Session *s);
 #endif

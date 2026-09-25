@@ -29,6 +29,10 @@ typedef struct Sequence {
 int sequence_add(Sequence *s, Cue cue);
 int sequence_prepare(Sequence *s, unsigned rate, uint64_t from);
 void sequence_seek(Sequence *s, uint64_t from);
+// Iterate the last occurrence of each template strictly before from, in playback order.
+// Use shift (no repetition), then seek to resume the normal forward iterator.
+void sequence_history(Sequence *s, uint64_t from);
+void sequence_shift(Sequence *s);
 uint64_t sequence_next(const Sequence *s);
 uint64_t sequence_boundary(const Sequence *s, uint64_t after);
 // Peek/pop preserve parameter-before-note and source insertion order at the same sample.

@@ -92,8 +92,11 @@ Safari remain unverified.
 preserving relative imports. A running `daw/score` accepts compatible musical
 revisions on its beat grid without restarting audio or plugins. Otherwise Run
 prepares and starts a new session. **Play** (Ctrl/Command+Space)
-restarts the prepared score without evaluating Janet or recreating plugins.
-**Stop** (Esc) silences playback and keeps the project and its UIs ready.
+resumes the prepared score without evaluating Janet or recreating plugins.
+**Stop** (Esc) holds the position and DSP state, keeping the project and its UIs ready.
+Click the timeline ruler to seek, or enter seconds in the time field and press Enter.
+The return-to-start button, or Home in the timeline, seeks to zero. Play at the end
+of a finite score starts it again.
 An evaluation error leaves the previous project available for Play.
 Ctrl/Command+S saves.
 Desktop saves replace the file atomically; web **Download** saves a local copy
@@ -123,7 +126,10 @@ to pan, wheel to zoom in time, and Ctrl/Command+wheel to resize all tracks toget
 **Follow** keeps playback in view; wheel over track names or use the scrollbar to
 move vertically between tracks. Cached notes
 remain visible during navigation, with density replacing individual notes when
-needed. Clicking a note selects its source when available. Timing follows
+needed. Clicking a note selects its source when available. Seeking restores
+automation and retriggers notes spanning the destination; envelopes start anew
+and delay/reverb history is cleared. It never renders the intervening audio,
+including for unbounded scores. Timing follows
 rendered audio, without compensating for device latency or plugin release tails.
 
 **M** mutes a track; **S** solos it. Multiple solos play together, and mute takes
@@ -274,8 +280,9 @@ scheduling error is caught, events already emitted remain in the session.
 Run again after editing the notes, automation or initial parameters. A compatible
 revision enters at the next `:quantum` boundary, preserving global phase, DSP state,
 UI instances and mute/solo. Preparation errors leave the current music running.
-Only one revision may be queued. Stop cancels a pending revision; Play rewinds the
-latest active revision. Changed declared parameters are applied at the boundary;
+Only one revision may be queued. Stop or seeking cancels a pending revision;
+seeking uses the latest active revision across the timeline. Play resumes it.
+Changed declared parameters are applied at the boundary;
 unchanged declarations preserve the current values, including temporary UI edits.
 
 Plugin identities are explicit keywords. A track defaults to `track/<source-id>`;
@@ -458,9 +465,9 @@ revisions replace only the sequence. Browser workers transfer owned descriptions
 using a private same-build snapshot, without sharing Janet objects or plugin pointers.
 The editor owns a cache of loaded modules; each prepared session owns its DSP
 instances, and the player owns the audio device. Stop retains all three.
-Play restores initial input parameters and mixer gain/pan, resets DSPs and event
-cursors, and discards pending host messages and edits. UI gestures are temporary;
-put lasting changes in the score. Plugin reset semantics govern internal state,
+Play resumes the existing state. Seeking restores score parameters and held notes,
+resets DSPs and event cursors, and discards pending host messages and edits.
+UI gestures are temporary; put lasting changes in the score. Plugin reset semantics govern internal state,
 including random generators; replay does not restore a serialized plugin snapshot.
 Native binaries stay loaded until the editor closes, so restart it after rebuilding
 a plugin. Janet caches immutable bundle metadata within each evaluation and rereads
@@ -488,9 +495,10 @@ the whole render in memory. `web/player.js` provides `createPlayerHost`,
 `preparePlayer(host, path, sampleRate, source?)` and `closePlayer(host)` for streaming.
 Preload scripts, imports and bundles with `addFile`, preserving their paths.
 
-A player exposes `start()`, `stop()`, `restart()`, `time`, `status` (0 ready/running,
+A player exposes `start()`, `stop()`, `seek(seconds)`, `time`, `status` (0 ready/running,
 1 done, −1 failed, 2 stopped), `context`, `node` and `close()`. Stop suspends the
-context; restart rewinds the existing score and resumes it. Await closure before
+context; start resumes it. Seek stops the device, restores the score at the target
+and leaves it stopped; call start to resume. Await closure before
 attaching another score to its host. `listen(track, flags)` sets audition state
 for a zero-based track index (`1` mute, `2` solo, `3` both, `0` neither), also while
 playing or stopped. The state is independent of plugin parameters.

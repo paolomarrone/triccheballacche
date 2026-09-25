@@ -207,7 +207,7 @@ VIEW_EXPORTS = "_score_prepare","_score_describe","_score_pack_web","_score_pack
 SCORE_EXPORTS = "_score_new","_score_free","_score_listen"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sWASM_WORKERS -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
-PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_player_time","_score_player","_player_update_score","_player_free","_player_start","_player_stop","_player_pause","_player_rewind","_player_sync","_player_status","_player_context","_player_node"]'
+PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_player_time","_score_player","_player_update_score","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node"]'
 # Publish C Brickworks examples only; fxpp_* and synthpp_* are duplicate C++ variants.
 WEB_CONTENT ?= lib examples plugins \
 	$(BRICKWORKS_PERONE)/fx_*/build/*.perone $(BRICKWORKS_PERONE)/synth_*/build/*.perone \

@@ -9,7 +9,7 @@ const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();
 let library;
 let queued = 0, controlRevision = 0;
-let host, player, playing = false, view = 0, revision = 0, time = 0, failure = "", log = [];
+let host, player, playing = false, view = 0, revision = 0, time = 0, duration = 0, failure = "", log = [];
 
 export async function connect() {
     if (!crossOriginIsolated) throw Error("COOP/COEP headers required: run node test/server.mjs.");
@@ -108,7 +108,9 @@ async function run(path, source) {
         ++revision;
         controlRevision = revision;
         time = 0;
-        return query("score");
+        const result = query("score");
+        duration = Math.round(result.score.end * 48000) / 48000;
+        return result;
     } catch (error) {
         if (nextScore) host._score_free(nextScore);
         const diagnostics = log.join("\n");
@@ -134,7 +136,7 @@ function checkedText(text) {
 export async function command(op, ...args) {
     if (op === "library") return library;
     acceptRevision();
-    let result = {}, error = "", path = ["range", "note", "listen"].includes(op) ? "" : args[0] || entry;
+    let result = {}, error = "", path = ["range", "note", "listen", "seek"].includes(op) ? "" : args[0] || entry;
     try {
         if (op === "files") {
             path = host.perone.path(args[0] || ".");
@@ -170,14 +172,31 @@ export async function command(op, ...args) {
             link.click();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         } else if (op === "run") result = await run(path, checkedText(args[1]));
-        else if (op === "play") {
-            if (!player) throw Error("Run a score before playing");
+        else if (op === "seek") {
+            const seconds = Number(args[0]);
+            if (!player) throw Error("Run a score before seeking");
+            if (!Number.isFinite(seconds) || seconds < 0 || seconds * 48000 >= 2 ** 53 ||
+                duration && Math.round(seconds * 48000) > Math.round(duration * 48000))
+                throw Error("Position outside score");
+            const resume = playing;
             await stop();
-            try { await player.restart(); player.activateView(view); }
-            catch (error) { await stop(); throw error; }
-            playing = true;
-            time = 0;
+            await player.seek(seconds);
+            player.activateView(view);
+            time = player.time;
             failure = "";
+            if (resume) { await player.start(); playing = true; }
+        } else if (op === "play") {
+            if (!player) throw Error("Run a score before playing");
+            if (!playing) {
+                if (duration && player.time >= duration) {
+                    await player.seek(0);
+                    player.activateView(view);
+                }
+                await player.start();
+                playing = true;
+                time = player.time;
+                failure = "";
+            }
         } else if (op === "stop") await stop();
         else if (op === "score") result = query("score");
         else if (op === "status") {

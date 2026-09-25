@@ -52,7 +52,7 @@ static void down(Sequence *s, size_t i) {
 	s->heap[i] = item;
 }
 
-void sequence_seek(Sequence *s, uint64_t from) {
+static void seek(Sequence *s, uint64_t from, int history) {
 	s->used = 0;
 	for (size_t i = 0; i < s->count; ++i) {
 		const Cue *c = s->cues + i;
@@ -70,11 +70,29 @@ void sequence_seek(Sequence *s, uint64_t from) {
 			}
 			time = sample(c->start + ++cycle * c->period, s->rate);
 		}
+		if (history) {
+			if (c->period && !cycle)
+				continue;
+			if (c->period)
+				--cycle;
+			double start = c->start + cycle * c->period;
+			time = sample(start, s->rate);
+			if (start < 0 || time >= from)
+				continue;
+		}
 		if (time != UINT64_MAX)
 			s->heap[s->used++] = (SequenceCursor){time, cycle, i};
 	}
 	for (size_t i = s->used / 2; i-- > 0;)
 		down(s, i);
+}
+
+void sequence_seek(Sequence *s, uint64_t from) {
+	seek(s, from, 0);
+}
+
+void sequence_history(Sequence *s, uint64_t from) {
+	seek(s, from, 1);
 }
 
 int sequence_prepare(Sequence *s, unsigned rate, uint64_t from) {
@@ -124,8 +142,15 @@ void sequence_pop(Sequence *s) {
 		cursor->time = time;
 		++cursor->cycle;
 	} else {
-		*cursor = s->heap[--s->used];
+		sequence_shift(s);
+		return;
 	}
+	if (s->used)
+		down(s, 0);
+}
+
+void sequence_shift(Sequence *s) {
+	s->heap[0] = s->heap[--s->used];
 	if (s->used)
 		down(s, 0);
 }

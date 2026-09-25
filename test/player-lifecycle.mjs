@@ -26,7 +26,7 @@ export async function testPlayerLifecycle(host) {
             if (name === "perone-setup") {
                 const post = this.port.postMessage.bind(this.port);
                 this.port.postMessage = message => {
-                    if (message.type === "rewind" && fault === "restart-close") interruptedClose = closePlayer(host);
+                    if (message.type === "seek" && fault === "seek-close") interruptedClose = closePlayer(host);
                     if (message.type === "close" && fault === "send") throw Error("injected send failure");
                     if (message.type === "close" && fault === "drop") return;
                     post(message);
@@ -129,16 +129,16 @@ export async function testPlayerLifecycle(host) {
             finally { host._free(pointer); }
         } finally { host._view_free(view); }
 
-        // A close between the worklet rewind request and its reply must prevent later C calls.
+        // A close between the worklet seek request and its reply must prevent later C calls.
         player = await open();
         const start = host._player_start;
         let starts = 0;
         host._player_start = pointer => { starts++; return start(pointer); };
-        fault = "restart-close";
+        fault = "seek-close";
         try {
-            await rejects(player.restart(), /closing or closed/);
+            await rejects(player.seek(0), /closing or closed/);
             await interruptedClose;
-            check(starts === 0, "Restart touched C state after closure began");
+            check(starts === 0, "Seek touched C state after closure began");
             clean(10);
         } finally { fault = null; host._player_start = start; }
     } finally {

@@ -276,36 +276,101 @@ int session_listen(Session *s, int track, int flags) {
 	return 0;
 }
 
-int session_rewind(Session *s) {
+static void set_control(Session *s, int node, int parameter, float value);
+
+int session_seek(Session *s, uint64_t from) {
 	if (!s->sealed || !s->audio)
-		return fail(s, "rewind requires a prepared session");
+		return fail(s, "seek requires a prepared session");
+	if (from > s->frames || from >= (UINT64_C(1) << 53))
+		return fail(s, "position outside score");
+	// At most one final MIDI state per pitch. Keep onset order for monophonic note priority.
+	Event(*notes)[128] = from ? calloc(s->nnodes, sizeof(*notes)) : NULL;
+	if (from && !notes)
+		return fail(s, "out of memory");
+	float values[MAX_NODES][MAX_PARAMS];
 	Sequence *sequence = s->sequence;
 	session_cancel(s);
 	if (sequence) {
 		sequence->at = 0;
-		sequence_seek(sequence, 0);
 		memset(s->held, 0, s->nnodes * sizeof(*s->held));
 		s->next_off = UINT64_MAX;
 	}
+	unsigned solo = 0;
+	for (int i = 0; i < s->ntracks; ++i) {
+		int flags = atomic_load(&s->tracks[i].listen);
+		s->tracks[i].level = !(flags & TRACK_MUTE);
+		if (flags & TRACK_SOLO)
+			solo |= 1u << i;
+	}
 	for (int i = 0; i < s->nnodes; ++i) {
 		Node *n = s->nodes + i;
-		n->next = 0;
-		memcpy(n->values, sequence ? sequence->defaults + i * MAX_PARAMS : n->defaults, sizeof(n->values));
-		if (!n->path)
-			continue;
 		const PluginConfig *config = &n->dsp[0].config;
+		const float *defaults = sequence ? sequence->defaults + i * MAX_PARAMS
+		    : n->path                    ? config->defaults
+		                                 : n->defaults;
+		memcpy(values[i], defaults, (n->path ? config->nparams : 2) * sizeof(float));
+		for (int j = 0; j < n->ninputs; ++j) {
+			Input *edge = n->inputs + j;
+			edge->level = !solo || ((s->nodes[edge->node].upstream | n->downstream) & solo);
+		}
+		n->next = 0;
+		while (n->next < n->count && n->events[n->next].time < from) {
+			const Event *e = n->events + n->next++;
+			if (e->parameter >= 0)
+				values[i][e->parameter] = e->value;
+			else {
+				notes[i][e->midi[1]] = *e;
+				notes[i][e->midi[1]].time = 0;
+				notes[i][e->midi[1]].order = n->next;
+			}
+		}
+	}
+	if (sequence) {
+		sequence_history(sequence, from);
+		for (size_t order = 0; sequence->used; ++order) {
+			uint64_t end;
+			const Cue *cue = sequence_peek(sequence, &end);
+			if (cue->parameter >= 0)
+				values[cue->node][cue->parameter] = cue->value;
+			else {
+				int active = end > from;
+				notes[cue->node][cue->pitch] = (Event){.parameter = -1,
+				    .order = order,
+				    .midi = {active ? 0x90 : 0x80, cue->pitch, active ? cue->velocity : 0}};
+				s->held[cue->node][cue->pitch] = active ? end : 0;
+			}
+			sequence_shift(sequence);
+		}
+		sequence_seek(sequence, from);
+		for (int i = 0; i < s->nnodes; ++i)
+			for (int pitch = 0; pitch < 128; ++pitch)
+				if (s->held[i][pitch] && s->held[i][pitch] < s->next_off)
+					s->next_off = s->held[i][pitch];
+	}
+	for (int i = 0; i < s->nnodes; ++i) {
+		Node *n = s->nodes + i;
+		const PluginConfig *config = &n->dsp[0].config;
+		for (int j = 0; j < (n->path ? config->nparams : 2); ++j)
+			if (!n->path || !(config->outputs & (UINT64_C(1) << j)))
+				set_control(s, i, j, values[i][j]);
 		for (int c = 0; c < 2 && n->dsp[c].dsp; ++c) {
 			Engine *e = n->dsp + c;
-			e->next = e->time = 0;
-			for (int j = 0; j < config->nparams; ++j)
-				if (!(config->outputs & (UINT64_C(1) << j)))
-					set_dsp(e->dsp, j, sequence ? sequence->defaults[i * MAX_PARAMS + j] : config->defaults[j]);
+			e->next = n->next;
+			e->time = from;
+			// Reset after restoring parameters; history and queued UI gestures belong to the old position.
 			reset_dsp(e->dsp);
 			e->events = n->events;
 			e->count = n->count;
 		}
+		if (notes && n->path && n->dsp[0].config.midi >= 0) {
+			qsort(notes[i], 128, sizeof(Event), compare);
+			for (int j = 0; j < 128; ++j)
+				if (notes[i][j].parameter < 0)
+					midi_dsp(n->dsp[0].dsp, n->dsp[0].config.midi, notes[i][j].midi);
+		}
 	}
-	s->time = 0;
+	free(notes);
+	s->time = from;
 	s->error = NULL;
 	return 0;
 }
@@ -479,7 +544,7 @@ int session_activate(Session *s) {
 	if (!s->audio || (s->sequence && !s->held))
 		return fail(s, "out of memory");
 	s->describe = 0;
-	return session_rewind(s);
+	return session_seek(s, 0);
 }
 
 void session_cancel(Session *s) {

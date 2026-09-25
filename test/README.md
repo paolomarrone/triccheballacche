@@ -16,7 +16,7 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | `make test-polpo-web` | Original Polpo score: live/offline PCM comparison and cleanup; Chromium and its four prebuilt Wasm plugins. |
 | `make test-trace` | Source provenance and unchanged PCM; includes `test-web`. |
 | `make test-editor` | Native backend via `--serve` in Chromium, with local fixtures; X11 development libraries and an audio device. |
-| `make test-live` | Infinite playback and quantized revisions in both editors, UI continuity, errors, evaluation timeout and restart; editor/browser prerequisites. |
+| `make test-live` | Infinite playback, quantized revisions, seek and Stop/Play in both editors, UI continuity, errors and evaluation timeout; editor/browser prerequisites. |
 | `make test-editor-web` | Polpo in the shared browser editor; Node.js, Chromium and Polpo's Wasm plugins. |
 | `make test-editor-ui` | The same custom UI with native and Wasm DSPs; editor/browser prerequisites, no external plugin checkout. |
 | `make test-library` | Shared Settings, catalog, examples dropdown, Sempiterno playback, file picker, uploads and unsaved edits; all 48 default bundles built for native and Wasm, plus editor/browser prerequisites. |
@@ -40,6 +40,11 @@ The player uses a simulated device to check startup errors, interruption, final
 silence, draining and export options without requiring audio hardware. Replays
 after partial and complete playback must match the original PCM, retain the device
 and DSPs, restore automation/defaults and discard stale edits and messages.
+Seek tests compare restored notes and controls against sequential playback at
+44.1/48 kHz, including exact event boundaries, repeated pitches, distant loops,
+stereo effects, mute/solo and queued-revision cancellation. Stop/Play must retain
+the accumulated effect state. The shared editor tests cover ruler clicks, typed
+positions, seeking during playback, invalid positions and finite endpoints.
 Loader tests check canonical module reuse and cache/instance lifetime ordering.
 Diagnostic tests force garbage collection before errors and evaluation timeout,
 then prepare another score to check recovery in both editors.
@@ -119,4 +124,4 @@ snapshots must fail without leaking their partially decoded descriptions.
 including pickups, overhangs, points, independent periods and bounded output.
 `test/live-editor.mjs` runs the same scenario against both editors: submit a new
 pattern without restarting playback or the inline UI, retain audio after errors,
-interrupt runaway Janet, cancel pending changes, and restart the active revision.
+interrupt runaway Janet, cancel pending changes, and resume or seek the active revision.

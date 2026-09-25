@@ -57,7 +57,7 @@ static void test_shared(void) {
 		for (int j = 0; j < 2; ++j)
 			if (a.nodes[i].dsp[j].dsp)
 				assert(a.nodes[i].dsp[j].time == 1025);
-	assert(!session_rewind(&a) && !session_render(&a, split, 1025));
+	assert(!session_seek(&a, 0) && !session_render(&a, split, 1025));
 	assert(!memcmp(whole, split, sizeof(whole)));
 	session_free(&a);
 	session_free(&b);
@@ -97,7 +97,7 @@ static void test_solo(void) {
 	level(&s, 1.125f);
 	assert(!session_listen(&s, 2, TRACK_MUTE | TRACK_SOLO));
 	level(&s, 0);
-	assert(!session_rewind(&s));
+	assert(!session_seek(&s, 0));
 	level(&s, 0);
 	assert(!session_listen(&s, 2, 0));
 	level(&s, 1.125f);

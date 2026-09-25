@@ -97,7 +97,7 @@ try {
         await set("code", changed);
         await click("run");
         await waitFor('!document.querySelector("#stop").disabled');
-        await waitFor('parseFloat(document.querySelector("#time").textContent) > 0.05');
+        await waitFor('parseFloat(document.querySelector("#time").value) > 0.05');
         await waitFor(`document.querySelector('#marks [data-line="${producer}"]')`);
         assert(await evaluate(`!!document.querySelector('#marks [data-line="${caller}"]')`));
         const report = await evaluate('reports.at(-1).score');

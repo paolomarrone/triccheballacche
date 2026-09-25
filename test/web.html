@@ -7,7 +7,7 @@
 <script type="module">
 import {createPlayerHost} from "../web/player.js";
 import {createHost, addFile} from "../web/host.js";
-import {testPlayback, testPlayerExportOptions, testPlayerErrors, testListening} from "./playback.mjs";
+import {testPlayback, testPlayerExportOptions, testPlayerErrors, testListening, testSeeking} from "./playback.mjs";
 import {testPlayerLifecycle} from "./player-lifecycle.mjs";
 
 const button = document.querySelector("#run"), status = document.querySelector("#status");
@@ -35,11 +35,12 @@ try {
             }
             await testPlayerExportOptions(host, reference);
             await testListening(host);
+            await testSeeking(host, reference);
             await testPlayerErrors(host);
             status.textContent = "Checking worklet cleanup, errors and timeouts…";
             await testPlayerLifecycle(host);
             await testPlayback(host, reference, "test/playback.janet", 48000);
-            status.textContent = "OK: miniaudio/AudioWorklet, identical PCM at 44.1/48 kHz, MIDI, mono/stereo effects, final block, stop and restart.";
+            status.textContent = "OK: miniaudio/AudioWorklet, identical PCM at 44.1/48 kHz, MIDI, stereo effects, seek, distant loops, stop and restart.";
         } catch (error) {
             status.textContent = String(error);
         } finally {

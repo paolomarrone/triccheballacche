@@ -1,5 +1,5 @@
 // A viewport in seconds, independent of score duration. Only visible lanes and intervals cross the bridge.
-export function timeline(request, select, selectTrack, error) {
+export function timeline(request, select, selectTrack, seek, error) {
     const get = id => document.getElementById(id);
     const panel = get("timeline"), roll = get("roll"), canvas = get("notes"), context = canvas.getContext("2d");
     const headers = get("track-headers"), tracks = get("track-list"), follow = get("follow"), detail = get("note-info");
@@ -254,13 +254,19 @@ export function timeline(request, select, selectTrack, error) {
             drag.moved = true; follow.checked = false; move(drag.from + (drag.x - event.clientX) * scale);
         }
         const found = hit(x, y), lane = Math.floor((y - ruler + roll.scrollTop) / row);
-        canvas.title = found ? noteText(found.note) : score?.tracks[lane] ? chain(score.tracks[lane]) : "";
+        canvas.title = y < ruler && x >= label ? "Click to seek" : found ? noteText(found.note) : score?.tracks[lane] ? chain(score.tracks[lane]) : "";
     };
     canvas.onpointerup = async event => {
-        const moved = drag?.moved;
+        if (!drag) return;
+        const moved = drag.moved;
         drag = undefined;
         if (moved) return;
-        const found = hit(...point(event));
+        const [x, y] = point(event);
+        if (enabled && y >= 0 && y < ruler && x >= label) {
+            seek(Math.min(score.end || Infinity, from + (x - label) * scale));
+            return;
+        }
+        const found = hit(x, y);
         if (!found) return;
         const revision = score.revision;
         selected = {node: found.node, order: found.note[0], start: found.note[1]};
@@ -276,12 +282,13 @@ export function timeline(request, select, selectTrack, error) {
         } catch (cause) { error(cause); }
     };
     canvas.onpointercancel = () => { drag = undefined; };
-    canvas.ondblclick = event => { if (point(event)[0] >= label) { follow.checked = false; zoom(0.5, point(event)[0] - label); } };
+    canvas.ondblclick = event => { if (point(event)[0] >= label && point(event)[1] >= ruler) { follow.checked = false; zoom(0.5, point(event)[0] - label); } };
     canvas.onkeydown = event => {
         if (["ArrowLeft", "ArrowRight", "Home", "+", "-"].includes(event.key)) {
             event.preventDefault();
             if (event.key === "+" || event.key === "-") zoom(event.key === "+" ? 0.5 : 2);
-            else { follow.checked = false; move(event.key === "Home" ? 0 : from + (event.key === "ArrowLeft" ? -1 : 1) * (viewport().to - from) / 2); }
+            else if (event.key === "Home") { move(0); if (enabled) seek(0); }
+            else { follow.checked = false; move(from + (event.key === "ArrowLeft" ? -1 : 1) * (viewport().to - from) / 2); }
         }
     };
     const split = get("split"), main = panel.parentElement;
@@ -350,11 +357,12 @@ export function timeline(request, select, selectTrack, error) {
             selected = undefined;
             changed();
         },
-        position(seconds, active) {
-            if (time === seconds && playing === active) return;
+        position(seconds, active, locate = false) {
+            if (time === seconds && playing === active && !locate) return;
             time = seconds; playing = active;
             const span = viewport().to - from;
-            if (score && active && follow.checked && (time < from || time > from + span * 0.85)) move(time - span * 0.15);
+            if (score && (locate || active && follow.checked) && (time < from || time > from + span * 0.85)) move(time - span * 0.15);
+            else if (locate) changed();
             else draw();
         }
     };

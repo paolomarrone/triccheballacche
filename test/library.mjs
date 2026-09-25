@@ -72,7 +72,7 @@ try {
             assert(await evaluate('["open", "save"].every(id => document.getElementById(id).parentElement.id === "file-bar")'));
             assert.equal(await evaluate('document.querySelector("body > nav").lastElementChild.id'), "settings");
             await click("#run");
-            await wait('Number(document.querySelector("#time").textContent.split(" ")[0]) > 0');
+            await wait('Number(document.querySelector("#time").value) > 0');
             await click("#settings");
             await wait('document.querySelector("#settings-dialog").open');
             const plugins = await evaluate('[...document.querySelectorAll(".catalog-item")].map(row => row.dataset.path).sort()');
@@ -161,9 +161,13 @@ try {
             const revision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
             await click("#run");
             await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${revision}`);
-            await wait('parseFloat(document.querySelector("#time").textContent) > 0');
+            await wait('parseFloat(document.querySelector("#time").value) > 0');
             assert(await evaluate('document.querySelector("#errors").hidden'));
             assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'));
+            await evaluate('(() => { const t = document.querySelector("#time"); t.focus(); t.value = "60"; })()');
+            await key("Enter", "Enter");
+            await wait('Number(document.querySelector("#time").value) > 60');
+            assert(await evaluate('document.querySelector("#errors").hidden'));
             await click("#stop");
             assert.deepEqual(diagnostics, []);
             await call("Page.navigate", {url: "about:blank"});

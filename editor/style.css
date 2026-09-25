@@ -22,7 +22,8 @@ main { display: flex; gap: 5px; flex: 1; min-height: 0; }
 #code { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: var(--inset) .6em; border: 0; resize: none; font: inherit; tab-size: 2; color: inherit; background: transparent; }
 #errors { margin: 0; padding: .5rem; max-height: 12rem; overflow: auto; white-space: pre-wrap; border: 1px solid #c65c4b; }
 footer { color: var(--muted); font-size: 12px; }
-#time { margin-left: auto; font-variant-numeric: tabular-nums; }
+#time { margin-left: auto; width: 10ch; text-align: right; font-variant-numeric: tabular-nums; appearance: textfield; }
+#time::-webkit-inner-spin-button, #time::-webkit-outer-spin-button { appearance: none; }
 #position { min-width: 5em; text-align: right; font-variant-numeric: tabular-nums; }
 :focus-visible { outline: 2px solid #559bd1; outline-offset: -2px; }
 

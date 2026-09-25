@@ -58,6 +58,7 @@ function update() {
     for (const id of ["open", "save", "run", "views"]) byId(id).disabled = !ready || busy;
     byId("stop").disabled = !ready || busy || !playing;
     byId("play").disabled = !ready || busy || !prepared;
+    byId("rewind").disabled = byId("time").disabled = !ready || busy || !prepared;
     path.disabled = !ready || busy;
     code.disabled = !ready;
     code.readOnly = busy;
@@ -98,14 +99,14 @@ function request(op, ...args) {
         if (typeof response.live === "boolean") live = response.live;
         if (Number.isFinite(response.time)) {
             seconds = response.time;
-            byId("time").textContent = `${seconds.toFixed(2)} s`;
+            if (document.activeElement !== byId("time")) byId("time").value = seconds.toFixed(2);
         }
         if (op === "status") {
             if (response.nativeOpen) controls?.windows(response.nativeOpen);
             frames = response.revision === revision ? response.frames || [] : [];
             partial = response.truncated;
         }
-        projection.position(seconds, playing);
+        projection.position(seconds, playing, op === "seek" && !response.error);
         update();
         if (response.error) throw Error(response.error);
         return response;
@@ -123,7 +124,7 @@ async function action(op, entry = path.value, file) {
         return;
     }
     busy = true;
-    if (op === "run" || op === "play") frames = [];
+    if (["run", "play", "seek"].includes(op)) frames = [];
     showError("");
     update();
     try {
@@ -168,10 +169,23 @@ const projection = timeline(request, origins => {
     code.focus(); code.setSelectionRange(offset, offset + (rows[line]?.length || 0));
     code.scrollTop = Math.max(0, line * parseFloat(getComputedStyle(code).lineHeight) - code.clientHeight / 2);
     update();
-}, index => { views.checked = true; controls?.track(index); }, showError);
+}, index => { views.checked = true; controls?.track(index); }, time => action("seek", time), showError);
 new ResizeObserver(paint).observe(code);
 
 for (const op of ["save", "run", "play", "stop"]) byId(op).addEventListener("click", () => action(op));
+byId("rewind").onclick = () => action("seek", 0);
+byId("time").onkeydown = event => {
+    if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        const time = byId("time").valueAsNumber;
+        byId("time").blur();
+        action("seek", time);
+    } else if (event.key === "Escape") {
+        event.preventDefault();
+        byId("time").blur();
+    }
+};
+byId("time").onblur = () => { byId("time").value = seconds.toFixed(2); };
 byId("open").onclick = () => pickFile(path.value, backend.canUpload);
 for (const button of document.querySelectorAll("[data-close]")) button.onclick = () => button.closest("dialog").close();
 views.addEventListener("change", () => controls?.show(views.checked));

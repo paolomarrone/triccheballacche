@@ -127,15 +127,12 @@ export async function attachPlayer(host, score) {
                 if (host._player_pause(player)) throw Error("Cannot stop audio device");
                 await context.suspend();
             },
-            async restart() {
+            async seek(seconds) {
+                if (!Number.isFinite(seconds) || seconds < 0) throw Error("Invalid position");
+                await this.stop();
                 if (stopping) throw Error("Player closing or closed");
-                if (host._player_pause(player)) throw Error("Cannot stop audio device");
-                await context.suspend();
+                await workletReply(setup, "seek", {send: true, payload: {player, seconds}});
                 if (stopping) throw Error("Player closing or closed");
-                await workletReply(setup, "rewind", {send: true, payload: {player}});
-                if (stopping) throw Error("Player closing or closed");
-                if (host._player_start(player)) throw Error("Miniaudio playback failed");
-                await context.resume();
             },
             close
         };

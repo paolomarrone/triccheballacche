@@ -320,11 +320,11 @@ static void test_listen(void) {
 		assert(!session_listen(&s, 0, 0));
 		listen_mix(&s, .225f, .4375f); // Source, effect and mixer automation advanced while inaudible.
 		assert(!session_listen(&s, 2, TRACK_SOLO));
-		assert(!session_rewind(&s));
+		assert(!session_seek(&s, 0));
 		float audio[2];
 		assert(!session_render(&s, audio, 1) && audio[0] == .125f && audio[1] == -.0625f);
 		assert(!session_listen(&s, 2, TRACK_MUTE | TRACK_SOLO));
-		assert(!session_rewind(&s));
+		assert(!session_seek(&s, 0));
 		assert(!session_render(&s, audio, 1) && audio[0] == 0 && audio[1] == 0);
 		session_free(&s);
 	}

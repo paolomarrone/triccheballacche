@@ -159,6 +159,8 @@ try {
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .6) < .0001`);
             await wait(`Math.abs(Number(${fixture}.dataset.meter) - .6) < .0001`);
             await click("play");
+            await wait(`Math.abs(Number(${fixture}.dataset.gain) - .6) < .0001`);
+            await click("rewind");
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .4) < .0001`);
             assert.equal(await evaluate(`document.querySelector('#track-list [data-listen="2"]').getAttribute('aria-pressed')`), "true");
             assert.deepEqual(await inaudible(), [false, true, false], "Stop/Play preserves audition state");
@@ -192,7 +194,7 @@ try {
             await click("views");
             await wait(`${fixture}?.dataset.helper === "7"`);
             // Creation-time gestures and replies survive an asynchronous factory spanning several polls.
-            await wait('parseFloat(document.querySelector("#time").textContent) > 2');
+            await wait('parseFloat(document.querySelector("#time").value) > 2');
             await toggleParameters();
             await wait(`${synthRoot}?.querySelector(".perone-controls")`);
             await evaluate("fixtureWait = true; fixtureResume = undefined");

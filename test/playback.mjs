@@ -36,7 +36,8 @@ export async function testPlayback(host, reference, path, rate, replay = false) 
             gain.gain.value = 0.1;
             player.node.disconnect();
             player.node.connect(capture).connect(gain).connect(player.context.destination);
-            if (pass) await player.restart(); else await player.start();
+            if (pass) await player.seek(0);
+            await player.start();
             if (pass === 1) {
                 await sleep(20); // Stop with notes and effect history still active.
             } else {
@@ -80,6 +81,45 @@ export async function testPlayerExportOptions(host, reference) {
     await testPlayback(host, reference, path, 48000, true);
 }
 
+export async function testSeeking(host, reference) {
+    const path = "test/seek.janet", rate = 48000, frames = 4096;
+    const source = '(import ../lib/pattern :as p) ' +
+        '(def tone (daw/plugin :tone "build/test/fixture.perone")) ' +
+        '(def fx (daw/plugin :fx "build/test/effect.perone" {:gain 0.5})) ' +
+        '(def track (daw/track tone {:effects [fx]})) (daw/output track) (daw/tempo 60) ' +
+        '(daw/score (p/loop (p/events 0.5 [[0 0.2 [:note tone 60 100]] [0.3 0.5 [:note tone 64 90]] ' +
+        '[0 0 [:param tone :gain 0.25]] [0.1 0.1 [:param tone :gain 0.5]] ' +
+        '[0 0 [:param track :pan 0]] [0.175 0.175 [:param track :pan -0.5]]]))';
+    await addFile(host, path, new TextEncoder().encode(source + ')'));
+    await addFile(reference, path, new TextEncoder().encode(source + ' {:duration 1})'));
+    const expected = renderMix(reference, path, rate);
+    const player = await preparePlayer(host, path, rate);
+    try {
+        await player.context.audioWorklet.addModule(new URL("./capture.js", import.meta.url));
+        for (const target of [0.125, 1000000.125, 0.3]) {
+            await player.seek(target);
+            check(player.time === target && player.status === 2, "Seek must publish its target and remain stopped");
+            const capture = new AudioWorkletNode(player.context, "capture", {outputChannelCount: [2], processorOptions: {frames}});
+            const gain = player.context.createGain();
+            gain.gain.value = .01;
+            player.node.disconnect();
+            player.node.connect(capture).connect(gain).connect(player.context.destination);
+            await player.start();
+            const deadline = performance.now() + 3000;
+            while (player.time < target + frames / rate && performance.now() < deadline) await sleep(20);
+            await player.stop();
+            const received = new Promise(resolve => { capture.port.onmessage = ({data}) => resolve(data); });
+            capture.port.postMessage("read");
+            const result = await received;
+            capture.port.close(); capture.disconnect(); gain.disconnect();
+            check(result.reused && result.frames >= frames, "Seek replaced DSPs or failed to resume audio");
+            const offset = Math.round((target % .5) * rate) * 2;
+            for (let i = 0; i < frames * 2; ++i)
+                check(result.audio[i] === expected[offset + i], `Seek to ${target}: PCM differs at sample ${i}`);
+        }
+    } finally { await player.close(); }
+}
+
 export async function testListening(host) {
     await addFile(host, "test/listening.janet", new TextEncoder().encode(
         '(def a (daw/track (daw/plugin "build/test/fixture.perone" {:gain 0.25}))) ' +
@@ -97,7 +137,8 @@ export async function testListening(host) {
             gain.gain.value = 0.01;
             player.node.disconnect();
             player.node.connect(capture).connect(gain).connect(player.context.destination);
-            if (pass) await player.restart(); else await player.start();
+            if (pass) await player.seek(0);
+            await player.start();
             if (pass === 3) {
                 await sleep(50);
                 player.listen(1, 3); // Deliver the mute from the main thread during worklet rendering.

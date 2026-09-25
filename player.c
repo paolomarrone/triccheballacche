@@ -1,4 +1,5 @@
 #include "player.h"
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,8 +29,8 @@ static void callback(ma_device *device, void *out, const void *in, ma_uint32 fra
 }
 
 Player *player_new(Session *s) {
-	if (!s->audio || s->describe || s->time) {
-		s->error = "playback requires a fresh, sealed session";
+	if (!s->sealed || !s->audio || s->describe) {
+		s->error = "playback requires a prepared session";
 		return NULL;
 	}
 	s->error = NULL;
@@ -40,7 +41,7 @@ Player *player_new(Session *s) {
 	}
 	p->session = s;
 	atomic_init(&p->status, 0);
-	atomic_init(&p->position, 0);
+	atomic_init(&p->position, s->time);
 	ma_device_config config = ma_device_config_init(ma_device_type_playback);
 	config.playback.format = ma_format_f32;
 	config.playback.channels = 2;
@@ -63,11 +64,15 @@ Player *player_new(Session *s) {
 }
 
 int player_start(Player *p) {
-	if (player_status(p))
+	int status = player_status(p);
+	if (status && status != 2)
 		return -1;
+	atomic_store(&p->status, 0);
 	ma_result result = ma_device_start(&p->device);
-	if (result != MA_SUCCESS)
+	if (result != MA_SUCCESS) {
+		atomic_store(&p->status, status);
 		p->session->error = ma_result_description(result);
+	}
 	return result != MA_SUCCESS;
 }
 
@@ -96,12 +101,21 @@ int player_pause(Player *p) {
 	return result != MA_SUCCESS;
 }
 
-int player_rewind(Player *p) {
-	if (!player_status(p) || session_rewind(p->session))
+int player_seek(Player *p, double seconds) {
+	double frame = seconds * p->session->sample_rate;
+	if (!isfinite(frame) || frame < 0 || frame >= 0x1p53) {
+		p->session->error = "invalid position";
+		return -1;
+	}
+	if (!player_status(p)) {
+		p->session->error = "pause before seeking";
+		return -1;
+	}
+	if (session_seek(p->session, (uint64_t)llround(frame)))
 		return -1;
 	p->tail = p->latency;
-	atomic_store(&p->position, 0);
-	atomic_store(&p->status, 0);
+	atomic_store(&p->position, p->session->time);
+	atomic_store(&p->status, 2);
 	return 0;
 }
 

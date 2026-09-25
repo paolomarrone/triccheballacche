@@ -188,16 +188,98 @@ static void test_seek(void) {
 		s->quantum = 4;
 		assert(!sequence_add(s, (Cue){.start = -.123, .end = -.123, .period = periods[p]}));
 		assert(!sequence_prepare(s, 48000, 0));
+		uint64_t previous = UINT64_MAX;
 		for (int i = 0; i < 10000; ++i) {
 			uint64_t time = sequence_next(s);
+			sequence_history(s, time);
+			assert(sequence_next(s) == previous);
 			sequence_seek(s, time);
 			assert(sequence_next(s) == time);
 			sequence_pop(s);
 			assert(sequence_next(s) > time);
+			previous = time;
 		}
 		sequence_free(s);
 	}
 	puts("OK: seeking at rounded sample boundaries preserves the scheduled occurrence");
+}
+
+static void test_transport(void) {
+	const char *head = "(import ../lib/pattern :as p) "
+	                   "(def tone (daw/plugin :tone \"build/test/fixture.perone\" {:gain 0.25})) "
+	                   "(def fx (daw/plugin :fx \"build/test/effect.perone\" {:gain 0.5})) "
+	                   "(def track (daw/track tone {:effects [fx]})) (daw/output track) ";
+	const char *tails[] = {"(daw/note tone 0 0.6 60) (daw/note tone 0.8 0.2 60) "
+	                       "(daw/param tone 0.1 :gain 0.6) (daw/param tone 0.1 :gain 0.8) "
+	                       "(daw/param fx 0.2 :gain 0.25) (daw/param track 0.3 :pan -0.5) (daw/end 2)",
+	    "(daw/tempo 60) (daw/score (p/loop (p/events 2 ["
+	    "[0 0.6 [:note tone 60 100]] [0.8 1 [:note tone 60 100]] "
+	    "[0.1 0.1 [:param tone :gain 0.6]] [0.1 0.1 [:param tone :gain 0.8]] "
+	    "[0.2 0.2 [:param fx :gain 0.25]] [0.3 0.3 [:param track :pan -0.5]]])))"};
+	const unsigned rates[] = {44100, 48000};
+	const double positions[] = {0, .01, .1, .1001, .2, .3, .5999, .6, .7, .8, .9, 1, 1.9, .02};
+	for (size_t r = 0; r < 2; ++r)
+		for (int loop = 0; loop < 2; ++loop) {
+			Session a = {.sample_rate = rates[r]}, b = {.sample_rate = rates[r]};
+			Output output;
+			char code[4096];
+			snprintf(code, sizeof(code), "%s%s", head, tails[loop]);
+			assert(!prepare_score(&a, &output, "test/transport.janet", code, NULL, NULL));
+			assert(!prepare_score(&b, &output, "test/transport.janet", code, NULL, NULL));
+			DSP *tone = b.nodes[0].dsp[0].dsp, *left = b.nodes[1].dsp[0].dsp, *right = b.nodes[1].dsp[1].dsp;
+			for (size_t j = 0; j < sizeof(positions) / sizeof(*positions); ++j) {
+				uint64_t target = llround(positions[j] * rates[r]);
+				assert(!session_seek(&a, 0));
+				advance(&a, target);
+				assert(!session_seek(&b, target));
+				float x[128], y[128];
+				assert(!session_render(&a, x, 64) && !session_render(&b, y, 64));
+				assert(!memcmp(x, y, sizeof(x)));
+				assert(
+				    b.nodes[0].dsp[0].dsp == tone && b.nodes[1].dsp[0].dsp == left && b.nodes[1].dsp[1].dsp == right);
+			}
+			uint64_t target = loop ? UINT64_C(1000000) * rates[r] + rates[r] / 2 : rates[r] / 2;
+			assert(!session_listen(&b, 0, TRACK_MUTE | TRACK_SOLO));
+			assert(!session_seek(&b, target));
+			float audio[2];
+			assert(!session_render(&b, audio, 1) && audio[0] == 0 && audio[1] == 0);
+			assert(session_seek(&b, UINT64_MAX) && b.time == target + 1);
+			assert(!session_listen(&b, 0, 0));
+			assert(!session_seek(&b, target));
+			assert(!session_render(&b, audio, 1) && audio[0] == .2f && audio[1] == -.1f);
+			if (loop) {
+				assert(b.held[0][60] == UINT64_C(1000000) * rates[r] + (uint64_t)llround(.6 * rates[r]));
+				assert(b.next_off == b.held[0][60]);
+			} else {
+				assert(!session_seek(&b, b.frames));
+				assert(!session_render(&b, audio, 0) && session_render(&b, audio, 1));
+			}
+			session_free(&a);
+			session_free(&b);
+		}
+	puts(
+	    "OK: seek restores notes, automation, stereo effects and audition state at 44.1/48 kHz, including distant loops");
+}
+
+static void test_seek_retriggers(void) {
+	Session s = {.sample_rate = 48000};
+	Output output;
+	const char *code = "(import ../lib/pattern :as p) "
+	                   "(def tone (daw/plugin :tone \"build/test/fixture.perone\")) "
+	                   "(daw/output (daw/track tone)) (daw/tempo 60) "
+	                   "(daw/score (p/loop (p/events 4 [[0 3 [:note tone 60 90]] [1 1.5 [:note tone 60 80]]])))";
+	assert(!prepare_score(&s, &output, "test/retrigger.janet", code, NULL, NULL));
+	assert(!session_seek(&s, 60000) && s.held[0][60] == 72000);
+	assert(!session_seek(&s, 96000) && !s.held[0][60] && s.next_off == UINT64_MAX);
+	float audio[2];
+	assert(!session_render(&s, audio, 1) && audio[0] == 0); // A short retrigger ended; the older long note stays off.
+	Session next = {.sample_rate = 48000, .describe = 1};
+	assert(!prepare_score(&next, &output, "test/retrigger.janet", code, NULL, NULL));
+	assert(!session_update(&s, &next, s.time, 1, NULL) && s.pending);
+	assert(!session_seek(&s, 48000) && !s.pending);
+	session_free(&next);
+	session_free(&s);
+	puts("OK: seek suppresses obsolete note-offs and cancels a queued revision");
 }
 
 static void test_loop_origins(void) {
@@ -252,6 +334,8 @@ int main(void) {
 	test_identity();
 	test_tracking_boundary();
 	test_seek();
+	test_transport();
+	test_seek_retriggers();
 	test_loop_origins();
 	test_projection_boundaries();
 	Session a = {.sample_rate = 48000}, b = {.sample_rate = 48000};
@@ -289,7 +373,7 @@ int main(void) {
 	assert(!atomic_load(&a.pending));
 	session_collect(&a);
 	session_free(&b);
-	assert(!session_rewind(&a));
+	assert(!session_seek(&a, 0));
 	assert(a.nodes[0].dsp[0].dsp == instance);
 	// The sample clock must survive the wasm32 size_t boundary without wrapping.
 	a.time = UINT64_C(1) << 32;

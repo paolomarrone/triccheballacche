@@ -97,8 +97,6 @@ static const char *pause_editor(Editor *editor) {
 // The device is stopped; its borrowed Session keeps the same address across successful Runs.
 static const char *play_editor(Editor *editor) {
 	Session *s = &editor->session;
-	if (editor->player ? player_rewind(editor->player) : session_rewind(s))
-		return s->error ? s->error : "Cannot rewind score";
 	if (!editor->player)
 		editor->player = player_new(s);
 	if (!editor->player || player_start(editor->player)) {
@@ -107,11 +105,32 @@ static const char *play_editor(Editor *editor) {
 		return error;
 	}
 	editor->playing = 1;
-	editor->time = 0;
-	editor->score.active_from = 0;
+	editor->time = (double)s->time / s->sample_rate;
 	free(editor->error);
 	editor->error = NULL;
 	return NULL;
+}
+
+static const char *seek_editor(Editor *editor, double seconds) {
+	Session *s = &editor->session;
+	double frame = seconds * s->sample_rate;
+	if (!s->sealed)
+		return "Run a score before seeking";
+	if (!isfinite(frame) || frame < 0 || frame >= 0x1p53 || (uint64_t)llround(frame) > s->frames)
+		return "Position outside score";
+	int playing = editor->playing;
+	const char *error = pause_editor(editor);
+	if (!error && (editor->player ? player_seek(editor->player, seconds) : session_seek(s, llround(frame))))
+		error = s->error;
+	editor->time = (double)s->time / s->sample_rate;
+	if (!error) {
+		score_view_activate(&editor->score, s);
+		free(editor->error);
+		editor->error = NULL;
+		if (playing)
+			error = play_editor(editor);
+	}
+	return error;
 }
 
 static void finish(Editor *editor) {
@@ -200,6 +219,11 @@ static void command(Editor *editor, webui_event_t *event) {
 		reply(event, editor, error, NULL, "", 0);
 		return;
 	}
+	if (!strcmp(op, "seek")) {
+		const char *error = seek_editor(editor, decimal(event, 1));
+		reply(event, editor, error, NULL, "", 0);
+		return;
+	}
 	if (!strcmp(op, "watch") || !strcmp(op, "controls") || !strcmp(op, "parameter") || !strcmp(op, "message")) {
 		controls_command(&editor->controls, &editor->session, &editor->score, editor->control_revision, event);
 		return;
@@ -262,7 +286,10 @@ static void command(Editor *editor, webui_event_t *event) {
 			session_free(&editor->session);
 			editor->session = *next;
 			*next = (Session){0};
-			error = play_editor(editor);
+			if (editor->player && player_seek(editor->player, 0))
+				error = editor->session.error;
+			else
+				error = play_editor(editor);
 			if (error)
 				finish(editor);
 			else {
@@ -282,9 +309,14 @@ static void command(Editor *editor, webui_event_t *event) {
 		if (error)
 			editor->time = previous_time;
 	} else if (!strcmp(op, "play")) {
-		error = pause_editor(editor);
-		if (!error)
-			error = editor->session.sealed ? play_editor(editor) : "Run a score before playing";
+		if (!editor->session.sealed)
+			error = "Run a score before playing";
+		else if (!editor->playing) {
+			if (editor->session.time == editor->session.frames)
+				error = seek_editor(editor, 0);
+			if (!error)
+				error = play_editor(editor);
+		}
 	} else if (!strcmp(op, "stop")) {
 		error = pause_editor(editor);
 	} else if (!strcmp(op, "status")) {

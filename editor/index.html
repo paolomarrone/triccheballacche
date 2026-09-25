@@ -8,8 +8,9 @@
 <script type="module" src="start.js"></script>
 <nav aria-label="Score and playback">
     <button id="run" title="Evaluate score and play · Ctrl+Enter" aria-label="Run" disabled>Run</button>
-    <button id="play" title="Play prepared score from the start · Ctrl+Space" aria-label="Play" disabled>▶</button>
+    <button id="play" title="Resume prepared score · Ctrl+Space" aria-label="Play" disabled>▶</button>
     <button id="stop" title="Stop · Esc" aria-label="Stop" disabled>■</button>
+    <button id="rewind" title="Return to start · Home in the timeline" aria-label="Return to start" disabled>|◀</button>
     <div id="file-bar">
         <input id="path" type="text" aria-label="Score path" title="Enter a path and press Enter to open" spellcheck="false" placeholder="examples/gui.janet" disabled>
         <span id="modified" title="Unsaved changes" aria-label="Unsaved changes"></span>
@@ -45,7 +46,7 @@
 </main>
 <footer>
     <span id="state" role="status">Connecting…</span>
-    <output id="time" title="Rendered time">0.00 s</output>
+    <input id="time" type="number" min="0" step="any" value="0.00" aria-label="Position in seconds" title="Position in seconds · Enter to seek" disabled><span>s</span>
     <span id="position" title="Line:column">1:1</span>
 </footer>
 <dialog id="settings-dialog" aria-labelledby="settings-title">
