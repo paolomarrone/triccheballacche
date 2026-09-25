@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import {spawn} from "node:child_process";
-import {once} from "node:events";
 import {mkdtemp, readFile, writeFile, stat, chmod, rm} from "node:fs/promises";
 import {withBrowser} from "./chromium.mjs";
+import {nativeEditor} from "./native.mjs";
 
 const directory = await mkdtemp("build/test/editor-test-");
 const path = `${directory}/score "音".janet`;
@@ -28,40 +27,12 @@ await writeFile(`${directory}/helper.janet`, `(def duration 3)
 `);
 await writeFile(path, source);
 await chmod(path, 0o640);
-const app = spawn("./build/gui", ["--serve", path]);
-let output = "", error = "";
-app.stderr.on("data", data => error += data);
-const exited = once(app, "exit");
-const deadline = setTimeout(() => app.kill("SIGKILL"), 45000);
+const app = nativeEditor(path);
 try {
-    const url = await new Promise((resolve, reject) => {
-        app.on("error", reject);
-        app.on("exit", code => reject(Error(`Editor exited early: ${code}\n${error}`)));
-        app.stdout.on("data", data => {
-            output += data;
-            const match = output.match(/Editor: (http:\/\/\S+)/);
-            if (match) resolve(match[1]);
-        });
-    });
-    await withBrowser(async ({call, evaluate, diagnostics}) => {
-        const waitFor = async expression => {
-            for (let i = 0; i < 150; ++i) {
-                if (await evaluate(expression)) return;
-                await new Promise(resolve => setTimeout(resolve, 50));
-            }
-            throw Error(`Timed out: ${expression}\n${await evaluate('document.querySelector("#errors")?.textContent || document.body.textContent')}\n${error}`);
-        };
-        const set = async (id, value) => evaluate(`(() => {
-            const input = document.getElementById(${JSON.stringify(id)});
-            input.value = ${JSON.stringify(value)};
-            input.dispatchEvent(new Event("input", {bubbles: true}));
-        })()`);
-        const click = async id => {
-            await waitFor(`!document.getElementById(${JSON.stringify(id)}).disabled`);
-            await evaluate(`document.getElementById(${JSON.stringify(id)}).click()`);
-        };
+    const url = await app.url;
+    await withBrowser(async ({call, evaluate, wait, click, set, diagnostics}) => {
         await call("Page.navigate", {url});
-        await waitFor('document.querySelector("#run")?.disabled === false');
+        await wait('document.querySelector("#run")?.disabled === false');
         await call("Emulation.setDeviceMetricsOverride", {width: 900, height: 520, deviceScaleFactor: 1, mobile: false});
         await evaluate(`(() => {
             const call = webui.call.bind(webui);
@@ -94,19 +65,19 @@ try {
         })()`), "Row numbers must remain inside the gutter");
         assert(await evaluate('(document.querySelector("#sheet").clientHeight + document.querySelector("#timeline").clientHeight) > innerHeight * 0.82'), "Keep the editor dense");
         const changed = source.replace("0.01", "0.02");
-        await set("code", changed);
-        await click("run");
-        await waitFor('!document.querySelector("#stop").disabled');
-        await waitFor('parseFloat(document.querySelector("#time").value) > 0.05');
-        await waitFor(`document.querySelector('#marks [data-line="${producer}"]')`);
+        await set("#code", changed);
+        await click("#run");
+        await wait('!document.querySelector("#stop").disabled');
+        await wait('parseFloat(document.querySelector("#time").value) > 0.05');
+        await wait(`document.querySelector('#marks [data-line="${producer}"]')`);
         assert(await evaluate(`!!document.querySelector('#marks [data-line="${caller}"]')`));
         const report = await evaluate('reports.at(-1).score');
         assert.equal(report.tracks.length, 1);
         assert(await evaluate(`origins.some(frame => frame[0] === ${JSON.stringify(directory + '/helper.janet')} && frame[1] === 3)`));
-        await waitFor('Number(document.querySelector("#notes").dataset.notes) === 2');
+        await wait('Number(document.querySelector("#notes").dataset.notes) === 2');
         const notes = await evaluate('ranges.at(-1).lanes[0].notes');
         assert.deepEqual(notes.map(note => note.slice(1)), [[0, 2, 60, 100], [0.25, 2.5, 64, 80]]);
-        await set("code", "# new draft\n" + changed);
+        await set("#code", "# new draft\n" + changed);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert((await evaluate('document.querySelector("#state").textContent')).includes("tracking paused"));
         assert.equal(await evaluate(`(() => {
@@ -117,12 +88,12 @@ try {
             window.confirm = original;
             return asked && webui.isConnected() && document.title.startsWith("* ") && document.title.endsWith("triccheballacche");
         })()`), true, "Cancelling window close preserves the unsaved draft and connection");
-        await set("code", changed);
-        await waitFor(`document.querySelector('#marks [data-line="${producer}"]')`);
-        await set("path", `${directory}/another.janet`);
+        await set("#code", changed);
+        await wait(`document.querySelector('#marks [data-line="${producer}"]')`);
+        await set("#path", `${directory}/another.janet`);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
-        await set("path", path);
-        await waitFor(`document.querySelector('#marks [data-line="${producer}"]')`);
+        await set("#path", path);
+        await wait(`document.querySelector('#marks [data-line="${producer}"]')`);
         // Gutter and marks follow the textarea's scroll without changing its text or selection.
         await evaluate(`(() => {
             const code = document.querySelector("#code");
@@ -140,13 +111,13 @@ try {
         assert.deepEqual(await evaluate('[document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd]'), [4, 8]);
         await evaluate('document.querySelector("#code").scrollTop = document.querySelector("#code").scrollLeft = 0');
         assert.equal(await readFile(path, "utf8"), source, "Run must not save the draft");
-        await click("views");
-        await click("views");
-        await waitFor('document.querySelector("#state").textContent === "Playing"');
+        await click("#views");
+        await click("#views");
+        await wait('document.querySelector("#state").textContent === "Playing"');
         const screenshot = await call("Page.captureScreenshot", {format: "png"});
         await writeFile("build/test/editor.png", Buffer.from(screenshot.data, "base64"));
-        await click("stop");
-        await waitFor('document.querySelector("#state").textContent === "Stopped"');
+        await click("#stop");
+        await wait('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert.equal(await evaluate('Number(document.querySelector("#notes").dataset.notes)'), 2, "Stop retains the prepared projection");
         const notePoint = await evaluate(`(() => {
@@ -160,28 +131,28 @@ try {
             await call("Input.dispatchMouseEvent", {type: "mouseReleased", x: notePoint[0], y: notePoint[1], button: "left", clickCount: 1});
         };
         await clickNote();
-        await waitFor('document.querySelector("#note-info").title.length > 0');
+        await wait('document.querySelector("#note-info").title.length > 0');
         assert((await evaluate('document.querySelector("#note-info").textContent')).includes("MIDI 64"));
         assert((await evaluate('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd)')).includes("array/push"));
-        await set("code", "# different draft\n" + changed);
+        await set("#code", "# different draft\n" + changed);
         await evaluate('document.querySelector("#code").setSelectionRange(0, 0)');
         await clickNote();
         await new Promise(resolve => setTimeout(resolve, 100));
         assert.equal(await evaluate('document.querySelector("#code").selectionEnd'), 0, "Old origins must not select code in a changed draft");
-        await set("code", changed);
-        await click("save");
-        await waitFor('!document.querySelector("#modified").textContent');
+        await set("#code", changed);
+        await click("#save");
+        await wait('!document.querySelector("#modified").textContent');
         assert.equal(await readFile(path, "utf8"), changed);
         assert.equal((await stat(path)).mode & 0o777, 0o640);
-        await set("path", `${directory}/missing/file.janet`);
-        await click("save");
-        await waitFor('!document.querySelector("#errors").hidden');
+        await set("#path", `${directory}/missing/file.janet`);
+        await click("#save");
+        await wait('!document.querySelector("#errors").hidden');
         assert.equal(await readFile(path, "utf8"), changed);
         assert.equal(await evaluate('document.querySelector("#code").value'), changed);
-        await set("path", path);
-        await set("code", "# draft\nunknown-binding");
-        await click("run");
-        await waitFor('document.querySelector("#errors").textContent.includes("unknown-binding")');
+        await set("#path", path);
+        await set("#code", "# draft\nunknown-binding");
+        await click("#run");
+        await wait('document.querySelector("#errors").textContent.includes("unknown-binding")');
         assert.equal(await evaluate('reports.at(-1).score'), undefined);
         assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), report.revision);
         assert.equal(await evaluate('Number(document.querySelector("#notes").dataset.notes)'), 2);
@@ -189,28 +160,28 @@ try {
         assert((await evaluate('document.querySelector("#errors").textContent')).includes(path));
         assert.equal(await evaluate('document.querySelector("#stop").disabled'), true);
         await writeFile(`${directory}/helper.janet`, '(error "Play must not evaluate this import")');
-        await click("play"); // Use the old project even with an invalid draft and changed imports.
-        await waitFor('!document.querySelector("#stop").disabled');
+        await click("#play"); // Use the old project even with an invalid draft and changed imports.
+        await wait('!document.querySelector("#stop").disabled');
         assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), report.revision);
         assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
-        await click("stop");
+        await click("#stop");
         await writeFile(`${directory}/helper.janet`, `(def duration 3)
 (defn notes [items node] (array/push items [0 2 [:note node 60 100]]))`);
-        await set("code", changed);
-        await click("run");
-        await waitFor('!document.querySelector("#stop").disabled');
-        await waitFor('document.querySelector("#state").textContent === "Stopped"');
+        await set("#code", changed);
+        await click("#run");
+        await wait('!document.querySelector("#stop").disabled');
+        await wait('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert.equal(await evaluate('statusHasTrace'), false, "Never transfer the complete source report");
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
-        await set("path", `${directory}/absent.janet`);
+        await set("#path", `${directory}/absent.janet`);
         await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
-        await waitFor('!document.querySelector("#errors").hidden');
+        await wait('!document.querySelector("#errors").hidden');
         assert.equal(await evaluate('document.querySelector("#code").value'), changed);
-        await set("path", path);
+        await set("#path", path);
         await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
-        await waitFor('document.querySelector("#errors").hidden && !document.querySelector("#run").disabled');
+        await wait('document.querySelector("#errors").hidden && !document.querySelector("#run").disabled');
         const responses = await evaluate(`Promise.all(Array.from({length: 8}, () =>
             webui.call("command", "status").then(JSON.parse)))`);
         assert(responses.every(response => !response.error || response.error.includes("busy")));
@@ -223,9 +194,9 @@ try {
 (daw/note lead 0 8 48 90)
 (daw/end 12)`;
         await evaluate("window.openEnd = true");
-        await set("code", dense);
-        await click("run");
-        await waitFor('document.querySelector("#notes").dataset.dense === "true"');
+        await set("#code", dense);
+        await click("#run");
+        await wait('document.querySelector("#notes").dataset.dense === "true"');
         const denseReport = await evaluate('reports.at(-1).score');
         assert.equal(denseReport.end, null, "Exercise navigation and follow with an unknown end");
         assert.equal(denseReport.tracks.length, 11);
@@ -237,9 +208,9 @@ try {
         assert(denseRange.lanes.length <= 8);
         assert(JSON.stringify(denseRange).length < 30000, "Response cost follows the viewport budget");
         for (let i = 0; i < 3; ++i) await evaluate('document.querySelector("#notes").dispatchEvent(new KeyboardEvent("keydown", {key: "+"}))');
-        await waitFor('document.querySelector("#notes").dataset.dense === "false" && Number(document.querySelector("#notes").dataset.notes) > 0');
-        await waitFor('Number(document.querySelector("#notes").dataset.from) > 0');
-        await click("stop");
+        await wait('document.querySelector("#notes").dataset.dense === "false" && Number(document.querySelector("#notes").dataset.notes) > 0');
+        await wait('Number(document.querySelector("#notes").dataset.from) > 0');
+        await click("#stop");
         const changeStart = async value => {
             await evaluate(`(() => {
                 const canvas = document.querySelector("#notes"), rect = canvas.getBoundingClientRect();
@@ -249,7 +220,7 @@ try {
             })()`);
         };
         await changeStart(0);
-        await waitFor('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
         assert.equal(await evaluate('document.querySelector("#timeline-tools").querySelectorAll("button,input[type=number]").length'), 0);
         const beforeZoom = await evaluate('[Number(document.querySelector("#notes").dataset.scale), document.querySelector("#track-list .track").clientHeight]');
         await evaluate(`(() => {
@@ -266,41 +237,41 @@ try {
         assert(await evaluate(`Number(document.querySelector("#notes").dataset.scale) < ${beforeZoom[0]}`), "Plain wheel zooms in time");
         assert.equal(await evaluate('document.querySelector("#track-list .track").clientHeight'), afterZoom[1]);
         await changeStart(0);
-        await waitFor('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
         await evaluate('window.holdRange = true; window.rangeHeld = false');
         const dragPoint = await evaluate('(() => { const r = document.querySelector("#notes").getBoundingClientRect(); return {x:r.left+330,y:r.top+60}; })()');
         await call("Input.dispatchMouseEvent", {type: "mousePressed", ...dragPoint, button: "left", clickCount: 1});
         await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - 10, y: dragPoint.y, buttons: 1});
-        await waitFor('window.rangeHeld');
+        await wait('window.rangeHeld');
         assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'), "Dragging retains notes while a range reply is pending");
         await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - 20, y: dragPoint.y, buttons: 1});
         assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'), "Repeated movement must not blank the cached window");
         await call("Input.dispatchMouseEvent", {type: "mouseReleased", x: dragPoint.x - 20, y: dragPoint.y, button: "left", clickCount: 1});
         await evaluate('window.holdRange = false');
-        await waitFor('ranges.at(-1).from === Number(document.querySelector("#notes").dataset.from)');
+        await wait('ranges.at(-1).from === Number(document.querySelector("#notes").dataset.from)');
         const canvasSize = await evaluate('[document.querySelector("#notes").width, document.querySelector("#notes").height]');
         await changeStart(1e9);
-        await waitFor('Math.abs(ranges.at(-1).from - 1e9) < 0.00001 && document.querySelector("#notes").dataset.notes === "0"');
+        await wait('Math.abs(ranges.at(-1).from - 1e9) < 0.00001 && document.querySelector("#notes").dataset.notes === "0"');
         assert.deepEqual(await evaluate('[document.querySelector("#notes").width, document.querySelector("#notes").height]'), canvasSize, "Large times must not allocate a song-sized canvas");
         await evaluate('window.holdRange = true; window.rangeHeld = false');
         await changeStart(100);
-        await waitFor('window.rangeHeld');
+        await wait('window.rangeHeld');
         await changeStart(0);
         await evaluate('window.holdRange = false');
-        await waitFor('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
         await evaluate('document.querySelector("#roll").scrollTop = 100000');
-        await waitFor('ranges.at(-1).first > 0');
+        await wait('ranges.at(-1).first > 0');
         assert.equal(await evaluate('document.querySelector("#notes").dataset.notes'), "0");
         await evaluate('document.querySelector("#roll").scrollTop = 0');
-        await waitFor('ranges.at(-1).first === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        await wait('ranges.at(-1).first === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
         const timeView = await evaluate('[document.querySelector("#notes").dataset.from, document.querySelector("#notes").dataset.scale, document.querySelector("#follow").checked]');
         const trackPoint = await evaluate('(() => { const r = document.querySelector("#track-headers").getBoundingClientRect(); return {x:r.left+30, y:r.top+20}; })()');
         await call("Input.dispatchMouseEvent", {type: "mouseWheel", ...trackPoint, deltaX: 0, deltaY: 100});
-        await waitFor('document.querySelector("#roll").scrollTop > 0 && ranges.at(-1).first > 0');
+        await wait('document.querySelector("#roll").scrollTop > 0 && ranges.at(-1).first > 0');
         assert.deepEqual(await evaluate('[document.querySelector("#notes").dataset.from, document.querySelector("#notes").dataset.scale, document.querySelector("#follow").checked]'), timeView,
             "Wheel over track names scrolls vertically without changing time zoom or Follow");
         await call("Input.dispatchMouseEvent", {type: "mouseWheel", ...trackPoint, deltaX: 0, deltaY: -100});
-        await waitFor('document.querySelector("#roll").scrollTop === 0 && ranges.at(-1).first === 0');
+        await wait('document.querySelector("#roll").scrollTop === 0 && ranges.at(-1).first === 0');
         const rpc = async args => {
             for (let i = 0; i < 30; ++i) {
                 const result = await evaluate(`webui.call("command", ...${JSON.stringify(args)}).then(JSON.parse)`);
@@ -314,23 +285,21 @@ try {
         const invalid = await rpc(["range", denseReport.revision, "0", "1", 0, 1000, 100]);
         assert(invalid.error && !invalid.lanes);
         await evaluate("window.openEnd = false");
-        await set("code", changed);
-        await click("run");
-        await waitFor('!document.querySelector("#stop").disabled');
+        await set("#code", changed);
+        await click("#run");
+        await wait('!document.querySelector("#stop").disabled');
         assert.deepEqual(diagnostics, []);
         // Closing the frontend while playing must stop and release the native session.
         await call("Page.navigate", {url: "about:blank"});
     });
-    const [code, signal] = await exited;
-    assert.equal(signal, null, error);
-    assert.equal(code, 0, error);
+    const [code, signal] = await app.exited;
+    assert.equal(signal, null, app.log);
+    assert.equal(code, 0, app.log);
     console.log("OK: dense WebUI editor, bounded timeline/density, follow, stale requests, source selection, native tracking, producers/imports, edits, scroll, Unicode files, unsaved playback, atomic save, diagnostics, recovery and close during audio");
 } finally {
-    clearTimeout(deadline);
-    if (app.exitCode === null && app.signalCode === null) {
-        app.kill("SIGTERM");
-        await exited;
+    try { await app.close(); }
+    finally {
+        await writeFile("build/test/editor-test.log", app.log);
+        await rm(directory, {recursive: true, force: true});
     }
-    await writeFile("build/test/editor-test.log", output + error);
-    await rm(directory, {recursive: true, force: true});
 }

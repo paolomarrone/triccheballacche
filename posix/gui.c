@@ -113,14 +113,14 @@ static const char *play_editor(Editor *editor) {
 
 static const char *seek_editor(Editor *editor, double seconds) {
 	Session *s = &editor->session;
-	double frame = seconds * s->sample_rate;
 	if (!s->sealed)
 		return "Run a score before seeking";
-	if (!isfinite(frame) || frame < 0 || frame >= 0x1p53 || (uint64_t)llround(frame) > s->frames)
+	uint64_t frame = session_frame(s, seconds);
+	if (frame == UINT64_MAX)
 		return "Position outside score";
 	int playing = editor->playing;
 	const char *error = pause_editor(editor);
-	if (!error && (editor->player ? player_seek(editor->player, seconds) : session_seek(s, llround(frame))))
+	if (!error && (editor->player ? player_seek(editor->player, seconds) : session_seek(s, frame)))
 		error = s->error;
 	editor->time = (double)s->time / s->sample_rate;
 	if (!error) {

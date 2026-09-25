@@ -1,5 +1,4 @@
 #include "player.h"
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -102,8 +101,8 @@ int player_pause(Player *p) {
 }
 
 int player_seek(Player *p, double seconds) {
-	double frame = seconds * p->session->sample_rate;
-	if (!isfinite(frame) || frame < 0 || frame >= 0x1p53) {
+	uint64_t frame = session_frame(p->session, seconds);
+	if (frame == UINT64_MAX) {
 		p->session->error = "invalid position";
 		return -1;
 	}
@@ -111,7 +110,7 @@ int player_seek(Player *p, double seconds) {
 		p->session->error = "pause before seeking";
 		return -1;
 	}
-	if (session_seek(p->session, (uint64_t)llround(frame)))
+	if (session_seek(p->session, frame))
 		return -1;
 	p->tail = p->latency;
 	atomic_store(&p->position, p->session->time);

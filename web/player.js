@@ -87,6 +87,14 @@ export async function attachPlayer(host, score) {
             activateView(view) { host._score_view_activate_web(score, view); },
             get live() { return !!host._score_live(score); },
             get revision() { return host._score_revision(score); },
+            get duration() {
+                if (stopping) throw Error("Player closing or closed");
+                return host._score_duration(score);
+            },
+            canSeek(seconds) {
+                if (stopping) throw Error("Player closing or closed");
+                return Number.isFinite(seconds) && !!host._score_can_seek(score, seconds);
+            },
             update(next, revision) {
                 if (stopping) throw Error("Player closing or closed");
                 const error = host._player_update_score(player, next, revision);
@@ -128,9 +136,9 @@ export async function attachPlayer(host, score) {
                 await context.suspend();
             },
             async seek(seconds) {
-                if (!Number.isFinite(seconds) || seconds < 0) throw Error("Invalid position");
-                await this.stop();
                 if (stopping) throw Error("Player closing or closed");
+                if (!Number.isFinite(seconds)) throw Error("Invalid position");
+                if (context.state !== "suspended") throw Error("Stop before seeking");
                 await workletReply(setup, "seek", {send: true, payload: {player, seconds}});
                 if (stopping) throw Error("Player closing or closed");
             },

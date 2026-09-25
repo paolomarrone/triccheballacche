@@ -131,16 +131,13 @@ export async function testPlayerLifecycle(host) {
 
         // A close between the worklet seek request and its reply must prevent later C calls.
         player = await open();
-        const start = host._player_start;
-        let starts = 0;
-        host._player_start = pointer => { starts++; return start(pointer); };
+        await player.stop();
         fault = "seek-close";
         try {
             await rejects(player.seek(0), /closing or closed/);
             await interruptedClose;
-            check(starts === 0, "Seek touched C state after closure began");
             clean(10);
-        } finally { fault = null; host._player_start = start; }
+        } finally { fault = null; }
     } finally {
         fault = null;
         try { await closePlayer(host); } finally {

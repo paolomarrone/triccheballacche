@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import {spawn} from "node:child_process";
 import {once} from "node:events";
 import {mkdtemp, readFile, writeFile, rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {serve} from "./server.mjs";
 import {withBrowser} from "./chromium.mjs";
+import {nativeEditor} from "./native.mjs";
 
 const entry = "examples/prog/polpo.janet", original = await readFile(entry, "utf8");
 const directory = await mkdtemp(tmpdir() + "/triccheballacche-files-");
@@ -17,51 +17,15 @@ const uploadedSource = '(import ../../lib/pattern :as p)\n(error "Uploaded file 
 await writeFile(upload, uploadedSource);
 const server = serve(0);
 await once(server, "listening");
-let native, exited, output = "", inventory;
+let native, inventory;
 try {
     for (const mode of ["web", "native"]) {
         let url = `http://127.0.0.1:${server.address().port}/editor/index.html`;
         if (mode === "native") {
-            native = spawn("./build/gui", ["--serve", entry]);
-            native.stderr.on("data", bytes => output += bytes);
-            exited = once(native, "exit");
-            url = await new Promise((resolve, reject) => {
-                let text = "";
-                native.on("error", reject);
-                native.on("exit", () => reject(Error(output)));
-                native.stdout.on("data", bytes => {
-                    text += bytes;
-                    const match = text.match(/Editor: (http:\/\/\S+)/);
-                    if (match) resolve(match[1]);
-                });
-            });
+            native = nativeEditor(entry);
+            url = await native.url;
         }
-        await withBrowser(async ({call, evaluate, diagnostics}) => {
-            const wait = async expression => {
-                for (let i = 0; i < 200; ++i) {
-                    if (await evaluate(expression)) return;
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                }
-                throw Error(`${mode}: ${expression}\n${await evaluate('document.querySelector("#errors").textContent')}\n${output}`);
-            };
-            const click = async selector => {
-                await wait(`document.querySelector(${JSON.stringify(selector)})?.disabled === false`);
-                const {x, y} = await evaluate(`(() => {
-                    const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
-                    return {x:r.x+r.width/2,y:r.y+r.height/2};
-                })()`);
-                await call("Input.dispatchMouseEvent", {type: "mousePressed", x, y, button: "left", clickCount: 1});
-                await call("Input.dispatchMouseEvent", {type: "mouseReleased", x, y, button: "left", clickCount: 1});
-            };
-            const set = (id, value) => evaluate(`(() => {
-                const input = document.getElementById(${JSON.stringify(id)}); input.value = ${JSON.stringify(value)};
-                input.dispatchEvent(new Event('input')); input.dispatchEvent(new Event('change'));
-            })()`);
-            const key = async (key, code) => {
-                const windowsVirtualKeyCode = key === "Escape" ? 27 : 13;
-                await call("Input.dispatchKeyEvent", {type: "keyDown", key, code, windowsVirtualKeyCode});
-                await call("Input.dispatchKeyEvent", {type: "keyUp", key, code, windowsVirtualKeyCode});
-            };
+        await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {
             const fileButton = name => `[...document.querySelectorAll("#file-list button")].find(button => button.dataset.name === ${JSON.stringify(name)})`;
             const screenshot = async name => writeFile(`build/test/${name}-${mode}.png`,
                 Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
@@ -93,15 +57,15 @@ try {
             if (inventory) assert.deepEqual({plugins, examples}, inventory, "Both backends expose the same library");
             inventory = {plugins, examples};
             const draft = "# draft\n" + original;
-            await set("code", draft);
+            await set("#code", draft);
             await evaluate('globalThis.confirmations = []; globalThis.confirm = message => { confirmations.push(message); return false; }');
-            await set("examples", "examples/gui.janet");
+            await set("#examples", "examples/gui.janet");
             assert.equal(await evaluate('confirmations.length'), 1);
             assert.equal(await evaluate('document.querySelector("#path").value'), entry);
             assert.equal(await evaluate('document.querySelector("#code").value'), draft);
             assert.equal(await evaluate('document.querySelector("#examples").value'), "");
             await evaluate('globalThis.confirm = () => true');
-            await set("examples", "examples/gui.janet");
+            await set("#examples", "examples/gui.janet");
             await wait('document.querySelector("#path").value === "examples/gui.janet" && !document.querySelector("#run").disabled');
             const guiSource = await readFile("examples/gui.janet", "utf8");
             assert.equal(await evaluate('document.querySelector("#code").value'), guiSource);
@@ -120,7 +84,7 @@ try {
             await key("Escape", "Escape");
             await wait('!document.querySelector("#file-dialog").open');
             assert.equal(await evaluate('document.querySelector("#stop").disabled'), false);
-            await set("path", entry);
+            await set("#path", entry);
             await evaluate('document.querySelector("#path").focus()');
             await key("Enter", "Enter");
             await wait('!document.querySelector("#run").disabled');
@@ -128,7 +92,7 @@ try {
             await click("#open");
             await wait('document.querySelector("#file-list").inert === false');
             if (mode === "native") {
-                await set("file-directory", directory);
+                await set("#file-directory", directory);
                 await evaluate('document.querySelector("#file-location").requestSubmit()');
                 await wait(fileButton("score \"音\".janet"));
                 await evaluate(`${fileButton('score "音".janet')}.click()`);
@@ -145,10 +109,10 @@ try {
             }
             await click("#run");
             await wait(`document.querySelector("#errors").textContent.includes(${JSON.stringify(mode === "native" ? "Selected file imports its neighbor" : "Uploaded file imports pattern")})`);
-            await set("examples", entry);
+            await set("#examples", entry);
             await wait('document.querySelector("#path").value === "examples/prog/polpo.janet" && !document.querySelector("#run").disabled');
             await click("#open");
-            await set("file-directory", "/no/such/directory");
+            await set("#file-directory", "/no/such/directory");
             await evaluate('document.querySelector("#file-location").requestSubmit()');
             await wait('!document.querySelector("#file-error").hidden');
             await key("Escape", "Escape");
@@ -156,7 +120,7 @@ try {
             assert.equal(await readFile(entry, "utf8"), original, "Opening and browsing must never save files");
             await click("#stop");
             await wait('!document.querySelector("#run").disabled');
-            await set("examples", "examples/sempiterno.janet");
+            await set("#examples", "examples/sempiterno.janet");
             await wait('document.querySelector("#path").value === "examples/sempiterno.janet" && !document.querySelector("#run").disabled');
             const revision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
             await click("#run");
@@ -175,9 +139,11 @@ try {
         });
     }
 } finally {
-    if (native && native.exitCode === null && native.signalCode === null) { native.kill("SIGTERM"); await exited; }
-    await writeFile("build/test/library-native.log", output);
-    server.closeAllConnections();
-    await new Promise(resolve => server.close(resolve));
-    await rm(directory, {recursive: true, force: true});
+    try { await native?.close(); }
+    finally {
+        await writeFile("build/test/library-native.log", native?.log || "");
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(resolve));
+        await rm(directory, {recursive: true, force: true});
+    }
 }

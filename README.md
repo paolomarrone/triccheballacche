@@ -495,10 +495,11 @@ the whole render in memory. `web/player.js` provides `createPlayerHost`,
 `preparePlayer(host, path, sampleRate, source?)` and `closePlayer(host)` for streaming.
 Preload scripts, imports and bundles with `addFile`, preserving their paths.
 
-A player exposes `start()`, `stop()`, `seek(seconds)`, `time`, `status` (0 ready/running,
+A player exposes `start()`, `stop()`, `seek(seconds)`, `time`, `duration`, `status` (0 ready/running,
 1 done, −1 failed, 2 stopped), `context`, `node` and `close()`. Stop suspends the
-context; start resumes it. Seek stops the device, restores the score at the target
-and leaves it stopped; call start to resume. Await closure before
+context; start resumes it. Await stop before seeking, then start to resume.
+`canSeek(seconds)` validates a position without stopping audio; `duration` is infinite
+for unbounded scores. Await closure before
 attaching another score to its host. `listen(track, flags)` sets audition state
 for a zero-based track index (`1` mute, `2` solo, `3` both, `0` neither), also while
 playing or stopped. The state is independent of plugin parameters.

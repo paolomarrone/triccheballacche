@@ -9,7 +9,7 @@ const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();
 let library;
 let queued = 0, controlRevision = 0;
-let host, player, playing = false, view = 0, revision = 0, time = 0, duration = 0, failure = "", log = [];
+let host, player, playing = false, view = 0, revision = 0, time = 0, failure = "", log = [];
 
 export async function connect() {
     if (!crossOriginIsolated) throw Error("COOP/COEP headers required: run node test/server.mjs.");
@@ -108,9 +108,7 @@ async function run(path, source) {
         ++revision;
         controlRevision = revision;
         time = 0;
-        const result = query("score");
-        duration = Math.round(result.score.end * 48000) / 48000;
-        return result;
+        return query("score");
     } catch (error) {
         if (nextScore) host._score_free(nextScore);
         const diagnostics = log.join("\n");
@@ -175,9 +173,7 @@ export async function command(op, ...args) {
         else if (op === "seek") {
             const seconds = Number(args[0]);
             if (!player) throw Error("Run a score before seeking");
-            if (!Number.isFinite(seconds) || seconds < 0 || seconds * 48000 >= 2 ** 53 ||
-                duration && Math.round(seconds * 48000) > Math.round(duration * 48000))
-                throw Error("Position outside score");
+            if (!player.canSeek(seconds)) throw Error("Position outside score");
             const resume = playing;
             await stop();
             await player.seek(seconds);
@@ -188,7 +184,7 @@ export async function command(op, ...args) {
         } else if (op === "play") {
             if (!player) throw Error("Run a score before playing");
             if (!playing) {
-                if (duration && player.time >= duration) {
+                if (player.time >= player.duration) {
                     await player.seek(0);
                     player.activateView(view);
                 }

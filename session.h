@@ -21,7 +21,7 @@ typedef struct {
 	Event *events;
 	size_t count, capacity, next;
 	float values[2], defaults[2]; // Mixer gain/pan only; initial plugin values live in PluginConfig.
-	int ncontrols, track;         // Track index + 1, or zero for other nodes.
+	int track;                    // Track index + 1, or zero for other nodes.
 } Node;
 
 typedef struct {
@@ -69,6 +69,8 @@ void session_cancel(Session *s);
 int session_render(Session *s, float *stereo, size_t frames);
 // Safe during rendering; the caller owns session lifetime. Invalid requests leave it unchanged.
 int session_listen(Session *s, int track, int flags);
+// Read-only conversion to an absolute sample; UINT64_MAX means outside the prepared score.
+uint64_t session_frame(const Session *s, double seconds);
 // No audio callback may be using the session during seek or stopped UI synchronization.
 // Seek to an absolute sample, restoring controls and held notes. DSP history is reset.
 int session_seek(Session *s, uint64_t from);

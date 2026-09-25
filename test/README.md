@@ -63,8 +63,9 @@ Editor tests cover Unicode paths, unsaved relative imports, Run/Play/Stop, atomi
 or downloads, diagnostics and recovery, source tracking, scrolling and selection.
 They check timeline persistence, notes retained while dragging with delayed replies,
 independent time/track zoom, stale replies, large times, unknown ends and bounded
-requests/canvas sizes. `chromium.mjs` shares browser startup, DevTools and
-cleanup; logs, reports and screenshots go under `build/test/`. Unicode fixtures retain
+requests/canvas sizes. `chromium.mjs` shares browser startup, DevTools, bounded waits,
+input actions and cleanup. `native.mjs` owns GUI startup, logs and shutdown.
+Logs, reports and screenshots go under `build/test/`. Unicode fixtures retain
 characters such as `音` to test encoding independently of the interface language.
 
 ## Source tracking

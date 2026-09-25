@@ -1,5 +1,6 @@
 #include "host.h"
 #include "snapshot.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -52,6 +53,15 @@ Score *score_prepare(const char *path, const char *source, unsigned sample_rate)
 
 size_t score_frames(Score *score) {
 	return score->session.frames == UINT64_MAX ? 0 : score->session.frames;
+}
+
+double score_duration(Score *score) {
+	Session *s = &score->session;
+	return s->frames == UINT64_MAX ? INFINITY : (double)s->frames / s->sample_rate;
+}
+
+int score_can_seek(Score *score, double seconds) {
+	return session_frame(&score->session, seconds) != UINT64_MAX;
 }
 
 float score_normalize(Score *score) {

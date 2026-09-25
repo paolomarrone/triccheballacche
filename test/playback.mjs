@@ -24,6 +24,8 @@ export async function testPlayback(host, reference, path, rate, replay = false) 
     const expected = renderMix(reference, path, rate);
     const player = await preparePlayer(host, path, rate);
     try {
+        check(player.duration === expected.length / (2 * rate), "Duration must use the rendered sample count");
+        check(player.canSeek(player.duration) && !player.canSeek(player.duration + 1 / rate), "Invalid seek boundary");
         check(host.perone.instances.size === 0, "DSP instances must move to the worklet");
         const busy = await preparePlayer(host, path, rate).then(() => false, () => true);
         check(busy, "Concurrent players must be rejected");
@@ -95,8 +97,10 @@ export async function testSeeking(host, reference) {
     const expected = renderMix(reference, path, rate);
     const player = await preparePlayer(host, path, rate);
     try {
+        check(player.duration === Infinity && player.canSeek(1000000.125), "Unbounded duration or seek limit");
         await player.context.audioWorklet.addModule(new URL("./capture.js", import.meta.url));
         for (const target of [0.125, 1000000.125, 0.3]) {
+            await player.stop();
             await player.seek(target);
             check(player.time === target && player.status === 2, "Seek must publish its target and remain stopped");
             const capture = new AudioWorkletNode(player.context, "capture", {outputChannelCount: [2], processorOptions: {frames}});
@@ -105,6 +109,9 @@ export async function testSeeking(host, reference) {
             player.node.disconnect();
             player.node.connect(capture).connect(gain).connect(player.context.destination);
             await player.start();
+            for (const invalid of [-1, NaN, Infinity, "1", null])
+                check(!player.canSeek(invalid), "Invalid seek accepted");
+            check(player.status === 0, "Position validation interrupted playback");
             const deadline = performance.now() + 3000;
             while (player.time < target + frames / rate && performance.now() < deadline) await sleep(20);
             await player.stop();

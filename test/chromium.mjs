@@ -14,10 +14,12 @@ export async function withBrowser(run) {
     const deadline = setTimeout(() => browser.kill(), 60000);
     try {
         const port = await new Promise((resolve, reject) => {
+            let output = "";
             browser.on("error", reject);
             browser.on("exit", () => reject(Error("Chromium exited before DevTools started")));
             browser.stderr.on("data", bytes => {
-                const match = String(bytes).match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/);
+                output += bytes;
+                const match = output.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//);
                 if (match) resolve(match[1]);
             });
         });
@@ -47,9 +49,38 @@ export async function withBrowser(run) {
             assert(!result.exceptionDetails, JSON.stringify(result.exceptionDetails));
             return result.result.value;
         };
+        const wait = async (expression, timeout = 15000) => {
+            const until = Date.now() + timeout;
+            while (Date.now() < until) {
+                const value = await evaluate(expression);
+                if (value) return value;
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            const state = await evaluate('({error: document.querySelector("#errors")?.textContent, status: document.querySelector("#state")?.textContent || document.querySelector("#status")?.textContent, time: document.querySelector("#time")?.value})');
+            throw Error(`Timed out: ${expression}\n${JSON.stringify(state)}\n${JSON.stringify(diagnostics)}`);
+        };
+        const click = async selector => {
+            const target = `document.querySelector(${JSON.stringify(selector)})`;
+            await wait(`${target} && !${target}.disabled`);
+            const {x, y} = await evaluate(`(() => {
+                const node = ${target}; node.scrollIntoView({block: "nearest"});
+                const r = node.getBoundingClientRect(); return {x: r.x + r.width / 2, y: r.y + r.height / 2};
+            })()`);
+            for (const type of ["mousePressed", "mouseReleased"])
+                await call("Input.dispatchMouseEvent", {type, x, y, button: "left", clickCount: 1});
+        };
+        const set = (selector, value) => evaluate(`(() => {
+            const node = document.querySelector(${JSON.stringify(selector)}); node.value = ${JSON.stringify(value)};
+            for (const type of ["input", "change"]) node.dispatchEvent(new Event(type, {bubbles: true}));
+        })()`);
+        const key = async (key, code = key) => {
+            const windowsVirtualKeyCode = {Enter: 13, Escape: 27}[key] || 0;
+            for (const type of ["keyDown", "keyUp"])
+                await call("Input.dispatchKeyEvent", {type, key, code, windowsVirtualKeyCode});
+        };
         await call("Runtime.enable");
         await call("Page.enable");
-        return await run({call, evaluate, diagnostics});
+        return await run({call, evaluate, wait, click, set, key, diagnostics});
     } finally {
         clearTimeout(deadline);
         socket?.close();

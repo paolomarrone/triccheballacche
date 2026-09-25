@@ -20,8 +20,7 @@ static int valid(Session *s, int id, int param, float value) {
 		return fail(s, "sealed session or invalid handle");
 	const Node *n = s->nodes + id;
 	const PluginConfig *config = n->path ? &n->dsp[0].config : NULL;
-	if (param < 0 || param >= (config ? config->nparams : n->ncontrols) ||
-	    (config && (config->outputs & (UINT64_C(1) << param))))
+	if (param < 0 || param >= (config ? config->nparams : 2) || (config && (config->outputs & (UINT64_C(1) << param))))
 		return fail(s, "unknown or output parameter");
 	if (!isfinite(value) || (!config && (value < (param ? -1 : 0) || value > (param ? 1 : 4))))
 		return fail(s, "parameter outside range");
@@ -49,7 +48,7 @@ int session_set(Session *s, int id, int param, float value) {
 	if (n->path)
 		n->dsp[0].config.defaults[param] = value;
 	else
-		n->defaults[param] = n->values[param] = value;
+		n->defaults[param] = value;
 	return 0;
 }
 
@@ -78,7 +77,7 @@ int session_mix(Session *s, const int *inputs, int count) {
 		if (!handle(s, inputs[i]))
 			return fail(s, "invalid mix input");
 	Node *n = s->nodes + s->nnodes;
-	*n = (Node){.ncontrols = 2, .ninputs = count, .defaults = {1, 0}, .values = {1, 0}};
+	*n = (Node){.ninputs = count, .defaults = {1, 0}};
 	n->inputs = calloc(count, sizeof(Input));
 	if (!n->inputs)
 		return fail(s, "out of memory");
@@ -276,7 +275,22 @@ int session_listen(Session *s, int track, int flags) {
 	return 0;
 }
 
-static void set_control(Session *s, int node, int parameter, float value);
+static void set_control(Session *s, int id, int parameter, float value) {
+	Node *n = s->nodes + id;
+	if (!n->path)
+		n->values[parameter] = value;
+	else
+		for (int c = 0; c < 2 && n->dsp[c].dsp; ++c)
+			set_dsp(n->dsp[c].dsp, parameter, value);
+}
+
+uint64_t session_frame(const Session *s, double seconds) {
+	double value = seconds * s->sample_rate;
+	if (!s->sealed || !isfinite(value) || value < 0 || value >= 0x1p53)
+		return UINT64_MAX;
+	uint64_t frame = llround(value);
+	return frame <= s->frames ? frame : UINT64_MAX;
+}
 
 int session_seek(Session *s, uint64_t from) {
 	if (!s->sealed || !s->audio)
@@ -618,15 +632,6 @@ int session_update(Session *s, Session *description, uint64_t earliest, unsigned
 	description->sequence = NULL;
 	atomic_store(&s->pending, next);
 	return 0;
-}
-
-static void set_control(Session *s, int id, int parameter, float value) {
-	Node *n = s->nodes + id;
-	if (!n->path)
-		n->values[parameter] = value;
-	else
-		for (int c = 0; c < 2 && n->dsp[c].dsp; ++c)
-			set_dsp(n->dsp[c].dsp, parameter, value);
 }
 
 static void note_message(Node *n, int pitch, int velocity) {

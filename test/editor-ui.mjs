@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import {spawn, execFileSync} from "node:child_process";
+import {execFileSync} from "node:child_process";
 import {once} from "node:events";
 import {cp, mkdtemp, readFile, writeFile, rm} from "node:fs/promises";
 import {serve} from "./server.mjs";
 import {withBrowser} from "./chromium.mjs";
+import {nativeEditor} from "./native.mjs";
 
 const directory = await mkdtemp("build/test/editor-ui-"), entry = `${directory}/score.janet`;
 let server, app;
@@ -39,35 +40,12 @@ try {
     await once(server, "listening");
     const wasm = `http://127.0.0.1:${server.address().port}/editor/index.html?score=${entry}&project=../${catalog}`;
     for (const mode of ["web", "native"]) {
-        let url = wasm, errors = "";
+        let url = wasm;
         if (mode === "native") {
-            app = spawn("./build/gui", ["--serve", entry]);
-            app.stderr.on("data", data => errors += data);
-            url = await new Promise((resolve, reject) => {
-                let text = "";
-                app.on("error", reject);
-                app.on("exit", () => reject(Error(errors)));
-                app.stdout.on("data", data => {
-                    text += data;
-                    const match = text.match(/Editor: (http:\/\/\S+)/);
-                    if (match) resolve(match[1]);
-                });
-            });
+            app = nativeEditor(entry);
+            url = await app.url;
         }
-        await withBrowser(async ({call, evaluate, diagnostics}) => {
-            const wait = async expression => {
-                for (let n = 0; n < 160; ++n) {
-                    if (await evaluate(expression)) return;
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                }
-                throw Error(`${mode}: ${expression}\n${await evaluate('document.querySelector("#errors").textContent')}\n${errors}`);
-            };
-            const click = async id => {
-                await wait(`!document.getElementById('${id}').disabled`);
-                const {x, y} = await evaluate(`(() => { const r = document.getElementById('${id}').getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}; })()`);
-                await call("Input.dispatchMouseEvent", {type: "mousePressed", x, y, button: "left", clickCount: 1});
-                await call("Input.dispatchMouseEvent", {type: "mouseReleased", x, y, button: "left", clickCount: 1});
-            };
+        await withBrowser(async ({call, evaluate, wait, click, diagnostics}) => {
             const openEffect = async () => evaluate(`document.querySelector('.plugin[data-node="1"]').open = true`);
             const toggleParameters = async () => evaluate(`document.querySelector('.plugin[data-node="1"] button[aria-label="Toggle parameter controls"]').click()`);
             const root = `document.querySelector('.plugin[data-node="1"] .plugin-body > div')?.shadowRoot`;
@@ -76,8 +54,8 @@ try {
             await call("Page.navigate", {url});
             await call("Emulation.setDeviceMetricsOverride", {width: 1100, height: 760, deviceScaleFactor: 1, mobile: false});
             await wait('document.querySelector("#run")?.disabled === false');
-            await click("views");
-            await click("run");
+            await click("#views");
+            await click("#run");
             await wait(`${synthRoot}?.querySelectorAll(".perone-controls label").length === 3`);
             const toggle = async (track, bit, pressed) => {
                 const button = `document.querySelector('#track-list .track:nth-child(${track + 1}) [data-listen="${bit}"]')`;
@@ -151,23 +129,23 @@ try {
             await writeFile(`build/test/editor-ui-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
             const revision = await evaluate('document.querySelector("#timeline").dataset.revision');
             await evaluate(`globalThis.retainedUI = ${fixture}`);
-            await click("stop");
+            await click("#stop");
             await wait('document.querySelector("#stop").disabled');
             assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 2);
             assert.equal(await evaluate("fixtureFreed"), 1);
             await evaluate("fixtureCallbacks.at(-1).set_parameter(1, .6)");
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .6) < .0001`);
             await wait(`Math.abs(Number(${fixture}.dataset.meter) - .6) < .0001`);
-            await click("play");
+            await click("#play");
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .6) < .0001`);
-            await click("rewind");
+            await click("#rewind");
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .4) < .0001`);
             assert.equal(await evaluate(`document.querySelector('#track-list [data-listen="2"]').getAttribute('aria-pressed')`), "true");
             assert.deepEqual(await inaudible(), [false, true, false], "Stop/Play preserves audition state");
             assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
             assert(await evaluate(`${fixture} === retainedUI`), "Play preserves the GUI object");
             assert.equal(await evaluate("fixtureFreed"), 1);
-            await click("run");
+            await click("#run");
             await wait(`${synthRoot}?.querySelector(".perone-controls")`);
             assert.equal(await evaluate('document.querySelectorAll("#track-list [data-listen][aria-pressed=true]").length'), 0,
                 "A newly prepared score clears mute/solo");
@@ -188,10 +166,10 @@ try {
                 assert.match((await trackCommand([current, track, flags])).error, /Invalid track state/);
             await openEffect();
             await wait(`${fixture}?.dataset.helper === "7"`);
-            await click("views");
+            await click("#views");
             await wait('document.querySelectorAll(".plugin-body > div").length === 0');
             assert.equal(await evaluate("fixtureFreed"), 3);
-            await click("views");
+            await click("#views");
             await wait(`${fixture}?.dataset.helper === "7"`);
             // Creation-time gestures and replies survive an asynchronous factory spanning several polls.
             await wait('parseFloat(document.querySelector("#time").value) > 2');
@@ -215,7 +193,7 @@ try {
             await toggleParameters();
             await wait(`${fixture}?.dataset.helper === "7"`);
             // Track headers select their actual chain and open the panel; other chains have no mounted views.
-            await click("views");
+            await click("#views");
             await evaluate(`document.querySelector('#track-list [data-track="1"]').click()`);
             await wait('!document.querySelector("#plugins").hidden && document.querySelector("#views").checked');
             assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 1);
@@ -228,16 +206,16 @@ try {
             await evaluate(`document.querySelector('.plugin[data-node="0"]').open = false`);
             await wait(`${synthRoot} === undefined`);
             assert(await evaluate(`${root}?.querySelector(".fixture-ui")`), "Collapsing one plugin preserves the other");
-            await click("stop");
+            await click("#stop");
             await wait('document.querySelector("#stop").disabled');
             // An asynchronous factory can complete while stopped: the prepared project still owns it.
             const freed = await evaluate("fixtureFreed");
-            await click("run");
+            await click("#run");
             await wait(`${synthRoot}?.querySelector(".perone-controls")`);
             await evaluate("fixtureWait = true; fixtureResume = undefined");
             await openEffect();
             await wait('typeof fixtureResume === "function"');
-            await click("stop");
+            await click("#stop");
             await wait('document.querySelector("#stop").disabled');
             await evaluate("fixtureWait = false; fixtureResume()");
             await wait(`fixtureFreed === ${freed + 1}`);
@@ -264,7 +242,7 @@ try {
 (def wet (daw/track (daw/through group (daw/plugin "${directory}/effect.perone")) {:name "Wet"}))
 (daw/output (daw/mix [group wet]))`);
             await evaluate(`(() => { const code = document.querySelector('#code'); code.value = ${JSON.stringify(graph)}; code.dispatchEvent(new Event('input')); })()`);
-            await click("run");
+            await click("#run");
             await wait('document.querySelectorAll("#track-list [data-listen]").length === 8');
             assert.match(await evaluate('document.querySelector("#track-list .track:nth-child(3)").textContent'), /Group/);
             assert.match(await evaluate('document.querySelector("#track-list .track:nth-child(3) small").textContent'), /Wet.*out|out.*Wet/);
@@ -277,7 +255,7 @@ try {
             await wait('document.querySelectorAll(".plugin").length === 0');
             await evaluate(`document.querySelector('#track-list [data-track="3"]').click()`);
             await wait('document.querySelectorAll(".plugin").length === 1');
-            await click("stop");
+            await click("#stop");
             await wait('document.querySelector("#stop").disabled');
             assert.deepEqual(diagnostics, []);
             // Restore the saved text before leaving, so the draft confirmation is not part of this test.
@@ -285,11 +263,13 @@ try {
             await call("Page.navigate", {url: "about:blank"});
             console.log(`OK: ${mode} DSP, shared custom/generic UI, relative JS/CSS/UI Wasm, automation, edits, messages, selection, stop and restart`);
         });
-        if (app && app.exitCode === null) { const exited = once(app, "exit"); app.kill(); await exited; }
+        await app?.close();
         app = undefined;
     }
 } finally {
-    if (app && app.exitCode === null) { const exited = once(app, "exit"); app.kill(); await exited; }
-    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
-    await rm(directory, {recursive: true, force: true});
+    try { await app?.close(); }
+    finally {
+        if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+        await rm(directory, {recursive: true, force: true});
+    }
 }

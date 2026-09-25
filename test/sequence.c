@@ -226,6 +226,13 @@ static void test_transport(void) {
 			snprintf(code, sizeof(code), "%s%s", head, tails[loop]);
 			assert(!prepare_score(&a, &output, "test/transport.janet", code, NULL, NULL));
 			assert(!prepare_score(&b, &output, "test/transport.janet", code, NULL, NULL));
+			assert(session_frame(&b, .49 / rates[r]) == 0 && session_frame(&b, .51 / rates[r]) == 1);
+			assert(session_frame(&b, -1) == UINT64_MAX && session_frame(&b, INFINITY) == UINT64_MAX);
+			assert(session_frame(&b, NAN) == UINT64_MAX);
+			if (!loop) {
+				assert(session_frame(&b, 2 + .4 / rates[r]) == b.frames);
+				assert(session_frame(&b, 2 + .6 / rates[r]) == UINT64_MAX);
+			}
 			DSP *tone = b.nodes[0].dsp[0].dsp, *left = b.nodes[1].dsp[0].dsp, *right = b.nodes[1].dsp[1].dsp;
 			for (size_t j = 0; j < sizeof(positions) / sizeof(*positions); ++j) {
 				uint64_t target = llround(positions[j] * rates[r]);
@@ -376,9 +383,7 @@ int main(void) {
 	assert(!session_seek(&a, 0));
 	assert(a.nodes[0].dsp[0].dsp == instance);
 	// The sample clock must survive the wasm32 size_t boundary without wrapping.
-	a.time = UINT64_C(1) << 32;
-	a.nodes[0].dsp[0].time = a.time;
-	sequence_seek(a.sequence, a.time);
+	assert(!session_seek(&a, UINT64_C(1) << 32));
 	advance(&a, (UINT64_C(1) << 32) + 1000);
 	session_free(&a);
 	score_view_free(&view);

@@ -3,6 +3,7 @@
 #include <string.h>
 
 #define SNAPSHOT_LIMIT (256u * 1024u * 1024u)
+#define SNAPSHOT_MAGIC UINT32_C(0x54424332)
 
 typedef struct {
 	unsigned char *data;
@@ -71,9 +72,9 @@ static void string(Transfer *t, char **value) {
 #define FIELD(t, field) bytes(t, &(field), sizeof(field))
 
 static void transfer(Transfer *t, Session *s, Output *output, ScoreView *view) {
-	uint32_t magic = UINT32_C(0x54424331);
+	uint32_t magic = SNAPSHOT_MAGIC;
 	FIELD(t, magic);
-	if (magic != UINT32_C(0x54424331)) {
+	if (magic != SNAPSHOT_MAGIC) {
 		t->failed = 1;
 		return;
 	}
@@ -97,7 +98,6 @@ static void transfer(Transfer *t, Session *s, Output *output, ScoreView *view) {
 		string(t, &n->key);
 		FIELD(t, n->dsp[0].config);
 		FIELD(t, n->defaults);
-		FIELD(t, n->ncontrols);
 		FIELD(t, n->track);
 		FIELD(t, n->ninputs);
 		FIELD(t, n->count);
