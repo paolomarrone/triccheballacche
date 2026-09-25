@@ -1,0 +1,14 @@
+{
+  "product": {
+    "name": "piano", "version": "1.0.0", "buildVersion": "1", "bundleName": "piano",
+    "buses": [
+      {"id": "output", "name": "Output", "shortName": "Out", "type": "audio", "direction": "output", "channels": "stereo"},
+      {"id": "midi", "name": "MIDI", "shortName": "MIDI", "type": "midi", "direction": "input"}
+    ],
+    "parameters": [
+      {"id": "gain", "name": "Gain", "shortName": "Gain", "unit": "", "minimum": 0, "maximum": 2, "defaultValue": 0.6, "direction": "input"},
+      {"id": "detune", "name": "Honk detune", "shortName": "Detune", "unit": "", "minimum": 0, "maximum": 30, "defaultValue": 11, "direction": "input"},
+      {"id": "blend", "name": "Honk blend", "shortName": "Blend", "unit": "", "minimum": 0, "maximum": 1, "defaultValue": 0.32, "direction": "input"}
+    ]
+  }
+}

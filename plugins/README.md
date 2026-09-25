@@ -32,6 +32,10 @@ bundle are preserved.
 | `echo` | Local `plugin.h` | Three delay taps in milliseconds, individual levels and dry signal. |
 | `tibia_test` | Local `plugin.h` | Gain, filter, delay, bypass and output. |
 
+The optional native [sampled piano](piano/README.md) is built separately with
+`make -C plugins/piano` after fetching its dependencies. It is not part of the
+default build or web catalog; its bundle includes the piano SoundFont asset.
+
 `drums` has 32 voices; MIDI notes 0–6 select kick, snare, hat, open hat, crash,
 high tom and low tom. Velocity scales each hit, `:gain` scales the instance and
 `:seed` affects subsequent hits. Sounds decay naturally, ignore note-off and
