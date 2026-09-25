@@ -1,5 +1,9 @@
 #include "session.h"
 #include "util.h"
+#include <bw_balance.h>
+#include <bw_buf.h>
+#include <bw_pan.h>
+#include <bw_slew_lim.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -401,57 +405,81 @@ static void controls(Node *n, uint64_t time) {
 	}
 }
 
-static float fade(float level, float target, float step) {
-	return level < target ? fminf(target, level + step) : fmaxf(target, level - step);
-}
-
-static void input_audio(Session *s, Node *node, int index, unsigned solo, float *audio, size_t frames) {
-	Input *edge = node->inputs + index;
-	Node *source = s->nodes + edge->node;
-	const float *input = s->audio + edge->node * BLOCK * 2;
-	float target = !solo || ((source->upstream | node->downstream) & solo);
-	float step = 1.f / (.005f * s->sample_rate);
-	if (!s->time)
-		edge->level = target;
+static void fade(
+    const bw_slew_lim_coeffs *coeffs, float *level, float target, float *audio, int channels, size_t frames) {
+	bw_slew_lim_state state;
+	bw_slew_lim_reset_state(coeffs, &state, *level);
 	for (size_t i = 0; i < frames; ++i) {
-		edge->level = fade(edge->level, target, step);
-		for (int c = 0; c < source->channels; ++c)
-			audio[i * source->channels + c] = input[i * source->channels + c] * edge->level;
+		*level = bw_slew_lim_process1(coeffs, &state, target);
+		for (int c = 0; c < channels; ++c)
+			audio[i * channels + c] *= *level;
 	}
 }
 
-static void process(Session *s, Node *node, unsigned solo, float *out, size_t frames) {
+static void input_audio(Session *s, Node *node, int index, unsigned solo, const bw_slew_lim_coeffs *slew, float *audio,
+    size_t offset, size_t frames) {
+	Input *edge = node->inputs + index;
+	Node *source = s->nodes + edge->node;
+	const float *input = s->audio + edge->node * BLOCK * 2 + offset * source->channels;
+	float target = !solo || ((source->upstream | node->downstream) & solo);
+	if (!s->time)
+		edge->level = target;
+	bw_buf_copy(input, audio, frames * source->channels);
+	fade(slew, &edge->level, target, audio, source->channels, frames);
+}
+
+static int process(Session *s, Node *node, unsigned solo, const bw_slew_lim_coeffs *slew, float *out, size_t frames) {
 	float input[BLOCK * 2];
 	if (!node->ninputs) {
 		render(node->dsp, out, NULL, frames);
-		return;
+		return 0;
 	}
 	if (!node->path) {
-		// Cache sample-accurate controls once, then sum each input with its channel layout.
-		float gain[BLOCK], pan[BLOCK];
-		for (size_t i = 0; i < frames; ++i) {
+		bw_pan_coeffs panner;
+		bw_pan_init(&panner);
+		bw_pan_set_sample_rate(&panner, s->sample_rate);
+		bw_balance_coeffs balance;
+		bw_balance_init(&balance);
+		bw_balance_set_sample_rate(&balance, s->sample_rate);
+		bw_buf_fill(0, out, 2 * frames);
+		// Process constant-control spans, sharing the same controls across every input.
+		for (size_t i = 0; i < frames;) {
 			controls(node, s->time + i);
-			gain[i] = node->values[0];
-			pan[i] = node->values[1];
-		}
-		memset(out, 0, 2 * frames * sizeof(float));
-		for (int j = 0; j < node->ninputs; ++j) {
-			input_audio(s, node, j, solo, input, frames);
-			int channels = s->nodes[node->inputs[j].node].channels;
-			for (size_t i = 0; i < frames; ++i) {
+			size_t n = frames - i;
+			if (node->next < node->count && node->events[node->next].time - s->time - i < n)
+				n = node->events[node->next].time - s->time - i;
+			float gain = node->values[0], pan = node->values[1], left, right;
+			// Reset at each event: score automation is immediate, without BW's default smoothing.
+			bw_pan_set_pan(&panner, pan);
+			bw_pan_reset_coeffs(&panner);
+			bw_balance_set_balance(&balance, pan);
+			bw_balance_reset_coeffs(&balance);
+			bw_balance_process1(&balance, 1, 1, &left, &right);
+			for (int j = 0; j < node->ninputs; ++j) {
+				input_audio(s, node, j, solo, slew, input, i, n);
+				int channels = s->nodes[node->inputs[j].node].channels;
+				// Stateless buffer gain preserves exact steps and seek behavior.
+				bw_buf_scale(input, gain, input, channels * n);
+				if (!bw_has_only_finite(input, channels * n))
+					return fail(s, "non-finite audio");
 				if (channels == 1) {
-					float angle = (pan[i] + 1) * .7853981633974483f, x = input[i] * gain[i];
-					out[2 * i] += x * cosf(angle);
-					out[2 * i + 1] += x * sinf(angle);
+					for (size_t k = n; k-- > 0;) {
+						float x = input[k];
+						bw_pan_process1(&panner, x, input + 2 * k, input + 2 * k + 1);
+					}
 				} else {
-					out[2 * i] += input[2 * i] * gain[i] * (pan[i] > 0 ? 1 - pan[i] : 1);
-					out[2 * i + 1] += input[2 * i + 1] * gain[i] * (pan[i] < 0 ? 1 + pan[i] : 1);
+					for (size_t k = 0; k < n; ++k) {
+						input[2 * k] *= left;
+						input[2 * k + 1] *= right;
+					}
 				}
+				bw_buf_mix(out + 2 * i, input, out + 2 * i, 2 * n);
 			}
+			i += n;
 		}
-		return;
+		return 0;
 	}
-	input_audio(s, node, 0, solo, input, frames);
+	input_audio(s, node, 0, solo, slew, input, 0, frames);
 	if (node->dsp[1].dsp) {
 		float mono[BLOCK], tmp[BLOCK];
 		for (int c = 0; c < 2; ++c) {
@@ -467,11 +495,17 @@ static void process(Session *s, Node *node, unsigned solo, float *out, size_t fr
 				input[2 * i] = input[2 * i + 1] = input[i];
 		render(node->dsp, out, input, frames);
 	}
+	return 0;
 }
 
 static int render_audio(Session *s, float *out, size_t frames) {
 	if (!s->sealed || s->describe || frames > s->frames - s->time)
 		return fail(s, "render outside session");
+	bw_slew_lim_coeffs slew;
+	bw_slew_lim_init(&slew);
+	bw_slew_lim_set_sample_rate(&slew, s->sample_rate);
+	bw_slew_lim_set_max_rate(&slew, 1.f / .005f);
+	bw_slew_lim_reset_coeffs(&slew);
 	while (frames) {
 		size_t n = frames < BLOCK ? frames : BLOCK;
 		unsigned solo = 0, mute = 0;
@@ -488,18 +522,15 @@ static int render_audio(Session *s, float *out, size_t frames) {
 			int id = s->order[i];
 			Node *node = s->nodes + id;
 			float *audio = s->audio + id * BLOCK * 2;
-			process(s, node, solo, audio, n);
+			if (process(s, node, solo, &slew, audio, n))
+				return -1;
 			if (node->track) {
 				int j = node->track - 1;
 				Track *track = s->tracks + j;
-				float target = !(mute & (1u << j)), step = 1.f / (.005f * s->sample_rate);
+				float target = !(mute & (1u << j));
 				if (!s->time)
 					track->level = target;
-				for (size_t k = 0; k < n; ++k) {
-					track->level = fade(track->level, target, step);
-					audio[2 * k] *= track->level;
-					audio[2 * k + 1] *= track->level;
-				}
+				fade(&slew, &track->level, target, audio, 2, n);
 			}
 			for (size_t j = 0; j < n * node->channels; ++j)
 				if (!isfinite(audio[j]))

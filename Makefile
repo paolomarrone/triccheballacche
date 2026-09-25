@@ -191,6 +191,11 @@ build/test:
 # Fetch/generate/compile the canonical plugin library independently of the host.
 include plugins/library.mk
 
+# The mixer shares the library's pinned headers; the host needs no Tibia/Node build.
+MIXER_OBJECTS = build/obj/native/session.o build/obj/web-offline/session.o build/obj/web-player/session.o
+$(MIXER_OBJECTS): override CPPFLAGS += -I$(BW_SOURCE)/include
+$(MIXER_OBJECTS): $(BW_SOURCE)/.ready plugins/library.mk
+
 # Read-only audit of the bundles; no plugin compilation here.
 BW_BUNDLES = $(wildcard $(BRICKWORKS_PERONE)/*/build/*.perone)
 test-brickworks: build/test/loader

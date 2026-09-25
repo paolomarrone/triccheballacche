@@ -395,6 +395,59 @@ static void test_pipeline(void) {
 	puts("OK: neutral output, serial effects, sample-accurate plugin/gain/pan/master controls, block invariance");
 }
 
+static void mixed_controls(Session *s) {
+	int inputs[] = {mock(s, 0, .5f), mock(s, 3, .25f), mock(s, 0, -.125f)};
+	int mix = session_mix(s, inputs, 3);
+	assert(mix >= 0 && !session_set(s, mix, 0, .75f) && !session_set(s, mix, 1, -.6f));
+	assert(!session_param(s, inputs[0], 31, 0, 1));
+	assert(!session_param(s, inputs[1], 73, 0, .75f));
+	for (int i = 0; i < 9; ++i) {
+		assert(!session_param(s, mix, 17 + i * 73, 0, .125f));
+		assert(!session_param(s, mix, 17 + i * 73, 0, i % 5)); // Last event at this sample wins.
+		assert(!session_param(s, mix, 17 + i * 73, 1, -1.f + .25f * i));
+	}
+	assert(session_output(s, mix) >= 0 && !session_end(s, 2 * BLOCK + 37));
+}
+
+static void test_mixed_controls(void) {
+	enum { frames = 2 * BLOCK + 37 };
+	// Reference left gains for BW's parabolic law at pan -1, -0.75, ..., 1.
+	const float pan_left[] = {
+	    1, .965609217f, .905330086f, .819162607f, .707106781f, .569162607f, .405330086f, .215609217f, 0};
+	for (unsigned rate = 44100; rate <= 48000; rate += 3900) {
+		Session a = {.sample_rate = rate}, b = {.sample_rate = rate};
+		float whole[2 * frames], split[2 * frames];
+		mixed_controls(&a);
+		mixed_controls(&b);
+		assert(!session_render(&a, whole, frames));
+		for (int i = 0; i < frames; ++i) {
+			assert(!session_render(&b, split + 2 * i, 1));
+			int event = i < 17 ? -1 : (i - 17) / 73;
+			if (event > 8)
+				event = 8;
+			float gain = event < 0 ? .75f : event % 5;
+			float pan = event < 0 ? -.6f : -1.f + .25f * event;
+			float mono = i < 31 ? .375f : .875f, stereo = i < 73 ? .25f : .75f;
+			float mono_left = event < 0 ? .932548340f : pan_left[event];
+			float mono_right = event < 0 ? .332548340f : pan_left[8 - event];
+			float left = gain * (mono * mono_left + stereo * (pan > 0 ? 1 - pan : 1));
+			float right = gain * (mono * mono_right - .5f * stereo * (pan < 0 ? 1 + pan : 1));
+			assert(fabsf(whole[2 * i] - left) < 1e-6f && fabsf(whole[2 * i + 1] - right) < 1e-6f);
+		}
+		assert(!memcmp(whole, split, sizeof(whole)));
+		// Seek both onto an event and between events, including after silence and hard pans.
+		const int positions[] = {0, 16, 17, 31, 73, BLOCK - 1, BLOCK, BLOCK + 1, 601, frames - 1};
+		for (size_t i = 0; i < sizeof(positions) / sizeof(*positions); ++i) {
+			int at = positions[i];
+			assert(!session_seek(&b, at) && !session_render(&b, split, frames - at));
+			assert(!memcmp(whole + 2 * at, split, (frames - at) * 2 * sizeof(float)));
+		}
+		session_free(&a);
+		session_free(&b);
+	}
+	puts("OK: mixed mono/stereo gain and pan laws, exact steps, block invariance and seeks at 44.1/48 kHz");
+}
+
 static void test_master(void) {
 	Session s = {0};
 	float audio[64];
@@ -622,6 +675,7 @@ int main(void) {
 	test_initial_parameters();
 	test_listen();
 	test_pipeline();
+	test_mixed_controls();
 	test_master();
 	test_stereo_pipeline();
 	test_channel_transitions();

@@ -21,8 +21,8 @@ make prog               # Render Il polpo a sette gomiti.
 ```
 
 The host needs a C compiler, make, git, curl and patch. It fetches Janet 1.42.1,
-miniaudio 0.11.25 (unless `../miniaudio.h` exists), and Spork's JSON module at a
-pinned revision into `.deps/`. Janet and JSON are linked statically; no Janet,
+miniaudio 0.11.25 (unless `../miniaudio.h` exists), Spork's JSON module and pinned
+Brickworks headers into `.deps/`. Janet and JSON are linked statically; no Janet,
 Spork or jpm installation is needed. [janet.patch](janet.patch) fixes collection of
 top-level dynamic bindings in both runtimes, keeping error diagnostics valid after GC.
 On Termux: `pkg install clang make git curl patch libandroid-spawn`.
@@ -34,7 +34,8 @@ On Termux: `pkg install clang make git curl patch libandroid-spawn`.
 The native catalog and Brickworks scores use that location by default. Subsequent
 builds use the cache and compiler dependency files. The library build is separate
 from the host and from the local plugin projects; see [plugin builds](plugins/README.md).
-The host only loads precompiled bundles; it needs neither DSP sources nor the generator.
+The host uses the same pinned Brickworks checkout for its header-only mixer DSP.
+It loads precompiled plugin bundles and needs neither Tibia nor Node.js/npm to build.
 
 | Build command | Output |
 | --- | --- |
@@ -353,8 +354,12 @@ parallel distortion/echo and a crossfade.
 A mono 1→1 effect on stereo uses two independent instances. Mono is duplicated
 at equal amplitude for a 2→2 effect; a 1→2 effect accepts only mono input.
 Stereo-to-mono conversion requires a 2→1 plugin. Mixers output stereo; a mono final output is duplicated at equal amplitude.
-Mono panning uses constant power (about −3 dB per channel at center); stereo uses
+Mono panning uses Brickworks' parabolic curve (about −3 dB per channel at center); stereo uses
 linear balance, with unity at center and no channel mixing.
+The shared C mixer uses Brickworks `bw_buf` for gain and summing, `bw_pan` for
+mono panning, `bw_balance` for stereo coefficients and `bw_slew_lim` for the
+5 ms mute/solo ramps. Gain and pan events apply at their exact sample without
+added smoothing.
 
 The default export is stereo float32 WAV, preserving samples outside ±1.
 There is no implicit clipping, DC filter, fade or normalization.
