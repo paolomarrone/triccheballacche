@@ -1,4 +1,4 @@
-"""Fetch the optional piano's pinned dependencies, using Python's stdlib."""
+"""Fetch the piano samples, using only Python's standard library."""
 from pathlib import Path
 import hashlib
 import io
@@ -6,7 +6,7 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2] / ".deps"
-REV = "853a0a171759f1ddba0de1442133a75912bbeffa"
+FONT_SHA256 = "8d5cab8434f794e66d9b49064422c9e2434b77e8b976358197d3a482dba9bbd6"
 
 
 def fetch(url, digest=None):
@@ -25,14 +25,15 @@ def install(path, data):
 
 
 if __name__ == "__main__":
-    for filename, digest in [
-        ("tsf.h", "70d55963c98f60ebb81518eaa1f25d46888d5180eb5f5289fd6b74ffc177d197"),
-        ("LICENSE", None),
-    ]:
-        install(ROOT / "tinysoundfont" / filename, fetch(
-            f"https://raw.githubusercontent.com/schellingb/TinySoundFont/{REV}/{filename}", digest))
+    name = "000_Florestan_Piano.sf2"
+    destination = ROOT / "florestan-piano" / name
+    if destination.exists() and hashlib.sha256(destination.read_bytes()).hexdigest() == FONT_SHA256:
+        print(destination.relative_to(ROOT.parent), "(cached)")
+        raise SystemExit(0)
     archive = fetch("https://dev.nando.audio/_static/sf2/000_Florestan_Piano.zip",
                     "67550e4a21020bcb74a254c5de1c1e13221920a141f0a06d2f55c1797d5f6046")
     with zipfile.ZipFile(io.BytesIO(archive)) as z:
-        name = "000_Florestan_Piano.sf2"
-        install(ROOT / "florestan-piano" / name, z.read(name))
+        data = z.read(name)
+        if hashlib.sha256(data).hexdigest() != FONT_SHA256:
+            raise ValueError("SoundFont checksum mismatch")
+        install(destination, data)

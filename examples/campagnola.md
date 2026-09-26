@@ -54,8 +54,9 @@ mkdir -p renders
 ./build/gui --serve examples/campagnola.janet
 ```
 
-Il WAV è stereo PCM16, normalizzato al picco 0,94. La GUI nativa usa lo stesso
-strumento; il progetto non è incluso nel catalogo WebAssembly.
+Il WAV è stereo PCM16, normalizzato al picco 0,94. Il piano usa un motore C locale
+con i campioni incorporati nel plugin. Per il browser compilare anche il piano
+con `PERONE_PLATFORM=wasm32` e rigenerare il catalogo con `make web`.
 
 Per esportare gli eventi della stessa esecuzione in CSV (inizio/fine in quarti
 effettivi, nota MIDI, velocity, mano: 0 sinistra / 1 destra), impostare

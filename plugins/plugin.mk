@@ -8,7 +8,8 @@ ifeq ($(PERONE_PLATFORM),wasm32)
 # These examples use libc/libm. Keep the Perone ABI, linking the C library into the standalone module.
 EMCC ?= emcc
 EMXX ?= em++
-WASM_FLAGS = --no-entry -sSTANDALONE_WASM -sPURE_WASI -sMALLOC=emmalloc -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=1048576 \
+WASM_INITIAL_MEMORY ?= 1048576
+WASM_FLAGS = --no-entry -sSTANDALONE_WASM -sPURE_WASI -sMALLOC=emmalloc -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=$(WASM_INITIAL_MEMORY) \
 	-Wl,--export=__wasm_call_ctors,--export=perone_get_api,--export=malloc,--export=free,--export=calloc,--export=realloc,--export-table,--growable-table
 BUILD_OPTIONS = CC="$(EMCC)" CXX="$(EMXX)" WASM_OBJS= TARGET_FLAGS="-DWASM" TARGET_LDFLAGS="$(WASM_FLAGS)"
 endif

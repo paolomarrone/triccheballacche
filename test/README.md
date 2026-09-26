@@ -8,6 +8,8 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | Command | Coverage and additional requirements |
 | --- | --- |
 | `make test` | Native scheduler, Perone lifecycle, score API, patterns, routing, export, player and projection. No audio device required. |
+| `make -C plugins/piano test` | Embedded piano, bank conversion, stereo, velocity, sustain, voice stealing and block-size independence; requires the downloaded Florestan bank and Tibia. |
+| `make -C plugins/piano test-web PERONE_PLATFORM=wasm32` | Piano native/Wasm PCM parity and fixed playback memory through the Perone loader; also requires Emscripten and Node.js. |
 | `make test-plugins` | Six local prebuilt plugins, metadata, pitch bend and block-size independence. |
 | `make test-brickworks` | All prebuilt bundles under `BRICKWORKS_PERONE`, default `build/library/brickworks`. |
 | `make test-library-build` | Fetch/build the canonical C library, audit all DSPs, check offline incremental builds, compiler failure propagation, repair, native catalog discovery and an example render. Requires git, Node.js, npm and a C compiler. |
