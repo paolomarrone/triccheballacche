@@ -23,8 +23,13 @@ static void metadata(Json *json, const ScoreView *view, unsigned revision) {
 			json_print(json, "%s%d", j ? "," : "", node->inputs[j]);
 		json_print(json, "],\"bundle\":");
 		json_string(json, node->bundle);
-		json_print(json, ",\"product\":%s,\"low\":%d,\"high\":%d}", node->product ? node->product : "null", summary.low,
-		    summary.high);
+		json_print(json, ",\"product\":%s,\"low\":%d,\"high\":%d,\"automation\":[",
+		    node->product ? node->product : "null", summary.low, summary.high);
+		int count = 0;
+		for (int j = 0; j < MAX_PARAMS; ++j)
+			if (node->offsets[j + 1] > node->offsets[j])
+				json_print(json, "%s[%d,%zu]", count++ ? "," : "", j, node->offsets[j + 1] - node->offsets[j]);
+		json_print(json, "]}");
 	}
 	json_print(json, "],\"tracks\":[");
 	for (int i = 0; i < view->ntracks; ++i) {
@@ -128,6 +133,32 @@ static const char *range(
 	return NULL;
 }
 
+static const char *automation(
+    Json *json, const ScoreView *view, double node, double parameter, double from, double to, double bins) {
+	ScoreAutomation out;
+	if (!integer(node, 0, view->nnodes - 1) || !integer(parameter, 0, MAX_PARAMS - 1) ||
+	    !integer(bins, 1, SCORE_AUTOMATION_POINTS) ||
+	    score_view_automation(view, node, parameter, from, to, bins, &out))
+		return "Invalid automation range";
+	if (view->end > 0)
+		to = fmin(to, view->end);
+	json_print(json, ",\"node\":%.0f,\"parameter\":%.0f,\"from\":%.17g,\"to\":%.17g", node, parameter, from, to);
+	if (out.dense) {
+		json_print(json, ",\"initial\":%.9g,\"bins\":[", out.points[0].value);
+		for (size_t i = 0; i + 1 < out.count; ++i)
+			json_print(json, "%s[%.9g,%.9g,%.9g]", i ? "," : "", out.low[i], out.high[i], out.points[i + 1].value);
+	} else {
+		json_print(json, ",\"points\":[");
+		for (size_t i = 0; i < out.count; ++i) {
+			const ScoreControl *p = out.points + i;
+			json_print(json, "%s[%.17g,%.9g,%.0f]", i ? "," : "", p->time, p->value,
+			    p->order == UINT64_MAX ? -1.0 : (double)p->order);
+		}
+	}
+	json_print(json, "]");
+	return NULL;
+}
+
 char *score_view_json(const ScoreView *view, unsigned revision, const char *op, double a, double b, double c, double d,
     double e, double f) {
 	static const ScoreView empty;
@@ -136,20 +167,22 @@ char *score_view_json(const ScoreView *view, unsigned revision, const char *op, 
 	Json json = {0};
 	const char *error = NULL;
 	json_print(&json, "{\"revision\":%u", revision);
-	if ((!strcmp(op, "range") || !strcmp(op, "note")) && a != revision) {
+	if ((!strcmp(op, "range") || !strcmp(op, "origin") || !strcmp(op, "automation")) && a != revision) {
 		json_print(&json, ",\"stale\":true");
 	} else if (!strcmp(op, "score")) {
 		metadata(&json, view, revision);
 	} else if (!strcmp(op, "range")) {
 		error = range(&json, view, b, c, d, e, f);
-	} else if (!strcmp(op, "note")) {
-		const ScoreEvent *note =
+	} else if (!strcmp(op, "automation")) {
+		error = automation(&json, view, b, c, d, e, f);
+	} else if (!strcmp(op, "origin")) {
+		const ScoreEvent *event =
 		    integer(b, 0, view->nnodes - 1) && integer(c, 0, 0x1p53 - 1) && c < view->nodes[(int)b].raw_count
 		    ? score_view_find(view, (int)b, (uint64_t)c)
 		    : NULL;
 		Frames frames = {.view = view};
-		if (note && note->pitch >= 0)
-			collect_frames(note, &frames);
+		if (event)
+			collect_frames(event, &frames);
 		write_frames(&json, &frames);
 	} else if (!strcmp(op, "status")) {
 		Frames frames = {.view = view};

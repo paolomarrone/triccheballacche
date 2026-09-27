@@ -3,7 +3,7 @@
 #include <string.h>
 
 #define SNAPSHOT_LIMIT (256u * 1024u * 1024u)
-#define SNAPSHOT_MAGIC UINT32_C(0x54424332)
+#define SNAPSHOT_MAGIC UINT32_C(0x54424333)
 
 typedef struct {
 	unsigned char *data;
@@ -138,6 +138,7 @@ static void transfer(Transfer *t, Session *s, Output *output, ScoreView *view) {
 	FIELD(t, view->end);
 	FIELD(t, view->active_from);
 	FIELD(t, view->repeating);
+	FIELD(t, view->sample_rate);
 	if (view->nnodes != s->nnodes || view->ntracks < 0 || view->ntracks > MAX_TRACKS + 1) {
 		view->nnodes = 0;
 		t->failed = 1;
@@ -153,6 +154,8 @@ static void transfer(Transfer *t, Session *s, Output *output, ScoreView *view) {
 		FIELD(t, n->minimum);
 		FIELD(t, n->maximum);
 		FIELD(t, n->integers);
+		FIELD(t, n->defaults);
+		FIELD(t, n->offsets);
 		string(t, &n->label);
 		string(t, &n->name);
 		string(t, &n->bundle);
@@ -161,6 +164,7 @@ static void transfer(Transfer *t, Session *s, Output *output, ScoreView *view) {
 		FIELD(t, n->raw_count);
 		n->events = array(t, n->events, n->count, sizeof(ScoreEvent));
 		n->by_order = array(t, n->by_order, n->raw_count, sizeof(size_t));
+		n->controls = array(t, n->controls, n->offsets[MAX_PARAMS], sizeof(size_t));
 	}
 	FIELD(t, view->norigins);
 	FIELD(t, view->nreferences);

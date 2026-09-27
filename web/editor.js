@@ -134,7 +134,7 @@ function checkedText(text) {
 export async function command(op, ...args) {
     if (op === "library") return library;
     acceptRevision();
-    let result = {}, error = "", path = ["range", "note", "listen", "seek"].includes(op) ? "" : args[0] || entry;
+    let result = {}, error = "", path = ["range", "origin", "automation", "listen", "seek"].includes(op) ? "" : args[0] || entry;
     try {
         if (op === "files") {
             path = host.perone.path(args[0] || ".");
@@ -157,7 +157,7 @@ export async function command(op, ...args) {
             } else {
                 result = await player.control(op, node, ...values);
             }
-        } else if (op === "range" || op === "note") result = query(op, args);
+        } else if (op === "range" || op === "origin" || op === "automation") result = query(op, args);
         else if (op === "open") {
             try { result.text = checkedText(host.FS.readFile(host.perone.path(path), {encoding: "utf8"})); }
             catch { throw Error("File missing from the web project: " + path); }

@@ -149,6 +149,14 @@ and delay/reverb history is cleared. It never renders the intervening audio,
 including for unbounded scores. Timing follows
 rendered audio, without compensating for device latency or plugin release tails.
 
+Each automated track has a parameter selector below its name. It overlays one
+curve from its instruments, effects or mixers; **Automation off** hides it.
+Hover for the value and time, click for its source. Curves show scheduled step
+changes, including the held value at the left edge, using the parameter's range
+and logarithmic mapping where declared. Wide views summarize scheduled values
+in min/max bands without expanding loops. This is a read-only score view;
+manual plugin edits and internal DSP envelopes are not recorded.
+
 **M** mutes a track; **S** solos it. Multiple solos play together, and mute takes
 precedence. Solo follows graph paths: a group retains its upstream sources; a
 source retains its downstream processing. Other parallel routes are excluded,
@@ -158,7 +166,7 @@ a new session clears them; live revisions preserve them. A track over a mix is a
 original source rows, and its plugin panel stops at upstream track boundaries.
 
 The editor uses a textarea and plain JavaScript. It does not yet provide syntax
-highlighting, MIDI editing or parameter curves. Preparation runs outside the audio
+highlighting or graphical event editing. Preparation runs outside the audio
 thread: a native preparation thread or a browser Worker. CPU-bound Janet evaluation
 is interrupted after five seconds natively; browser preparation has a five-second
 timeout including Worker startup. Native blocking I/O and extensions remain trusted.

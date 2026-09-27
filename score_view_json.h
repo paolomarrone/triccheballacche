@@ -3,7 +3,8 @@
 #include "score_view.h"
 
 // Shared editor protocol, independent of its transport. Caller frees the returned JSON; NULL means OOM.
-// score: no arguments; status: time, playing; note: revision, node, order;
+// score: no arguments; status: time, playing; origin: revision, node, order;
+// automation: revision, node, parameter, from, to, bin count;
 // range: revision, from, to, first lane, lane count, bin count. Unused arguments are zero.
 char *score_view_json(const ScoreView *view, unsigned revision, const char *op, double a, double b, double c, double d,
     double e, double f);

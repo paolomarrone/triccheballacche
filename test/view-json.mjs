@@ -9,8 +9,11 @@ for (const path of ["lib/pattern.janet", "lib/trace.janet", "test/view-score.jan
     "build/test/fixture.perone/wasm32/fixture.wasm", "build/test/effect.perone/wasm32/fixture.wasm"])
     await addFile(host, path, readFileSync(path));
 const queries = [["score"], ["range", 7, 0, 7, 0, 8, 100], ["range", 7, 0.2, 0.201, 0, 1, 50],
-    ["status", 0.32, 1], ["note", 7, 0, 1], ["range", 6, 0, 1, 0, 1, 100],
-    ["range", 7, 0, 1, 0, 1000, 100], ["range", 7, NaN, 1, 0, 1, 100], ["note", 7, 0, 1e30], ["unknown"]];
+    ["status", 0.32, 1], ["origin", 7, 0, 1], ["range", 6, 0, 1, 0, 1, 100],
+    ["range", 7, 0, 1, 0, 1000, 100], ["range", 7, NaN, 1, 0, 1, 100], ["origin", 7, 0, 1e30], ["unknown"],
+    ["automation", 7, 0, 1, 0, .4, 32], ["automation", 7, 0, 1, .25, .4, 32], ["automation", 6, 0, 1, 0, .4, 32],
+    ["automation", 7, 0, 0, 0, .4, 32], ["automation", 7, 0, 1, NaN, .4, 32], ["automation", 7, 0, 1, 0, .4, 513],
+    ["automation", 7, 0, 1, 8, 9, 32], ["automation", 7, 2, 1, 0, 7, 32]];
 for (const rate of [44100, 48000]) {
     const native = spawnSync("./build/test/view_json", [String(rate)], {encoding: "utf8"});
     assert.equal(native.status, 0, native.stderr);
@@ -39,6 +42,20 @@ for (const rate of [44100, 48000]) {
         assert(actual[2].lanes[0].notes.some(note => note[3] === 48), "Long notes crossing the viewport remain visible");
         assert(actual[3].frames.some(frame => frame[0] === "test/trace-helper.janet") && actual[4].frames.length);
         assert(actual[5].stale && actual[6].error && actual[7].error && actual[9].error);
+        assert.deepEqual(actual[0].score.nodes[0].automation, [[1, 2]]);
+        assert.deepEqual(actual[0].score.nodes[1].automation, []);
+        const points = actual[10].points;
+        assert.equal(points.length, 3);
+        assert.equal(points[0][0], 0);
+        assert(Math.abs(points[0][1] - .001) < 1e-9);
+        assert.equal(points[0][2], -1);
+        assert.equal(points[1][0], .2);
+        assert(Math.abs(points[1][1] - .002) < 1e-9);
+        assert.deepEqual(actual[11].points, [[.25, points[1][1], points[1][2]], points[2]]);
+        assert(actual[12].stale && actual[13].error && actual[14].error && actual[15].error);
+        assert.deepEqual(actual[16].points, []);
+        assert.equal(actual[17].bins.length, 32);
+        assert(actual[17].bins.some(([low, high, last]) => low === 0 && high === 1 && last === 0));
     } finally { host._view_free(view); }
 }
-console.log("OK: identical native/Wasm graph, density, notes, origins, validation and stale queries; projection survives DSP teardown");
+console.log("OK: identical native/Wasm graph, notes, automation, origins, validation and stale queries; projection survives DSP teardown");

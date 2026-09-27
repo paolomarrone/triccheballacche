@@ -22,7 +22,7 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | `make test-editor` | Native backend via `--serve` in Chromium, with local fixtures; X11 development libraries and an audio device. |
 | `make test-live` | Infinite playback, quantized revisions, seek and Stop/Play in both editors, UI continuity, errors and evaluation timeout; editor/browser prerequisites. |
 | `make test-editor-web` | Polpo in the shared browser editor; Node.js, Chromium and Polpo's Wasm plugins. |
-| `make test-editor-ui` | The same custom UI with native and Wasm DSPs; editor/browser prerequisites, no external plugin checkout. |
+| `make test-editor-ui` | Custom plugin UIs and timeline automation with native and Wasm DSPs; editor/browser prerequisites, no external plugin checkout. |
 | `make test-library` | Shared Settings, published catalog, examples dropdown, Sempiterno playback, file picker, uploads and unsaved edits; the same production bundles built for native and Wasm, plus editor/browser prerequisites. |
 | `make test-ui` | Original Tibia C/C++ and A-SID UIs, mouse gestures and DSP feedback; X11 display and prebuilt DSP/UI bundles. |
 | `make format-check` | Local C formatting with clang-format 21; excludes upstream headers and generated code. |
@@ -58,8 +58,13 @@ Mixer tests cover mute/solo precedence, multiple solos, 5 ms fades, automation
 and DSP advancement while inaudible, restart persistence and the last track slot.
 
 `view-json.mjs` compares native and Wasm projection replies, including density,
-overlapping notes, imported origins, stale revisions and invalid queries. It frees
+overlapping notes, automation, imported origins, stale revisions and invalid queries. It frees
 the audio score before querying to verify independent projection ownership.
+Automation tests check declared defaults, simultaneous writes, held values,
+parameter isolation and peak-preserving bins. Periodic values are compared with
+scheduled PCM at 44.1/48 kHz, including pickups, sample rounding, loop boundaries
+and distant windows. `automation.mjs` checks selectors, logarithmic scales,
+source selection and live revision continuity in both editors.
 `playback.mjs` and `player-lifecycle.mjs` cover real AudioWorklet output, stop/restart,
 live mute/solo, context closure, timeouts, cancellation during preparation and cleanup retries.
 
@@ -100,7 +105,9 @@ The tracer is experimental, not a public reflection API.
 
 Replies cap tracking at 8192 active events and 256 distinct frames, reporting
 partial origins when exceeded. Timeline queries cover at most eight lanes, with
-512 individual notes or 512 density bins per lane. These bounds affect the view,
+512 individual notes or 512 density bins per lane. Automation queries return up
+to 512 changes plus the initial value, or up to 512 min/max bins for scheduled
+writes. Each visible track requests one selected parameter. These bounds affect the view,
 not audio; the scheduler's finite-duration limits still apply.
 
 ## Plugin UIs

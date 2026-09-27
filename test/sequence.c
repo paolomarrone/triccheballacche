@@ -73,6 +73,48 @@ static void test_snapshot(void) {
 	    "OK: worker description transfer, independently owned metadata, identical PCM and truncated transfer rejection");
 }
 
+static void test_automation(void) {
+	const char *code =
+	    "(def tone (daw/plugin \"build/test/fixture.perone\" {:gain 0.25})) "
+	    "(daw/output (daw/track tone)) (daw/tempo 60) "
+	    "(daw/score {:streams ["
+	    "{:offset 0 :period 2 :events [[0 0 [:param tone :gain 0.2]] [1 1 [:param tone :gain 0.8]] [2 2 [:param tone :gain 0.4]]]} "
+	    "{:offset 0 :period 3 :events [[2 2 [:param tone :gain 0.6]]]} "
+	    "{:offset 0 :period 2 :events [[-0.5 -0.5 [:param tone :gain 0.9]]]} "
+	    "{:offset 0 :events [[-0.25 -0.25 [:param tone :gain 1]] [0.33333 0.33333 [:param tone :gain 0.3]]]}]})";
+	for (unsigned rate = 44100; rate <= 48000; rate += 3900) {
+		Session s = {.sample_rate = rate};
+		ScoreView view;
+		ScoreAutomation out;
+		Output output;
+		assert(!prepare_score(&s, &output, "test/automation.janet", code, NULL, &view));
+		const double positions[] = {0, .33332, .33333, .33334, .5, 1, 1.5, 2, 4, 6, 1000000.33333, 1000000000.5};
+		for (size_t i = 0; i < sizeof(positions) / sizeof(*positions); ++i) {
+			uint64_t sample = llround(positions[i] * rate);
+			double from = (double)sample / rate;
+			assert(!score_view_automation(&view, 0, 1, from, from + .01, 32, &out));
+			assert(out.count && !out.dense);
+			assert(!session_seek(&s, sample));
+			float audio[2];
+			assert(!session_render(&s, audio, 1) && audio[0] == out.points[0].value);
+		}
+		assert(!score_view_automation(&view, 0, 1, 0, 1000000, 32, &out));
+		assert(out.dense && out.count == 33);
+		for (int i = 0; i < 32; ++i) {
+			assert(out.low[i] == .2f && out.high[i] == .9f);
+			uint64_t sample = (uint64_t)llround(out.points[i + 1].time * rate) - 1;
+			assert(!session_seek(&s, sample));
+			float audio[2];
+			assert(!session_render(&s, audio, 1) && audio[0] == out.points[i + 1].value);
+		}
+		session_free(&s);
+		assert(!score_view_automation(&view, 0, 1, 1000000, 1000001, 32, &out));
+		score_view_free(&view);
+	}
+	puts(
+	    "OK: automation matches scheduled PCM at 44.1/48 kHz, including rounded boundaries, pickups, independent loops and distant views");
+}
+
 static void test_note_obligations(void) {
 	const char *base = "(import ../lib/pattern :as p) "
 	                   "(def tone (daw/plugin :tone \"build/test/fixture.perone\" {:gain 0.25})) "
@@ -335,6 +377,7 @@ static void test_projection_boundaries(void) {
 }
 
 int main(void) {
+	test_automation();
 	test_snapshot();
 	test_note_obligations();
 	test_cycle_boundary();

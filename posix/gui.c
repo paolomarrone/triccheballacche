@@ -153,7 +153,7 @@ static void reply(
 	const char *op = webui_get_string_at(event, 0);
 	double time = editor->playing ? player_time(editor->player) : editor->time;
 	char *view = NULL;
-	int query = !strcmp(op, "range") || !strcmp(op, "note");
+	int query = !strcmp(op, "range") || !strcmp(op, "origin") || !strcmp(op, "automation");
 	if (query)
 		view = score_view_json(&editor->score, editor->revision, op, decimal(event, 1), decimal(event, 2),
 		    decimal(event, 3), decimal(event, 4), decimal(event, 5), decimal(event, 6));
@@ -232,7 +232,7 @@ static void command(Editor *editor, webui_event_t *event) {
 		reply(event, editor, NULL, NULL, "", 1);
 		return;
 	}
-	if (!strcmp(op, "range") || !strcmp(op, "note")) {
+	if (!strcmp(op, "range") || !strcmp(op, "origin") || !strcmp(op, "automation")) {
 		reply(event, editor, NULL, NULL, "", 0);
 		return;
 	}

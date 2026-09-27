@@ -50,7 +50,10 @@ footer { color: var(--muted); font-size: 12px; }
 .plugin-body { padding: 6px; overflow: auto; }
 #track-headers { position: sticky; top: 24px; overflow: hidden; background: Canvas; }
 #track-list .track { display: flex; height: var(--track-height); border-bottom: 1px solid var(--border); }
-#track-list .track-select { display: flex; flex: 1; min-width: 0; flex-direction: column; justify-content: center; gap: 5px; padding: 4px 8px; border: 0; text-align: left; background: Canvas; color: CanvasText; }
+#track-list .track-heading { display: flex; flex: 1; min-width: 0; flex-direction: column; }
+#track-list .track-automation { min-width: 0; margin: 0 5px 3px; padding: 0 2px; font-size: 11px; color: var(--muted); }
+#track-list.compact .track-heading:has(select:not([hidden])) small { display: none; }
+#track-list .track-select { display: flex; flex: 1; min-width: 0; flex-direction: column; justify-content: center; gap: 2px; padding: 3px 8px; border: 0; text-align: left; background: Canvas; color: CanvasText; }
 #track-list button:hover, #track-list button[aria-pressed=true] { background: var(--active); }
 #track-list .track-listen { display: flex; align-items: center; gap: 2px; padding-right: 4px; }
 #track-list .track-listen button { padding: 2px 4px; min-width: 22px; }

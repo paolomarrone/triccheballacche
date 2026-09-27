@@ -10,6 +10,7 @@ void score_view_free(ScoreView *view) {
 		free(view->nodes[i].product);
 		free(view->nodes[i].events);
 		free(view->nodes[i].by_order);
+		free(view->nodes[i].controls);
 	}
 	for (size_t i = 0; i < view->norigins; ++i) {
 		for (size_t j = 0; j < view->origins[i].count; ++j)
@@ -26,6 +27,7 @@ int score_view_init(ScoreView *view, const Session *session) {
 	    .ntracks = session->ntracks,
 	    .output = session->output,
 	    .repeating = session->sequence != NULL,
+	    .sample_rate = session->sample_rate,
 	    .end = session->frames == UINT64_MAX ? 0 : (double)session->frames / session->sample_rate};
 	memcpy(view->tracks, session->tracks, session->ntracks * sizeof(Track));
 	// A serial processing path keeps the original source's notes. Stop at another
@@ -42,6 +44,8 @@ int score_view_init(ScoreView *view, const Session *session) {
 	for (int i = 0; i < session->nnodes; ++i) {
 		const Node *source = session->nodes + i;
 		ScoreNode *node = view->nodes + i;
+		memcpy(node->defaults, source->path ? source->dsp[0].config.defaults : source->defaults,
+		    (source->path ? source->dsp[0].config.nparams : 2) * sizeof(float));
 		node->ninputs = source->ninputs;
 		for (int j = 0; j < source->ninputs; ++j)
 			node->inputs[j] = source->inputs[j].node;
@@ -81,7 +85,10 @@ int score_view_init(ScoreView *view, const Session *session) {
 				    .period = c->period,
 				    .order = k,
 				    .pitch = c->parameter < 0 ? c->pitch : -1,
-				    .velocity = c->velocity};
+				    .velocity = c->velocity,
+				    .parameter = c->parameter,
+				    .stream = c->stream,
+				    .value = c->value};
 				++k;
 			}
 			continue;
@@ -102,7 +109,9 @@ int score_view_init(ScoreView *view, const Session *session) {
 			    .pitch = event->parameter >= 0 ? -1
 			        : event->midi[0] == 0x90   ? event->midi[1]
 			                                   : -2,
-			    .velocity = event->midi[2]};
+			    .velocity = event->midi[2],
+			    .parameter = event->parameter,
+			    .value = event->value};
 			out->end = out->start;
 			// session_note emits adjacent on/off orders even for overlapping notes of the same pitch.
 			if (out->pitch == -2)
@@ -157,6 +166,10 @@ static void index_events(ScoreEvent *events, size_t lo, size_t hi) {
 int score_view_index(ScoreView *view) {
 	for (int i = 0; i < view->nnodes; ++i) {
 		ScoreNode *node = view->nodes + i;
+		free(node->by_order);
+		free(node->controls);
+		node->by_order = node->controls = NULL;
+		memset(node->offsets, 0, sizeof(node->offsets));
 		size_t count = 0;
 		for (size_t j = 0; j < node->count; ++j)
 			if (node->events[j].pitch >= -1)
@@ -172,6 +185,21 @@ int score_view_index(ScoreView *view) {
 			node->by_order[j] = SIZE_MAX;
 		for (size_t j = 0; j < count; ++j)
 			node->by_order[node->events[j].order] = j;
+		for (size_t j = 0; j < count; ++j)
+			if (node->events[j].pitch == -1)
+				++node->offsets[node->events[j].parameter + 1];
+		for (int j = 1; j <= MAX_PARAMS; ++j)
+			node->offsets[j] += node->offsets[j - 1];
+		if (node->offsets[MAX_PARAMS]) {
+			node->controls = malloc(node->offsets[MAX_PARAMS] * sizeof(size_t));
+			if (!node->controls)
+				return -1;
+			size_t next[MAX_PARAMS];
+			memcpy(next, node->offsets, sizeof(next));
+			for (size_t j = 0; j < count; ++j)
+				if (node->events[j].pitch == -1)
+					node->controls[next[node->events[j].parameter]++] = j;
+		}
 		index_events(node->events, 0, count);
 	}
 	return 0;

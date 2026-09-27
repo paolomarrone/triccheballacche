@@ -11,4 +11,5 @@
   (daw/note synth (* i 0.005) 0.03 (+ 60 (% i 12)) 80))
 (daw/note synth 0 6.5 48 90)
 (daw/param synth 0.2 :gain 0.002)
+(for i 0 1200 (daw/param track (* i 0.005) :pan (if (= i 591) 1 0)))
 (daw/end 7)

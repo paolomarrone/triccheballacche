@@ -21,7 +21,54 @@ static int collect(const ScoreEvent *event, void *context) {
 	return 1;
 }
 
+static void automation(void) {
+	Session s = {.nnodes = 1, .sample_rate = 48000, .frames = 480000};
+	Event events[] = {{.time = 96000, .parameter = 0, .value = 2, .order = 0},
+	    {.time = 48000, .parameter = 0, .value = 1, .order = 1},
+	    {.time = 48000, .parameter = 0, .value = 1.5f, .order = 2},
+	    {.time = 24000, .parameter = 1, .value = -.5f, .order = 3}};
+	s.nodes[0] = (Node){.events = events, .count = 4, .defaults = {.25f, 0}};
+	ScoreView view;
+	ScoreAutomation out;
+	assert(!score_view_init(&view, &s) && !score_view_index(&view));
+	assert(!score_view_automation(&view, 0, 0, 0, 4, 16, &out));
+	assert(!out.dense && out.count == 3 && out.points[0].value == .25f && out.points[0].order == UINT64_MAX);
+	assert(out.points[1].time == 1 && out.points[1].value == 1.5f && out.points[1].order == 2);
+	assert(out.points[2].time == 2 && out.points[2].value == 2);
+	assert(!score_view_automation(&view, 0, 0, 1, 2, 16, &out));
+	assert(out.count == 1 && out.points[0].value == 1.5f && out.points[0].order == 2);
+	assert(!score_view_automation(&view, 0, 0, 1.25, 1.75, 16, &out));
+	assert(out.count == 1 && out.points[0].time == 1.25 && out.points[0].value == 1.5f);
+	assert(!score_view_automation(&view, 0, 1, 0, 1, 16, &out));
+	assert(out.count == 2 && out.points[0].value == 0 && out.points[1].value == -.5f);
+	assert(!score_view_automation(&view, 0, 0, 11, 12, 16, &out) && !out.count);
+	assert(score_view_automation(&view, 0, 2, 0, 4, 16, &out));
+	assert(score_view_automation(&view, -1, 0, 0, 4, 16, &out));
+	assert(score_view_automation(&view, 0, 0, NAN, 4, 16, &out));
+	assert(score_view_automation(&view, 0, 0, 0, 4, 513, &out));
+	score_view_free(&view);
+
+	// Dense finite changes preserve a brief spike as well as the held value in empty bins.
+	s.nodes[0].count = 1200;
+	s.nodes[0].events = calloc(1200, sizeof(Event));
+	assert(s.nodes[0].events);
+	for (int i = 0; i < 1200; ++i)
+		s.nodes[0].events[i] = (Event){.time = 48 * i, .parameter = 0, .value = i == 591 ? 3 : .5f, .order = i};
+	assert(!score_view_init(&view, &s) && !score_view_index(&view));
+	free(s.nodes[0].events);
+	assert(!score_view_automation(&view, 0, 0, 0, 4, 16, &out));
+	assert(out.dense && out.count == 17);
+	for (int i = 0; i < 16; ++i) {
+		assert(out.low[i] == .5f && out.high[i] == (i == 2 ? 3 : .5f));
+		assert(out.points[i + 1].value == .5f);
+	}
+	score_view_free(&view);
+	puts(
+	    "OK: automation defaults, simultaneous writes, held values, parameter isolation and bounded peak-preserving bins");
+}
+
 int main(void) {
+	automation();
 	// Deliberately schedule out of time order, with overlapping equal pitches and nested durations.
 	// No DSP and no provenance are needed to construct or query a projection.
 	Session session = {.nnodes = 1, .ntracks = 1, .sample_rate = 48000, .sealed = 1};

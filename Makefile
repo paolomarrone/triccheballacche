@@ -20,10 +20,10 @@ PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
 ENGINE_SOURCES = engine.c script.c trace.c
-SCORE_SOURCES = daw.c score_view.c session.c sequence.c $(ENGINE_SOURCES)
+SCORE_SOURCES = daw.c score_view.c score_automation.c session.c sequence.c $(ENGINE_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c
 ENGINE_OBJECTS = $(addprefix build/obj/native/,engine.o posix/loader.o script.o trace.o json.o janet.o)
-SCORE_OBJECTS = $(addprefix build/obj/native/,daw.o score_view.o session.o sequence.o) $(ENGINE_OBJECTS)
+SCORE_OBJECTS = $(addprefix build/obj/native/,daw.o score_view.o score_automation.o session.o sequence.o) $(ENGINE_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host
 NATIVE_TESTS = $(addprefix build/test/,loader daw player routing score_view plugins ui view_json sequence)
@@ -129,7 +129,7 @@ build/test/loader build/test/ui: $(ENGINE_OBJECTS)
 build/test/routing: build/obj/native/session.o build/obj/native/sequence.o $(ENGINE_OBJECTS)
 build/test/daw build/test/player build/test/plugins build/test/view_json build/test/sequence: $(SCORE_OBJECTS)
 build/test/daw build/test/player: build/obj/native/posix/export.o build/obj/native/audio.o
-build/test/score_view: build/obj/native/score_view.o
+build/test/score_view: build/obj/native/score_view.o build/obj/native/score_automation.o
 build/test/view_json: $(VIEW_OBJECTS)
 build/test/sequence: build/obj/native/snapshot.o
 
@@ -314,6 +314,7 @@ test-library: gui web | build/test
 # Self-contained UI fixture: the exact same ES module drives native and Wasm DSPs.
 test-editor-ui: gui test-web
 	node test/editor-ui.mjs
+	node test/automation.mjs
 
 clean:
 	rm -rf build

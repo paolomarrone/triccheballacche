@@ -1,4 +1,6 @@
 // A viewport in seconds, independent of score duration. Only visible lanes and intervals cross the bridge.
+import {automation} from "./automation.js";
+
 export function timeline(request, select, selectTrack, seek, error) {
     const get = id => document.getElementById(id);
     const panel = get("timeline"), roll = get("roll"), canvas = get("notes"), context = canvas.getContext("2d");
@@ -9,6 +11,7 @@ export function timeline(request, select, selectTrack, seek, error) {
     let listening = [], outputs = [], enabled = false;
     const changing = new Set();
     const ruler = 24;
+    const envelopes = automation(request, changed);
 
     function audible(index) {
         const node = score.nodes[score.tracks[index][1]];
@@ -23,6 +26,8 @@ export function timeline(request, select, selectTrack, seek, error) {
                 button.setAttribute("aria-pressed", Boolean(listening[index] & Number(button.dataset.listen)));
                 button.disabled = !enabled || changing.has(index);
             }
+            const control = track.querySelector(".track-automation");
+            if (control) control.disabled = !enabled;
         }
     }
 
@@ -64,10 +69,14 @@ export function timeline(request, select, selectTrack, seek, error) {
         const generation = version, revision = score.revision, view = viewport();
         pending = true;
         try {
-            const result = await request("range", revision, String(view.from), String(view.to), view.first, view.count, view.bins);
+            const [result, curves] = await Promise.all([
+                request("range", revision, String(view.from), String(view.to), view.first, view.count, view.bins),
+                envelopes.query(view, revision)
+            ]);
             if (revision === score?.revision && !result.stale && result.revision === revision) {
                 // Retain one bounded window and project it at the current scroll/zoom while the next loads.
                 data = result;
+                envelopes.accept(curves);
                 panel.dataset.revision = revision;
                 draw();
             }
@@ -174,6 +183,9 @@ export function timeline(request, select, selectTrack, seek, error) {
             }
             context.restore();
         }
+        const automation = envelopes.draw(context, view, {label, scale, row, scroll: roll.scrollTop, ruler, width, dark});
+        canvas.dataset.automation = automation.curves;
+        canvas.dataset.automationDense = automation.dense;
         context.fillStyle = grid; context.fillRect(label - 1, 0, 1, height); context.fillRect(0, ruler - 1, width, 1);
         if (Number.isFinite(score.end) && score.end >= from && score.end < view.to) {
             context.strokeStyle = ink; context.setLineDash([3, 4]);
@@ -201,6 +213,7 @@ export function timeline(request, select, selectTrack, seek, error) {
         headers.style.height = `${Math.max(0, height - ruler)}px`;
         headers.style.marginBottom = `${-Math.max(0, height - ruler)}px`;
         tracks.style.setProperty("--track-height", `${row}px`);
+        tracks.classList.toggle("compact", row < 54);
         const ratio = devicePixelRatio;
         canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
         canvas.style.width = `${width}px`; canvas.style.height = `${height}px`; canvas.style.marginBottom = `${-height}px`;
@@ -254,7 +267,8 @@ export function timeline(request, select, selectTrack, seek, error) {
             drag.moved = true; follow.checked = false; move(drag.from + (drag.x - event.clientX) * scale);
         }
         const found = hit(x, y), lane = Math.floor((y - ruler + roll.scrollTop) / row);
-        canvas.title = y < ruler && x >= label ? "Click to seek" : found ? noteText(found.note) : score?.tracks[lane] ? chain(score.tracks[lane]) : "";
+        const curve = envelopes.hit(x, y, from + (x - label) * scale);
+        canvas.title = y < ruler && x >= label ? "Click to seek" : curve ? curve.text : found ? noteText(found.note) : score?.tracks[lane] ? chain(score.tracks[lane]) : "";
     };
     canvas.onpointerup = async event => {
         if (!drag) return;
@@ -266,15 +280,20 @@ export function timeline(request, select, selectTrack, seek, error) {
             seek(Math.min(score.end || Infinity, from + (x - label) * scale));
             return;
         }
-        const found = hit(x, y);
-        if (!found) return;
+        const curve = envelopes.hit(x, y, from + (x - label) * scale), found = hit(x, y);
+        if (curve) {
+            detail.textContent = curve.text;
+            detail.title = "";
+            if (curve.order < 0) return;
+        }
+        if (!curve && !found) return;
         const revision = score.revision;
-        selected = {node: found.node, order: found.note[0], start: found.note[1]};
+        selected = curve ? {node: curve.node, order: curve.order} : {node: found.node, order: found.note[0], start: found.note[1]};
         const selection = selected;
-        detail.textContent = noteText(found.note);
+        if (!curve) detail.textContent = noteText(found.note);
         draw();
         try {
-            const result = await request("note", revision, found.node, found.note[0]);
+            const result = await request("origin", revision, selection.node, selection.order);
             if (revision !== score.revision || selected !== selection || result.stale) return;
             detail.title = result.frames.map(([file, line, column]) => `${file}:${line}:${column}`).join("\n");
             if (result.truncated) detail.title += "\nPartial origins";
@@ -310,6 +329,7 @@ export function timeline(request, select, selectTrack, seek, error) {
         },
         score(value) {
             score = value; data = selected = undefined; from = 0; roll.scrollTop = 0;
+            envelopes.score(score);
             listening = score.tracks.map(() => 0);
             outputs = score.nodes.map(() => []);
             score.nodes.forEach((node, id) => node.inputs.forEach(input => outputs[input].push(id)));
@@ -332,7 +352,10 @@ export function timeline(request, select, selectTrack, seek, error) {
                     for (const child of tracks.querySelectorAll(".track-select")) child.setAttribute("aria-pressed", child === button);
                     selectTrack(index);
                 };
-                lane.append(button);
+                const heading = document.createElement("div");
+                heading.className = "track-heading";
+                heading.append(button, envelopes.control(index));
+                lane.append(heading);
                 if (track[0] >= 0) {
                     const controls = document.createElement("div");
                     controls.className = "track-listen";
@@ -354,7 +377,11 @@ export function timeline(request, select, selectTrack, seek, error) {
         },
         revise(value) {
             score = value;
+            envelopes.score(score, true);
+            for (const [index, lane] of Array.from(tracks.children).entries())
+                lane.querySelector(".track-automation").replaceWith(envelopes.control(index));
             selected = undefined;
+            buttons();
             changed();
         },
         position(seconds, active, locate = false) {

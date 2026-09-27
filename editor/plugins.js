@@ -1,4 +1,5 @@
 import {create as generic} from "./perone-ui.js";
+import {trackNodes} from "./graph.js";
 
 // Views belong to the prepared project and survive transport stop/restart.
 export function plugins(request, adapter, fail) {
@@ -62,15 +63,7 @@ export function plugins(request, adapter, fail) {
         if (!score) return;
         const chain = score.tracks[track];
         if (!chain) return;
-        const ids = [], seen = new Set();
-        const boundaries = new Set(score.tracks.filter(t => t !== chain).map(t => t[1]));
-        function visit(id) {
-            if (seen.has(id) || boundaries.has(id)) return;
-            seen.add(id);
-            for (const input of score.nodes[id].inputs) visit(input);
-            if (score.nodes[id].product) ids.push(id);
-        }
-        visit(chain[1]);
+        const ids = trackNodes(score, chain).filter(id => score.nodes[id].product);
         for (const id of ids) {
             const details = document.createElement("details"), summary = document.createElement("summary");
             const name = document.createElement("span"), body = document.createElement("div");
