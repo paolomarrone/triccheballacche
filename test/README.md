@@ -63,8 +63,9 @@ the audio score before querying to verify independent projection ownership.
 Automation tests check declared defaults, simultaneous writes, held values,
 parameter isolation and peak-preserving bins. Periodic values are compared with
 scheduled PCM at 44.1/48 kHz, including pickups, sample rounding, loop boundaries
-and distant windows. `automation.mjs` checks selectors, logarithmic scales,
-source selection and live revision continuity in both editors.
+and distant windows. `automation.mjs` checks parameter checklists, global visibility,
+logarithmic scales, source selection and live revision continuity in both editors.
+It also checks that late replies cannot restore hidden curves or keep queuing queries.
 `playback.mjs` and `player-lifecycle.mjs` cover real AudioWorklet output, stop/restart,
 live mute/solo, context closure, timeouts, cancellation during preparation and cleanup retries.
 
@@ -107,8 +108,9 @@ Replies cap tracking at 8192 active events and 256 distinct frames, reporting
 partial origins when exceeded. Timeline queries cover at most eight lanes, with
 512 individual notes or 512 density bins per lane. Automation queries return up
 to 512 changes plus the initial value, or up to 512 min/max bins for scheduled
-writes. Each visible track requests one selected parameter. These bounds affect the view,
-not audio; the scheduler's finite-duration limits still apply.
+writes. Visible tracks request their selected parameters, stopping obsolete
+requests when the viewport or selection changes. Hiding automation suspends its queries.
+These bounds affect the view, not audio; the scheduler's finite-duration limits still apply.
 
 ## Plugin UIs
 

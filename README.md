@@ -149,8 +149,11 @@ and delay/reverb history is cleared. It never renders the intervening audio,
 including for unbounded scores. Timing follows
 rendered audio, without compensating for device latency or plugin release tails.
 
-Each automated track has a parameter selector below its name. It overlays one
-curve from its instruments, effects or mixers; **Automation off** hides it.
+**Show automation**, next to Follow, shows or hides all automation curves without
+affecting playback or parameter selections. Each automated track has a checklist
+below its name: choose any combination of parameters from its instruments,
+effects or mixers, or **All**. One parameter is selected initially. Each curve
+has a matching color in the checklist; selections survive Stop/Play and live revisions.
 Hover for the value and time, click for its source. Curves show scheduled step
 changes, including the held value at the left edge, using the parameter's range
 and logarithmic mapping where declared. Wide views summarize scheduled values

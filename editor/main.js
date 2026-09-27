@@ -206,7 +206,7 @@ path.addEventListener("keydown", event => {
     }
 });
 document.addEventListener("keydown", event => {
-    if (event.defaultPrevented || document.querySelector("dialog[open]")) return;
+    if (event.defaultPrevented || document.querySelector("dialog[open], :popover-open")) return;
     let op;
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") op = "run";
     if ((event.ctrlKey || event.metaKey) && event.code === "Space" && prepared) op = "play";

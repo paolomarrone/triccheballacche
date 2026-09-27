@@ -69,16 +69,17 @@ export function timeline(request, select, selectTrack, seek, error) {
         const generation = version, revision = score.revision, view = viewport();
         pending = true;
         try {
-            const [result, curves] = await Promise.all([
-                request("range", revision, String(view.from), String(view.to), view.first, view.count, view.bins),
-                envelopes.query(view, revision)
-            ]);
+            const result = await request("range", revision, String(view.from), String(view.to), view.first, view.count, view.bins);
             if (revision === score?.revision && !result.stale && result.revision === revision) {
                 // Retain one bounded window and project it at the current scroll/zoom while the next loads.
                 data = result;
-                envelopes.accept(curves);
                 panel.dataset.revision = revision;
                 draw();
+                const curves = await envelopes.query(view, revision, () => generation === version);
+                if (revision === score.revision) {
+                    envelopes.accept(curves);
+                    draw();
+                }
             }
         } catch (cause) { error(cause); }
         finally {
