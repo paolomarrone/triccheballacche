@@ -1,7 +1,8 @@
 # Tests
 
-Run from the repository root. Core tests build local Perone fixtures and need no
-Tibia or Brickworks checkout. Test executables, fixtures, temporary renders and
+Run from the repository root. Core tests build local Perone fixtures and fetch
+the mixer's pinned Brickworks headers; no Tibia or sibling checkout is needed.
+Test executables, fixtures, temporary renders and
 reports live under `build/test/` and are removed by `make clean`. Integration targets
 require production bundles to be built separately; see [plugin builds](../plugins/README.md).
 
@@ -14,7 +15,7 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | `make test-brickworks` | All prebuilt bundles under `BRICKWORKS_PERONE`, default `build/library/brickworks`. |
 | `make test-library-build` | Fetch/build the canonical C library, audit all DSPs, check offline incremental builds, compiler failure propagation, repair, native catalog discovery and an example render. Requires git, Node.js, npm and a C compiler. |
 | `make test-prog` | Two identical renders of Polpo; requires the local plugin bundles. |
-| `make test-web` | Native/Wasm PCM and projection parity, control queues and request handling; Emscripten, Node.js and `patch`. |
+| `make test-web` | Native/Wasm PCM and projection parity, web publishing, control queues and request handling; Emscripten, Node.js and `patch`. |
 | `make test-browser` | AudioWorklet PCM, playback and cleanup in Chromium; includes `test-web`. |
 | `make test-polpo-web` | Original Polpo score: live/offline PCM comparison and cleanup; Chromium and its four prebuilt Wasm plugins. |
 | `make test-trace` | Source provenance and unchanged PCM; includes `test-web`. |
@@ -22,7 +23,7 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | `make test-live` | Infinite playback, quantized revisions, seek and Stop/Play in both editors, UI continuity, errors and evaluation timeout; editor/browser prerequisites. |
 | `make test-editor-web` | Polpo in the shared browser editor; Node.js, Chromium and Polpo's Wasm plugins. |
 | `make test-editor-ui` | The same custom UI with native and Wasm DSPs; editor/browser prerequisites, no external plugin checkout. |
-| `make test-library` | Shared Settings, catalog, examples dropdown, Sempiterno playback, file picker, uploads and unsaved edits; all 48 default bundles built for native and Wasm, plus editor/browser prerequisites. |
+| `make test-library` | Shared Settings, published catalog, examples dropdown, Sempiterno playback, file picker, uploads and unsaved edits; the same production bundles built for native and Wasm, plus editor/browser prerequisites. |
 | `make test-ui` | Original Tibia C/C++ and A-SID UIs, mouse gestures and DSP feedback; X11 display and prebuilt DSP/UI bundles. |
 | `make format-check` | Local C formatting with clang-format 21; excludes upstream headers and generated code. |
 
@@ -70,6 +71,10 @@ requests/canvas sizes. `chromium.mjs` shares browser startup, DevTools, bounded 
 input actions and cleanup. `native.mjs` owns GUI startup, logs and shutdown.
 Logs, reports and screenshots go under `build/test/`. Unicode fixtures retain
 characters such as `音` to test encoding independently of the interface language.
+Catalog checks compare the editor with the published files, including optional
+plugins. Support modules remain importable without appearing as scores.
+`catalog.mjs` checks that publishing skips native-only bundles and retains score
+imports, relative UI assets and auxiliary Wasm modules.
 
 ## Source tracking
 

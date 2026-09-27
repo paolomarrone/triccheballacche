@@ -36,7 +36,10 @@ export function library(request, open, fail) {
                         const effect = product.buses.some(bus => bus.type === "audio" && bus.direction === "input" && !bus.sidechain);
                         plugins.push({path: file.path.slice(0, -"/product.json".length), name: product.name || product.bundleName,
                             kind: effect ? "Effect" : "Instrument"});
-                    } else if (file.path.endsWith(".janet")) scores.push(file.path);
+                    } else if (file.path.endsWith(".janet") && !file.path.startsWith("examples/sources/")) {
+                        // Supporting modules remain available to imports and the file picker.
+                        scores.push(file.path);
+                    }
                 }
                 data = {plugins: plugins.sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path))};
                 byId("plugin-paths").replaceChildren(...result.paths.map(path => element("li", path)));

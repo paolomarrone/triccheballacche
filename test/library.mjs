@@ -7,6 +7,15 @@ import {withBrowser} from "./chromium.mjs";
 import {nativeEditor} from "./native.mjs";
 
 const entry = "examples/prog/polpo.janet", original = await readFile(entry, "utf8");
+const published = JSON.parse(await readFile("build/web/project.json", "utf8")).map(file => file.path);
+const expectedPlugins = published.filter(path => path.endsWith(".perone/product.json"))
+    .map(path => path.slice(0, -"/product.json".length)).sort();
+const expectedExamples = published.filter(path => path.startsWith("examples/") && path.endsWith(".janet") &&
+    !path.startsWith("examples/sources/")).sort();
+assert(expectedPlugins.includes("plugins/synth_mono/build/plugin.perone"));
+assert(expectedExamples.includes(entry));
+assert(expectedExamples.includes("examples/oculus.janet"));
+assert(published.includes("examples/sources/oculus-non-vidit.janet"), "Imports must be published with their scores");
 const directory = await mkdtemp(tmpdir() + "/triccheballacche-files-");
 const picked = `${directory}/score "音".janet`;
 const pickedSource = '(import ./helper)\n(error helper/message)\n';
@@ -17,7 +26,7 @@ const uploadedSource = '(import ../../lib/pattern :as p)\n(error "Uploaded file 
 await writeFile(upload, uploadedSource);
 const server = serve(0);
 await once(server, "listening");
-let native, inventory;
+let native;
 try {
     for (const mode of ["web", "native"]) {
         let url = `http://127.0.0.1:${server.address().port}/editor/index.html`;
@@ -40,7 +49,7 @@ try {
             await click("#settings");
             await wait('document.querySelector("#settings-dialog").open');
             const plugins = await evaluate('[...document.querySelectorAll(".catalog-item")].map(row => row.dataset.path).sort()');
-            assert.equal(plugins.length, 48);
+            assert.deepEqual(plugins, expectedPlugins, "Settings must list the published plugin bundles");
             assert(plugins.every(path => !/\/(fxpp_|synthpp_)/.test(path)));
             assert(await evaluate('document.querySelector("#plugin-paths").children.length > 0'));
             assert.match(await evaluate('document.querySelector("#catalog-list").textContent'), /in use/);
@@ -52,10 +61,7 @@ try {
             assert.equal(await evaluate('document.querySelector("#stop").disabled'), false, "Escape closes Settings without stopping playback");
             assert.equal(await evaluate('document.activeElement.id'), "settings");
             const examples = await evaluate('[...document.querySelector("#examples").options].map(option => option.value).filter(Boolean).sort()');
-            assert.equal(examples.length, 12);
-            assert(examples.includes(entry));
-            if (inventory) assert.deepEqual({plugins, examples}, inventory, "Both backends expose the same library");
-            inventory = {plugins, examples};
+            assert.deepEqual(examples, expectedExamples, "The dropdown must contain scores without support modules");
             const draft = "# draft\n" + original;
             await set("#code", draft);
             await evaluate('globalThis.confirmations = []; globalThis.confirm = message => { confirmations.push(message); return false; }');

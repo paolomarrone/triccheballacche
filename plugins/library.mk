@@ -17,6 +17,7 @@ LIBRARY_GEN := build/generated/library/$(BRICKWORKS_REV)-$(TIBIA_REV)
 LIBRARY_DEST := $(abspath $(BRICKWORKS_PERONE))
 PERONE_PLATFORM ?= $(shell uname -m)-$(shell uname -s | tr A-Z a-z)
 CFLAGS ?= -O2 -Wall -Wextra
+include plugins/wasm.mk
 
 .PHONY: library library-deps library-build
 library-deps: $(BW_SOURCE)/.ready $(LIBRARY_DOT)
@@ -68,7 +69,7 @@ library-build: $(LIBRARY_JOBS)
 .PRECIOUS: $(LIBRARY_GEN)/%/Makefile
 $(LIBRARY_GEN)/%/Makefile: $(BW_SOURCE)/examples/%/src/product.json $(BW_SOURCE)/examples/%/src/plugin.h \
 	$(BW_SOURCE)/examples/common/src/company.json $(BW_SOURCE)/.ready \
-	$(LIBRARY_DOT) $(LIBRARY_TEMPLATES) plugins/library.mk
+	$(LIBRARY_DOT) $(LIBRARY_TEMPLATES) plugins/library.mk plugins/wasm.mk
 	mkdir -p "$(@D)"
 	$(NODE) "$(TIBIA_SOURCE)/tibia" "$(BW_SOURCE)/examples/common/src/company.json,$<" \
 	    "$(TIBIA_SOURCE)/templates/api" "$(@D)/src" 'product.version="$(BW_VERSION)"' 'product.buildVersion="1"'
@@ -77,17 +78,9 @@ $(LIBRARY_GEN)/%/Makefile: $(BW_SOURCE)/examples/%/src/product.json $(BW_SOURCE)
 	$(NODE) "$(TIBIA_SOURCE)/tibia" "$(BW_SOURCE)/examples/common/src/company.json,$<" \
 	    "$(TIBIA_SOURCE)/templates/perone-make" "$(@D)" 'product.version="$(BW_VERSION)"' 'product.buildVersion="1"'
 
-LIBRARY_COMPILER = CC="$(CC)"
-ifeq ($(PERONE_PLATFORM),wasm32)
-EMCC ?= emcc
-LIBRARY_COMPILER = CC="$(EMCC)" WASM_OBJS= TARGET_FLAGS="-DWASM" \
-	TARGET_LDFLAGS="--no-entry -sSTANDALONE_WASM -sPURE_WASI -sMALLOC=emmalloc -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=1048576 \
-	-Wl,--export=__wasm_call_ctors,--export=perone_get_api,--export=malloc,--export=free,--export=calloc,--export=realloc,--export-table,--growable-table"
-endif
-
 .PHONY: $(LIBRARY_JOBS)
 $(LIBRARY_JOBS): library-build-%: $(LIBRARY_GEN)/%/Makefile
 	$(MAKE) -C "$(<D)" OUTPUT="$(LIBRARY_DEST)/$*/build/bw_example_$*.perone" \
 	    API_DIR=src PLUGIN_DIR="$(BW_SOURCE)/examples/$*/src" \
 	    CPPFLAGS="$(CPPFLAGS) -I$(BW_SOURCE)/include -I$(BW_SOURCE)/examples/common/src" \
-	    CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" PERONE_PLATFORM="$(PERONE_PLATFORM)" $(LIBRARY_COMPILER)
+	    CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" PERONE_PLATFORM="$(PERONE_PLATFORM)" $(PERONE_BUILD)

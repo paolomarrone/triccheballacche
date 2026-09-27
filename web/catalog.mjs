@@ -8,6 +8,15 @@ if (!output || !roots.length) throw Error("Usage: node web/catalog.mjs output.js
 const files = new Set();
 async function collect(path) {
     if ((await stat(path)).isDirectory()) {
+        if (basename(path).endsWith(".perone")) {
+            const {product} = JSON.parse(await readFile(join(path, "product.json"), "utf8"));
+            try {
+                if (!(await stat(join(path, "wasm32", `${product.bundleName}.wasm`))).isFile()) return;
+            } catch (error) {
+                if (error.code !== "ENOENT") throw error;
+                return;
+            }
+        }
         for (const entry of await readdir(path, {withFileTypes: true}))
             if (!entry.name.startsWith(".") && !entry.isSymbolicLink()) await collect(join(path, entry.name));
     } else if (path.includes(".perone/ui/") || [".janet", ".json", ".wasm"].includes(extname(path))) files.add(path);

@@ -41,12 +41,9 @@ Reset clears voices and pedal state while retaining parameter values.
 The bank covers MIDI keys 0–108; notes outside its recorded mapping are silent.
 Reverb and chorus sends in the bank are unused; the piano remains dry.
 
-The original `gain`, `detune` and `blend` parameters and the score API are retained.
-Bank attenuation is calibrated to the previous instrument's output level.
 Envelopes are advanced per sample, with an 80 dB exponential decay/release;
 filter updates use a voice-local clock. Rendering is independent of host block
-size, with no allocation or file I/O during processing. Small differences from
-the previous engine's envelope stepping mean old renders are not bit-identical.
+size, with no allocation or file I/O during processing.
 
 For the browser, build the Wasm bundle and republish the project catalog:
 
@@ -58,7 +55,7 @@ make web
 Pass an absolute `EMCC` path if Emscripten is outside `PATH`. The piano's initial
 Wasm memory is 16 MiB to accommodate its embedded bank. The plugin remains an
 optional build; the catalog discovers it under `plugins/piano/build/plugin.perone`
-when present. Build its Wasm binary before publishing it to the browser.
+when built for the catalog's platform.
 
 `make -C plugins/piano test` checks the converter, key/velocity mapping, stereo,
 polyphony, pedal/release, retriggers, voice stealing, parameter changes, sample

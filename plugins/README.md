@@ -50,8 +50,9 @@ are forwarded to the generated builds.
 
 With Emscripten installed, `make library PERONE_PLATFORM=wasm32` adds Wasm DSPs
 alongside native binaries; `EMCC=/absolute/path/to/emcc` selects the compiler.
-The host's `make web` remains a separate build. Native generation and all 40 DSPs
-have been verified on Termux; WebAssembly requires its own toolchain and checks.
+The host's `make web` remains a separate build and publishes bundles containing a
+Wasm DSP. Native and Wasm compiler options are shared with the local projects;
+the standalone Wasm link settings live in [wasm.mk](wasm.mk).
 
 `make test-library-build` builds the library and tests native DSP loading,
 incremental builds without network/compiler use, compiler failure propagation,
@@ -72,7 +73,7 @@ make -C plugins/echo
 make -C plugins
 make -C plugins TIBIA=/path/to/tibia BRICKWORKS=/path/to/brickworks
 make -C plugins synth_mono shape echo drums PERONE_PLATFORM=wasm32
-make -C plugins clean
+make -C plugins clean   # Includes the optional piano; keeps downloaded dependencies.
 ```
 
 Use `make -C plugins PERONE_PLATFORM=wasm32` for all local Wasm plugins.
@@ -94,7 +95,8 @@ bundle are preserved.
 The optional [sampled piano](piano/README.md) is built separately with
 `make -C plugins/piano` after fetching its sample bank. Its local C engine embeds
 the samples in the native or Wasm binary, with no external synthesis library.
-It is outside the default plugin build; the web catalog includes it when built.
+It is outside the default plugin build; `make -C plugins piano` selects it explicitly.
+The web catalog includes it when its Wasm DSP is built.
 
 `drums` has 32 voices; MIDI notes 0–6 select kick, snare, hat, open hat, crash,
 high tom and low tom. Velocity scales each hit, `:gain` scales the instance and

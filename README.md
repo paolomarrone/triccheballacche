@@ -67,10 +67,12 @@ make gui
 ./build/gui --serve examples/prog/polpo.janet  # Print a URL without opening a browser.
 ```
 
-For the browser, install Emscripten, Node.js and `patch`. Build the Perone `wasm32`
-bundles separately in Brickworks, A-SID and Tibia, then the local plugins:
+For the browser, install Emscripten, Node.js and `patch`. Build A-SID and Tibia's
+test product for Perone `wasm32` in their repositories, then build the library and
+local plugins:
 
 ```sh
+make -j4 library PERONE_PLATFORM=wasm32
 make -C plugins PERONE_PLATFORM=wasm32
 make web
 node test/server.mjs
@@ -83,12 +85,16 @@ product: 48 bundles. Brickworks C++ variants are excluded. The local `synth_mono
 and `fx_svf` bundles remain available at the paths used by existing scores.
 Campagnola additionally requires the optional [sampled piano](plugins/piano/README.md),
 including its Wasm binary for browser playback; building it adds one bundle to the catalog.
+Each catalog lists bundles built for its platform. The browser publisher skips
+bundles without a Wasm DSP and copies only built bundles from the plugin projects.
+Files under `examples/sources/` are support modules: imports and the file picker
+can access them, but the examples dropdown lists only scores.
 
 Override `WEB_CONTENT` to publish a smaller or different project, for example
 Polpo with only the local plugins:
 
 ```sh
-make web WEB_CONTENT="lib examples/prog plugins"
+make web WEB_CONTENT="lib examples/prog plugins/*/build/*.perone"
 ```
 
 The catalog copies assets into `build/web/`; `?project=...` selects a different
