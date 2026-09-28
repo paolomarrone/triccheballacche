@@ -1,4 +1,4 @@
-#include "daw.h"
+#include "score_janet.h"
 #include "player.h"
 #include "controls.h"
 #include "assets.h"
@@ -70,7 +70,7 @@ static void accept_revision(Editor *editor) {
 		editor->score = editor->queued;
 		editor->queued = (ScoreView){0};
 		editor->revision = revision;
-		score_view_activate(&editor->score, &editor->session);
+		score_view_activate(&editor->score, editor->session.active->at);
 		assets_set(&editor->score, editor->control_revision);
 		session_collect(&editor->session);
 	}
@@ -113,7 +113,7 @@ static const char *play_editor(Editor *editor) {
 
 static const char *seek_editor(Editor *editor, double seconds) {
 	Session *s = &editor->session;
-	if (!s->sealed)
+	if (!s->audio)
 		return "Run a score before seeking";
 	uint64_t frame = session_frame(s, seconds);
 	if (frame == UINT64_MAX)
@@ -124,7 +124,7 @@ static const char *seek_editor(Editor *editor, double seconds) {
 		error = s->error;
 	editor->time = (double)s->time / s->sample_rate;
 	if (!error) {
-		score_view_activate(&editor->score, s);
+		score_view_activate(&editor->score, s->active->at);
 		free(editor->error);
 		editor->error = NULL;
 		if (playing)
@@ -151,6 +151,7 @@ static double decimal(webui_event_t *request, int index) {
 static void reply(
     webui_event_t *event, Editor *editor, const char *error, const char *text, const char *path, int score) {
 	const char *op = webui_get_string_at(event, 0);
+	const Score *active = session_score(&editor->session);
 	double time = editor->playing ? player_time(editor->player) : editor->time;
 	char *view = NULL;
 	int query = !strcmp(op, "range") || !strcmp(op, "origin") || !strcmp(op, "automation");
@@ -174,16 +175,16 @@ static void reply(
 	json_print(&json, "]");
 	json_print(&json, ",\"controlRevision\":%u", editor->control_revision);
 	json_print(&json, ",\"queued\":%s,\"live\":%s", editor->queued.nnodes ? "true" : "false",
-	    editor->session.sequence ? "true" : "false");
+	    active && active->live ? "true" : "false");
 	if (score) {
 		json_print(&json, ",\"nativeAvailable\":[");
 		for (int i = 0, count = 0; i < editor->session.nnodes; ++i)
-			if (ui_available(editor->session.nodes + i))
+			if (ui_available(active->nodes + i))
 				json_print(&json, "%s%d", count++ ? "," : "", i);
 		json_print(&json, "]");
 	}
 	json_print(&json, ",\"prepared\":%s,\"playing\":%s,\"time\":%.17g,\"revision\":%u,\"view\":%s,\"error\":",
-	    editor->session.sealed ? "true" : "false", editor->playing ? "true" : "false", time, editor->revision,
+	    editor->session.audio ? "true" : "false", editor->playing ? "true" : "false", time, editor->revision,
 	    view ? view : "null");
 	json_string(&json, error);
 	json_print(&json, "}");
@@ -210,7 +211,7 @@ static void command(Editor *editor, webui_event_t *event) {
 	if (!strcmp(op, "listen")) {
 		double revision = decimal(event, 1), track = decimal(event, 2), flags = decimal(event, 3);
 		const char *error = NULL;
-		if (!editor->session.sealed || revision != editor->revision)
+		if (!editor->session.audio || revision != editor->revision)
 			error = "Stale track view";
 		else if (!isfinite(track) || track < 0 || track >= editor->session.ntracks || track != floor(track) ||
 		    !isfinite(flags) || flags < 0 || flags > (TRACK_MUTE | TRACK_SOLO) || flags != floor(flags) ||
@@ -225,7 +226,7 @@ static void command(Editor *editor, webui_event_t *event) {
 		return;
 	}
 	if (!strcmp(op, "watch") || !strcmp(op, "controls") || !strcmp(op, "parameter") || !strcmp(op, "message")) {
-		controls_command(&editor->controls, &editor->session, &editor->score, editor->control_revision, event);
+		controls_command(&editor->controls, &editor->session, editor->control_revision, event);
 		return;
 	}
 	if (!strcmp(op, "score")) {
@@ -249,21 +250,21 @@ static void command(Editor *editor, webui_event_t *event) {
 	} else if (!strcmp(op, "save")) {
 		error = file_save(path, source);
 	} else if (!strcmp(op, "run")) {
-		int live = editor->playing && editor->session.sequence;
+		const Score *active = session_score(&editor->session);
+		int live = editor->playing && active && active->live;
 		if (editor->queued.nnodes)
 			error = "Wait for the pending revision to become active";
 		free(editor->error);
 		editor->error = NULL;
 		double previous_time = editor->time;
-		Session *next = calloc(1, sizeof(*next));
+		Score *next = calloc(1, sizeof(*next));
+		Session prepared = {.modules = &editor->modules};
 		Output output;
 		ScoreView score = {0};
 		if (!next)
 			error = "Out of memory";
 		if (!error) {
 			next->sample_rate = 48000;
-			next->describe = 1;
-			next->modules = &editor->modules;
 			if (prepare_background(next, &output, path, source, &diagnostics, &score))
 				error = diagnostics ? diagnostics : next->error ? next->error : "Preparation failed";
 		}
@@ -278,14 +279,14 @@ static void command(Editor *editor, webui_event_t *event) {
 			}
 		} else if (!error) {
 			error = pause_editor(editor);
-			if (!error && session_activate(next))
-				error = next->error;
+			if (!error && session_activate(&prepared, next))
+				error = prepared.error;
 		}
 		if (!error && !live) {
 			controls_close(&editor->controls, &editor->session);
 			session_free(&editor->session);
-			editor->session = *next;
-			*next = (Session){0};
+			editor->session = prepared;
+			prepared = (Session){0};
 			if (editor->player && player_seek(editor->player, 0))
 				error = editor->session.error;
 			else
@@ -303,13 +304,14 @@ static void command(Editor *editor, webui_event_t *event) {
 			}
 		}
 		if (next)
-			session_free(next);
+			score_free(next);
 		free(next);
+		session_free(&prepared);
 		score_view_free(&score);
 		if (error)
 			editor->time = previous_time;
 	} else if (!strcmp(op, "play")) {
-		if (!editor->session.sealed)
+		if (!editor->session.audio)
 			error = "Run a score before playing";
 		else if (!editor->playing) {
 			if (editor->session.time == editor->session.frames)
@@ -330,7 +332,7 @@ static void command(Editor *editor, webui_event_t *event) {
 }
 
 static void poll_player(Editor *editor) {
-	if (!editor->session.sealed)
+	if (!editor->session.audio)
 		return;
 	const char *error = NULL;
 	accept_revision(editor);

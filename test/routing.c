@@ -1,40 +1,41 @@
 #include "posix/module.h"
 #include "script.h"
-#include "session.h"
+#include "support.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-static int plugin(Session *s, int effect, float gain) {
+static int plugin(Score *s, int effect, float gain) {
 	char *binary;
 	PluginConfig config;
-	assert(!read_bundle(effect ? "build/test/effect.perone" : "build/test/fixture.perone", &binary, &config));
+	assert(!read_bundle(effect ? "build/test/effect.perone" : "build/test/fixture.perone", &binary, &config, NULL));
 	config.defaults[1] = gain;
-	int id = session_plugin(s, binary, &config);
+	int id = score_plugin(s, binary, &config);
 	free(binary);
 	assert(id >= 0);
 	return id;
 }
 
-static int mix(Session *s, int a, int b) {
+static int mix(Score *s, int a, int b) {
 	int inputs[] = {a, b};
-	int id = session_mix(s, inputs, 2);
+	int id = score_mix(s, inputs, 2);
 	assert(id >= 0);
 	return id;
 }
 
 static void graph(Session *s) {
-	int fx = plugin(s, 1, .5f), source = plugin(s, 0, .25f);
-	assert(session_through(s, source, fx) == fx); // Declaration order is not processing order.
-	int dry = session_mix(s, &source, 1), wet = session_mix(s, &fx, 1);
+	Score score = {.sample_rate = s->sample_rate};
+	int fx = plugin(&score, 1, .5f), source = plugin(&score, 0, .25f);
+	assert(score_through(&score, source, fx) == fx); // Declaration order is not processing order.
+	int dry = score_mix(&score, &source, 1), wet = score_mix(&score, &fx, 1);
 	assert(dry >= 0 && wet >= 0);
-	assert(!session_set(s, wet, 0, 0) && !session_set(s, fx, 2, .5f));
-	assert(!session_param(s, source, 7, 1, .75f));
-	assert(!session_param(s, dry, 13, 0, .25f) && !session_param(s, wet, 13, 0, .75f));
-	assert(session_output(s, mix(s, dry, wet)) >= 0);
-	assert(!session_end(s, 1025));
+	assert(!score_set(&score, wet, 0, 0) && !score_set(&score, fx, 2, .5f));
+	assert(!score_param(&score, source, 7, 1, .75f));
+	assert(!score_param(&score, dry, 13, 0, .25f) && !score_param(&score, wet, 13, 0, .75f));
+	assert(score_output(&score, mix(&score, dry, wet)) >= 0);
+	assert(!start_score(s, &score, 1025));
 }
 
 static void test_shared(void) {
@@ -53,19 +54,16 @@ static void test_shared(void) {
 		float expected = i < 13 ? input : .25f * input + .75f * .5f * (input - state);
 		assert(fabsf(whole[2 * i] - expected) < 1e-7f && whole[2 * i + 1] == -whole[2 * i]);
 	}
-	for (int i = 0; i < a.nnodes; ++i)
-		for (int j = 0; j < 2; ++j)
-			if (a.nodes[i].dsp[j].dsp)
-				assert(a.nodes[i].dsp[j].time == 1025);
 	assert(!session_seek(&a, 0) && !session_render(&a, split, 1025));
 	assert(!memcmp(whole, split, sizeof(whole)));
 	session_free(&a);
 	session_free(&b);
 
-	int source = plugin(&a, 0, .25f);
-	assert(session_output(&a, mix(&a, source, source)) >= 0);
-	assert(!session_end(&a, 1) && !session_render(&a, whole, 1));
-	assert(whole[0] == .5f && whole[1] == -.5f && a.nodes[source].dsp[0].time == 1);
+	Score score = {0};
+	int source = plugin(&score, 0, .25f);
+	assert(score_output(&score, mix(&score, source, source)) >= 0);
+	assert(!start_score(&a, &score, 1) && !session_render(&a, whole, 1));
+	assert(whole[0] == .5f && whole[1] == -.5f);
 	session_free(&a);
 	puts("OK: shared DSP rendered once, parallel state, sample-accurate crossfade, block invariance and rewind");
 }
@@ -78,14 +76,15 @@ static void level(Session *s, float expected) {
 
 static void test_solo(void) {
 	Session s = {.sample_rate = 48000};
-	int a = session_track(&s, plugin(&s, 0, .25f), NULL, 0, 0);
-	int b = session_track(&s, plugin(&s, 0, .5f), NULL, 0, 0);
-	int bus = session_track(&s, mix(&s, a, b), NULL, 0, 0);
-	int fx = plugin(&s, 1, .5f);
-	int wet = session_track(&s, bus, &fx, 1, 0);
+	Score score = {.sample_rate = 48000};
+	int a = score_track(&score, plugin(&score, 0, .25f), NULL, 0, 0);
+	int b = score_track(&score, plugin(&score, 0, .5f), NULL, 0, 0);
+	int bus = score_track(&score, mix(&score, a, b), NULL, 0, 0);
+	int fx = plugin(&score, 1, .5f);
+	int wet = score_track(&score, bus, &fx, 1, 0);
 	assert(a >= 0 && b >= 0 && bus >= 0 && wet >= 0);
 	// A shared bus feeds a direct branch with no track and a parallel effect track.
-	assert(session_output(&s, mix(&s, bus, wet)) >= 0 && !session_end(&s, 10000));
+	assert(score_output(&score, mix(&score, bus, wet)) >= 0 && !start_score(&s, &score, 10000));
 	level(&s, 1.125f);
 	assert(!session_listen(&s, 3, TRACK_SOLO));
 	level(&s, .375f); // Solo wet retains both sources, but must exclude the shared bus's direct output.
@@ -106,33 +105,36 @@ static void test_solo(void) {
 }
 
 static void test_invalid(void) {
-	Session s = {0};
+	Score s = {0};
 	int source = plugin(&s, 0, .25f), fx = plugin(&s, 1, 1);
-	assert(session_end(&s, 1) < 0 && strstr(s.error, "output"));
-	assert(session_mix(&s, &source, 0) < 0 && session_output(&s, -1) < 0);
-	assert(session_through(&s, source, source) < 0);
-	assert(session_output(&s, fx) >= 0 && session_output(&s, source) < 0);
-	assert(session_end(&s, 1) < 0 && strstr(s.error, "input"));
-	assert(session_through(&s, fx, fx) >= 0);
-	assert(session_end(&s, 1) < 0 && strstr(s.error, "cycle"));
-	assert(!s.sealed && !s.audio);
-	session_free(&s);
+	assert(score_end(&s, 1) < 0 && strstr(s.error, "output"));
+	assert(score_mix(&s, &source, 0) < 0 && score_output(&s, -1) < 0);
+	assert(score_through(&s, source, source) < 0);
+	assert(score_output(&s, fx) >= 0 && score_output(&s, source) < 0);
+	assert(score_end(&s, 1) < 0 && strstr(s.error, "input"));
+	assert(score_through(&s, fx, fx) >= 0);
+	assert(score_end(&s, 1) < 0 && strstr(s.error, "cycle"));
+	assert(!s.sealed);
+	score_free(&s);
 	source = plugin(&s, 0, .25f);
 	fx = plugin(&s, 1, 1);
-	assert(session_through(&s, source, fx) >= 0 && session_through(&s, source, fx) < 0);
-	assert(session_output(&s, source) >= 0);
-	assert(session_end(&s, 1) < 0 && strstr(s.error, "reach"));
-	session_free(&s);
+	assert(score_through(&s, source, fx) >= 0 && score_through(&s, source, fx) < 0);
+	assert(score_output(&s, source) >= 0);
+	assert(score_end(&s, 1) < 0 && strstr(s.error, "reach"));
+	score_free(&s);
 	source = plugin(&s, 0, .25f);
 	int chain[] = {plugin(&s, 1, 1), plugin(&s, 1, 1)};
-	assert(session_through(&s, source, chain[1]) >= 0);
-	assert(session_track(&s, source, chain, 2, 0) < 0);
+	assert(score_through(&s, source, chain[1]) >= 0);
+	assert(score_track(&s, source, chain, 2, 0) < 0);
 	assert(!s.ntracks && s.nnodes == 3 && !s.nodes[chain[0]].ninputs);
-	assert(session_through(&s, source, chain[0]) >= 0);
-	assert(session_output(&s, mix(&s, chain[0], chain[1])) >= 0 && !session_end(&s, 1));
+	assert(score_through(&s, source, chain[0]) >= 0);
+	assert(score_output(&s, mix(&s, chain[0], chain[1])) >= 0 && !score_end(&s, 1));
+	Session session = {0};
+	assert(!session_activate(&session, &s));
 	float audio[2];
-	assert(!session_render(&s, audio, 1) && audio[0] == .5f && audio[1] == -.5f);
-	session_free(&s);
+	assert(!session_render(&session, audio, 1) && audio[0] == .5f && audio[1] == -.5f);
+	session_free(&session);
+	score_free(&s);
 	puts("OK: missing/repeated output, orphan nodes, unbound/rebound effects and cycles rejected before playback");
 }
 

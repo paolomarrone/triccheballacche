@@ -1,4 +1,4 @@
-#include "daw.h"
+#include "score_janet.h"
 #include "score_view_json.h"
 #include <assert.h>
 #include <math.h>
@@ -8,11 +8,11 @@
 // JSON oracle consumed by view-json.mjs. Both adapters execute this same protocol implementation.
 int main(int argc, char **argv) {
 	assert(argc == 2);
-	Session session = {.sample_rate = atoi(argv[1])};
+	Score session = {.sample_rate = atoi(argv[1])};
 	ScoreView view;
 	Output output;
 	assert(!prepare_score(&session, &output, "test/view-score.janet", NULL, NULL, &view));
-	session_free(&session);
+	score_free(&session);
 	const char *operations[] = {"score", "range", "range", "status", "origin", "range", "range", "range", "origin",
 	    "unknown", "automation", "automation", "automation", "automation", "automation", "automation", "automation",
 	    "automation"};

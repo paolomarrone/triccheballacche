@@ -32,7 +32,7 @@ export async function preparePlayer(host, path, sampleRate, source) {
 // Takes ownership of score, including on failure.
 export async function attachPlayer(host, score) {
     if (active.has(host)) {
-        host._score_free(score);
+        host._web_score_free(score);
         throw Error("Close the current player before attaching another score");
     }
     let player = 0, context, setup, error, closing, prepared, stopping = false, released = false;
@@ -53,7 +53,7 @@ export async function attachPlayer(host, score) {
         }
         setup?.port.close();
         try { if (player) host._player_free(player); } catch (error) { errors.push(error); }
-        try { if (score) host._score_free(score); } catch (error) { errors.push(error); }
+        try { if (score) host._web_score_free(score); } catch (error) { errors.push(error); }
         released = true;
         active.delete(host);
         if (errors.length) throw new AggregateError(errors, "Player cleanup failed: " + errors.map(String).join("; "));

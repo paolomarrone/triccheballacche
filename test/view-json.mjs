@@ -24,7 +24,7 @@ for (const rate of [44100, 48000]) {
     const view = host._score_take_view(score);
     assert(view);
     assert.equal(host._score_take_view(score), 0, "Projection ownership can only move once");
-    host._score_free(score);
+    host._web_score_free(score);
     assert.equal(host.perone.instances.size, 0);
     try {
         const actual = queries.map(([op, ...values]) => {

@@ -38,7 +38,9 @@ imports and Wasm bundles are included in `WEB_CONTENT`.
 ## What the tests protect
 
 Core tests compare rendering at 44.1/48 kHz, variable block sizes, stereo channel
-separation and duplicated mono effects. Export tests preserve the previous WAV
+separation and duplicated mono effects. Direct, pattern and mixed scheduling must
+produce the same PCM, seek state and source origins, including overlapping pitches
+and one-sample notes. Export tests preserve the previous WAV
 and clean temporary files after rendering, write, finalization and rename failures.
 The player uses a simulated device to check startup errors, interruption, final
 silence, draining and export options without requiring audio hardware. Replays
@@ -136,8 +138,12 @@ widget creation, resizing and shutdown with the original upstream UIs.
 
 `test/sequence.c` checks bounded periodic scheduling, sample timing across the
 wasm32 counter boundary, block-size independence, DSP reuse, note-offs crossing
-revisions, same-pitch retriggers, rounded loop boundaries and worker snapshot round trips. Truncated
-snapshots must fail without leaking their partially decoded descriptions.
+revisions, same-pitch retriggers, rounded loop boundaries and worker snapshot round trips.
+Preparation must work without creating DSPs; failed activation retains the caller's
+score, and successful activation transfers ownership. Concurrent revision publication
+and retirement must preserve metadata and existing DSPs. Truncated snapshots must
+fail without leaking partially decoded descriptions. Projection tests check negative
+pickups, export crops and source tracking after activation for finite and looping scores.
 `test/pattern.janet` compares whole-window queries with arbitrary partitions,
 including pickups, overhangs, points, independent periods and bounded output.
 `test/live-editor.mjs` runs the same scenario against both editors: submit a new

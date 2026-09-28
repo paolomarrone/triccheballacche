@@ -1,4 +1,4 @@
-#include "daw.h"
+#include "score_janet.h"
 #include "script.h"
 #include "util.h"
 #include <float.h>
@@ -7,7 +7,7 @@
 #include <string.h>
 
 // Only the synchronous Janet adapter has a current context; the C engine does not.
-static _Thread_local Session *current;
+static _Thread_local Score *current;
 static _Thread_local Output *output;
 static _Thread_local ScoreView *projection;
 
@@ -56,10 +56,12 @@ static void options(Janet opts, const char *const *names) {
 }
 
 static Janet plugin(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 3);
+	janet_fixarity(argc, 5);
 	PluginConfig config;
 	script_config(argv[1], argv[2], &config);
-	return janet_wrap_integer(checked(session_plugin(current, janet_getcstring(argv, 0), &config)));
+	int id = checked(score_plugin(current, janet_getcstring(argv, 0), &config));
+	script_info(argv[3], argv[4], &current->nodes[id].info);
+	return janet_wrap_integer(id);
 }
 
 static void node_key(int id, const char *key) {
@@ -106,9 +108,9 @@ static Janet make_track(int32_t argc, Janet *argv, int master) {
 		for (int i = 0; i < list.len; ++i)
 			ids[count++] = handle(list.items[i]);
 	}
-	int id = checked(session_track(current, source, ids, count, master));
-	checked(session_set(current, id, 0, gain));
-	checked(session_set(current, id, 1, pan));
+	int id = checked(score_track(current, source, ids, count, master));
+	checked(score_set(current, id, 0, gain));
+	checked(score_set(current, id, 1, pan));
 	const char *source_key = current->nodes[source].key;
 	JanetString fallback = source_key ? janet_formatc("track/%s", source_key) : NULL;
 	optional_key(id, opts, master ? "master" : (const char *)fallback);
@@ -127,7 +129,7 @@ static Janet master(int32_t argc, Janet *argv) {
 
 static Janet through(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 2);
-	return janet_wrap_integer(checked(session_through(current, handle(argv[0]), handle(argv[1]))));
+	return janet_wrap_integer(checked(score_through(current, handle(argv[0]), handle(argv[1]))));
 }
 
 static Janet mix(int32_t argc, Janet *argv) {
@@ -143,81 +145,47 @@ static Janet mix(int32_t argc, Janet *argv) {
 	options(opts, keys);
 	float gain = number(option(opts, "gain", janet_wrap_number(1)), 0, 4);
 	float pan = number(option(opts, "pan", janet_wrap_number(0)), -1, 1);
-	int id = checked(session_mix(current, ids, inputs.len));
+	int id = checked(score_mix(current, ids, inputs.len));
 	optional_key(id, opts, NULL);
-	checked(session_set(current, id, 0, gain));
-	checked(session_set(current, id, 1, pan));
+	checked(score_set(current, id, 0, gain));
+	checked(score_set(current, id, 1, pan));
 	return janet_wrap_integer(id);
 }
 
 static Janet connect_output(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 1);
-	return janet_wrap_integer(checked(session_output(current, handle(argv[0]))));
+	return janet_wrap_integer(checked(score_output(current, handle(argv[0]))));
 }
 
 static Janet note(int32_t argc, Janet *argv) {
 	janet_arity(argc, 4, 5);
 	int id = handle(argv[0]), pitch = janet_getinteger(argv, 3), velocity = argc == 5 ? janet_getinteger(argv, 4) : 100;
 	double time = number(argv[1], 0, 3600), length = number(argv[2], 0, 3600);
-	checked(session_note(current, id, sample(time), sample(time + length), pitch, velocity));
+	checked(score_note(current, id, sample(time), sample(time + length), pitch, velocity));
 	return janet_wrap_nil();
 }
 
 static Janet parameter(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 4);
 	int id = handle(argv[0]), p = janet_getinteger(argv, 2);
-	checked(session_param(current, id, sample(janet_getnumber(argv, 1)), p, number(argv[3], -FLT_MAX, FLT_MAX)));
+	checked(score_param(current, id, sample(janet_getnumber(argv, 1)), p, number(argv[3], -FLT_MAX, FLT_MAX)));
 	return janet_wrap_nil();
 }
 
 static Janet event_count(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 1);
 	int id = handle(argv[0]);
-	size_t count = current->nodes[id].count;
-	if (current->sequence)
-		for (size_t i = 0; i < current->sequence->count; ++i)
-			count += current->sequence->cues[i].node == id;
-	return janet_wrap_number(count);
+	return janet_wrap_number(current->nodes[id].event_count);
 }
 
-// Copy optional script annotations while Janet is alive. Event identity and timing come from Session.
+// Copy optional source annotations while Janet is alive; musical data already belongs to Score.
 static Janet project(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 4);
+	janet_fixarity(argc, 1);
 	ScoreView *view = projection;
 	if (!view || view->nnodes || !current->sealed)
-		janet_panic("Score view requires a sealed session and an empty destination");
+		janet_panic("Score view requires a sealed score and an empty destination");
 	if (score_view_init(view, current))
 		janet_panic("Cannot allocate score view");
-	for (int i = 0; i < view->nnodes; ++i) {
-		Janet product = janet_get(argv[1], janet_wrap_integer(i));
-		if (janet_checktype(product, JANET_NIL))
-			continue;
-		ScoreNode *node = view->nodes + i;
-		Janet encoded = janet_get(argv[3], janet_wrap_integer(i));
-		node->product = copy_string(janet_getcstring(&encoded, 0));
-		if (!node->product)
-			janet_panic("Cannot copy product metadata");
-		Janet parameters = janet_get(argv[2], janet_wrap_integer(i));
-		JanetView controls = janet_getindexed(&parameters, 0);
-		if (controls.len != current->nodes[i].dsp[0].config.nparams)
-			janet_panic("Plugin parameter metadata changed during preparation");
-		for (int j = 0; j < controls.len; ++j) {
-			Janet p = controls.items[j], low = janet_get(p, janet_ckeywordv("min")),
-			      high = janet_get(p, janet_ckeywordv("max"));
-			node->minimum[j] = janet_getnumber(&low, 0);
-			node->maximum[j] = janet_getnumber(&high, 0);
-			if (janet_truthy(janet_get(p, janet_ckeywordv("integer"))))
-				node->integers |= UINT64_C(1) << j;
-		}
-		Janet name = janet_get(product, janet_ckeywordv("name"));
-		if (janet_checktype(name, JANET_STRING)) {
-			char *copy = copy_string(janet_getcstring(&name, 0));
-			if (!copy)
-				janet_panic("Cannot copy plugin name");
-			free(view->nodes[i].name);
-			view->nodes[i].name = copy;
-		}
-	}
 	Janet locations = janet_get(argv[0], janet_ckeywordv("locations"));
 	JanetView origins = janet_getindexed(&locations, 0);
 	view->origins = calloc(origins.len, sizeof(ScoreOrigin));
@@ -259,8 +227,8 @@ static Janet project(int32_t argc, Janet *argv) {
 		Janet record = emitted.items[i], ids = janet_getindex(record, 2);
 		JanetView refs = janet_getindexed(&ids, 0);
 		int id = handle(janet_getindex(record, 4));
-		double order = number(janet_getindex(record, 5), 0, view->nodes[id].raw_count);
-		if (order >= view->nodes[id].raw_count || order != floor(order))
+		double order = number(janet_getindex(record, 5), 0, view->nodes[id].count);
+		if (order >= view->nodes[id].count || order != floor(order))
 			janet_panic("Invalid source event order");
 		ScoreEvent *event = view->nodes[id].events + (size_t)order;
 		event->first_origin = offset;
@@ -286,82 +254,59 @@ static Janet end(int32_t argc, Janet *argv) {
 	if (!janet_keyeq(fmt, "float") && !janet_keyeq(fmt, "pcm16"))
 		janet_panic("format must be :float or :pcm16");
 	float normalize = number(option(opts, "normalize", janet_wrap_number(0)), 0, 1);
-	checked(session_end(current, sample(janet_getnumber(argv, 0))));
+	checked(score_end(current, sample(janet_getnumber(argv, 0))));
 	*output = (Output){janet_keyeq(fmt, "pcm16"), normalize};
 	return janet_wrap_nil();
 }
 
 static Janet sequence_begin(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 2);
-	if (current->sequence || current->sealed)
+	if (current->live || current->sealed)
 		janet_panic("score already declared");
-	for (int i = 0; i < current->nnodes; ++i)
-		if (current->nodes[i].count)
-			janet_panic("use one score scheduling API per program");
-	Sequence *s = calloc(1, sizeof(*s));
-	if (!s)
-		janet_panic("out of memory");
-	current->sequence = s;
-	s->bpm = number(argv[0], 0.001, 100000);
-	s->quantum = number(argv[1], 0.001, 100000);
+	current->live = 1;
+	current->sequence.bpm = number(argv[0], 0.001, 100000);
+	current->sequence.quantum = number(argv[1], 0.001, 100000);
 	return janet_wrap_nil();
 }
 
 static Janet cue(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 8);
-	if (!current->sequence || current->sealed)
-		janet_panic("cue requires an open sequence");
 	Cue c = {.node = handle(argv[0]),
 	    .start = number(argv[1], -1e9, 1e9),
 	    .end = number(argv[2], -1e9, 1e9),
 	    .period = number(argv[3], 0, 1e9),
 	    .parameter = janet_getinteger(argv, 4),
 	    .stream = janet_getinteger(argv, 7)};
-	if (c.stream < 0 || c.stream >= 65536)
-		janet_panic("invalid event source");
 	if (c.parameter < 0) {
 		c.pitch = janet_getinteger(argv, 5);
 		c.velocity = janet_getinteger(argv, 6);
-		if (c.parameter != -1 || c.pitch < 0 || c.pitch > 127 || c.velocity < 1 || c.velocity > 127 ||
-		    current->nodes[c.node].dsp[0].config.midi < 0 || !current->nodes[c.node].path || c.end <= c.start)
-			janet_panic("invalid note cue");
-	} else {
-		Node *n = current->nodes + c.node;
-		const PluginConfig *config = &n->dsp[0].config;
-		if (c.parameter >= (n->path ? config->nparams : 2) ||
-		    (n->path && (config->outputs & (UINT64_C(1) << c.parameter))))
-			janet_panic("invalid parameter cue");
+	} else
 		c.value = number(argv[5], -FLT_MAX, FLT_MAX);
-		if (!n->path && (c.value < (c.parameter ? -1 : 0) || c.value > (c.parameter ? 1 : 4)))
-			janet_panic("invalid mixer parameter");
-		if (c.end != c.start)
-			janet_panic("parameter must be a point event");
-	}
-	if (sequence_add(current->sequence, c))
-		janet_panic("invalid cue or sequence event limit exceeded");
+	checked(score_cue(current, c));
 	return janet_wrap_nil();
 }
 
 static Janet seal(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 1);
-	if (!current->sequence)
+	if (!current->live)
 		janet_panic("missing sequence");
 	uint64_t frames = janet_checktype(argv[0], JANET_NIL) ? UINT64_MAX : sample(janet_getnumber(argv, 0));
-	checked(session_end(current, frames));
+	checked(score_end(current, frames));
 	return janet_wrap_nil();
 }
 
-int prepare_score(Session *s, Output *cfg, const char *path, const char *source, char **diagnostics, ScoreView *view) {
+int prepare_score(Score *s, Output *cfg, const char *path, const char *source, char **diagnostics, ScoreView *view) {
 	if (diagnostics)
 		*diagnostics = NULL;
 	if (view)
 		*view = (ScoreView){0};
-	if (s->nnodes || s->sealed || !session_rate(s)) {
-		s->error = "score requires an empty session and a valid sample rate";
+	if (s->nnodes || s->sealed || !score_rate(s)) {
+		s->error = "score requires an empty description and a valid sample rate";
 		return 1;
 	}
 	const JanetReg api[] = {{"sequence", sequence_begin, NULL}, {"cue", cue, NULL}, {"seal", seal, NULL},
-	    {"key", identity, NULL}, {"plugin", plugin, "(native/plugin binary layout defaults) -> plugin handle"},
+	    {"key", identity, NULL},
+	    {"plugin", plugin, "(native/plugin binary layout defaults bundle json) -> plugin handle"},
 	    {"track", track, "(native/track source &opt {:effects [...] :gain 1 :pan 0}) -> mixer handle"},
 	    {"master", master, "(native/master signal &opt options) -> mixer handle"},
 	    {"through", through, "(native/through signal effect) -> effect handle"},
@@ -410,10 +355,7 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 		result = 1;
 	}
 	if (!result && view)
-		result = janet_dostring(env,
-		    "(native/project (host/trace-report) daw/products daw/nodes "
-		    "(tabseq [[id p] :pairs daw/products] id (string (json/encode p))))",
-		    "<prepare-score>", NULL);
+		result = janet_dostring(env, "(native/project (host/trace-report))", "<prepare-score>", NULL);
 	if (result && view)
 		score_view_free(view);
 	if (errors && errors->count)
@@ -428,5 +370,12 @@ int prepare_score(Session *s, Output *cfg, const char *path, const char *source,
 }
 
 int load_score(Session *s, Output *cfg, const char *path) {
-	return prepare_score(s, cfg, path, NULL, NULL, NULL);
+	Score score = {.sample_rate = s->sample_rate};
+	int result = prepare_score(&score, cfg, path, NULL, NULL, NULL);
+	if (result)
+		s->error = score.error;
+	else
+		result = session_activate(s, &score);
+	score_free(&score);
+	return result;
 }

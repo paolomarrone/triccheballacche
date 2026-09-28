@@ -60,43 +60,75 @@ void script_config(Janet layout, Janet defaults, PluginConfig *config) {
 	}
 }
 
+void script_info(Janet bundle, Janet encoded, PluginInfo *info) {
+	Janet product = janet_get(bundle, janet_ckeywordv("product"));
+	Janet name = janet_get(product, janet_ckeywordv("name"));
+	info->name = copy_string(janet_checktype(name, JANET_STRING) ? (const char *)janet_unwrap_string(name) : "Perone");
+	info->product = copy_string(janet_getcstring(&encoded, 0));
+	if (!info->name || !info->product)
+		janet_panic("out of memory");
+	Janet metadata = janet_get(product, janet_ckeywordv("ui"));
+	if (!janet_checktype(metadata, JANET_NIL)) {
+		Janet path = janet_get(bundle, janet_ckeywordv("ui-binary"));
+		info->ui = copy_string(janet_getcstring(&path, 0));
+		if (!info->ui)
+			janet_panic("out of memory");
+		info->resizable = janet_truthy(janet_get(metadata, janet_ckeywordv("userResizable")));
+	}
+	Janet parameters = janet_get(bundle, janet_ckeywordv("parameters"));
+	JanetView controls = janet_getindexed(&parameters, 0);
+	if (controls.len > MAX_PARAMS)
+		janet_panic("too many parameters");
+	for (int i = 0; i < controls.len; ++i) {
+		Janet p = controls.items[i], low = janet_get(p, janet_ckeywordv("min")),
+		      high = janet_get(p, janet_ckeywordv("max"));
+		info->minimum[i] = janet_getnumber(&low, 0);
+		info->maximum[i] = janet_getnumber(&high, 0);
+		if (janet_truthy(janet_get(p, janet_ckeywordv("integer"))))
+			info->integers |= UINT64_C(1) << i;
+	}
+}
+
 typedef struct {
 	char **binary;
 	PluginConfig *config;
+	PluginInfo *info;
 } Bundle;
 
 static Janet config_native(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 4);
+	janet_fixarity(argc, 6);
 	Bundle *bundle = janet_getpointer(argv, 0);
 	script_config(argv[2], argv[3], bundle->config);
+	if (bundle->info)
+		script_info(argv[4], argv[5], bundle->info);
 	*bundle->binary = copy_string(janet_getcstring(argv, 1));
 	if (!*bundle->binary)
 		janet_panic("out of memory");
 	return janet_wrap_nil();
 }
 
-int read_bundle(const char *path, char **binary, PluginConfig *config) {
+int read_bundle(const char *path, char **binary, PluginConfig *config, PluginInfo *info) {
 	*binary = NULL;
 	JanetTable *env = script_env();
 	if (!env)
 		return -1;
-	Bundle bundle = {binary, config};
+	Bundle bundle = {binary, config, info};
 	janet_def(env, "host/config", janet_wrap_cfunction(config_native), NULL);
 	janet_def(env, "host/destination", janet_wrap_pointer(&bundle), NULL);
 	janet_def(env, "host/bundle", janet_cstringv(path), NULL);
 	int result = janet_dostring(env,
-	    "(def p (perone/read host/bundle)) (host/config host/destination (p :binary) (p :layout) (p :defaults))", path,
-	    NULL);
+	    "(def p (perone/read host/bundle)) (host/config host/destination (p :binary) (p :layout) (p :defaults) p (string (json/encode (p :product))))",
+	    path, NULL);
 	janet_deinit();
 	return result ? -1 : 0;
 }
 
-int open_bundle(Engine *e, const char *path, unsigned sample_rate) {
+int open_bundle(Plugin *e, const char *path, unsigned sample_rate) {
 	char *binary;
 	PluginConfig config;
-	if (read_bundle(path, &binary, &config))
+	if (read_bundle(path, &binary, &config, NULL))
 		return -1;
-	int result = open_engine(e, binary, &config, sample_rate);
+	int result = open_plugin(e, binary, &config, sample_rate);
 	free(binary);
 	return result;
 }

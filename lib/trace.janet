@@ -121,7 +121,7 @@
           (array/push emitted
             [(+ start (* a (/ 60 bpm))) (+ start (* b (/ 60 bpm)))
              (((trace :events) i) 2) (command 0) (command 1) (orders (command 1))])
-          (update orders (command 1) + (if (= (command 0) :note) 2 1)))
+          (update orders (command 1) + 1))
         result)))
 
   (replace 'daw/score
@@ -131,8 +131,12 @@
         (def trace (provenance pattern source))
         (def sources (streams pattern))
         (def traces (streams trace))
-        (def result (score pattern options))
         (def orders @{})
+        (each stream sources
+          (each [_ _ command] (stream :events)
+            (def node (command 1))
+            (unless (orders node) (put orders node (native/event-count node)))))
+        (def result (score pattern options))
         (eachp [si stream] sources
           (eachp [ei [a b command]] (stream :events)
             (def node (command 1))

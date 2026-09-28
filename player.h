@@ -20,7 +20,7 @@ int player_status(Player *player);
 // Rendered seconds, published by the audio callback; device latency is not subtracted.
 double player_time(Player *player);
 // Publish a revision using the sample clock, with a 100 ms preparation margin.
-int player_update(Player *player, Session *description, unsigned revision, int *mapping);
+int player_update(Player *player, Score *description, unsigned revision, int *mapping);
 // Silences later callbacks; player_free waits for the device to stop.
 void player_stop(Player *player);
 // Pause the device and wait for callbacks to finish. Web callers also await AudioContext.suspend().

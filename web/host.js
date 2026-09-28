@@ -36,6 +36,6 @@ export function renderScore(host, path, sampleRate) {
         if (normalize && peak) for (let i = 0; i < audio.length; i++) audio[i] = (audio[i] / peak) * normalize;
         return audio;
     } finally {
-        host._score_free(score);
+        host._web_score_free(score);
     }
 }

@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+enum { MAX_CUES = 1048576 };
+
 // One finite event template. A positive period repeats from occurrence zero.
 // Times are seconds; conversion to samples always uses the absolute occurrence.
 typedef struct {
@@ -16,27 +18,33 @@ typedef struct {
 	size_t cue;
 } SequenceCursor;
 
-typedef struct Sequence {
+typedef struct {
 	Cue *cues;
-	SequenceCursor *heap;
-	size_t count, capacity, used;
+	size_t count, capacity;
 	double bpm, quantum;
-	unsigned rate, revision;
-	uint64_t at;
-	float *defaults; // Declared node parameters, separate from the audio-owned current values.
 } Sequence;
 
+typedef struct {
+	const Sequence *sequence;
+	SequenceCursor *heap;
+	size_t used;
+	unsigned rate;
+} Sequencer;
+
 int sequence_add(Sequence *s, Cue cue);
-int sequence_prepare(Sequence *s, unsigned rate, uint64_t from);
-void sequence_seek(Sequence *s, uint64_t from);
-// Iterate the last occurrence of each template strictly before from, in playback order.
-// Use shift (no repetition), then seek to resume the normal forward iterator.
-void sequence_history(Sequence *s, uint64_t from);
-void sequence_shift(Sequence *s);
-uint64_t sequence_next(const Sequence *s);
-uint64_t sequence_boundary(const Sequence *s, uint64_t after);
-// Peek/pop preserve parameter-before-note and source insertion order at the same sample.
-const Cue *sequence_peek(const Sequence *s, uint64_t *end);
-void sequence_pop(Sequence *s);
+int sequence_valid(const Sequence *s, unsigned rate);
 void sequence_free(Sequence *s);
+// Prepare all cursor storage on the control thread; playback never allocates.
+int sequencer_init(Sequencer *s, const Sequence *sequence, unsigned rate, uint64_t from);
+void sequencer_seek(Sequencer *s, uint64_t from);
+// Last occurrence of each template strictly before from, in playback order.
+// Use shift (no repetition), then seek to resume forward iteration.
+void sequencer_history(Sequencer *s, uint64_t from);
+void sequencer_shift(Sequencer *s);
+uint64_t sequencer_next(const Sequencer *s);
+uint64_t sequence_boundary(const Sequence *s, unsigned rate, uint64_t after);
+// Parameters precede notes at a shared sample, followed by source insertion order.
+const Cue *sequencer_peek(const Sequencer *s, uint64_t *end);
+void sequencer_pop(Sequencer *s);
+void sequencer_free(Sequencer *s);
 #endif

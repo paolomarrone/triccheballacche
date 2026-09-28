@@ -1,4 +1,5 @@
-#include "../posix/ui.c"
+#include "../posix/ui_x11.c"
+#include "script.h"
 #include <assert.h>
 #include <time.h>
 
@@ -23,13 +24,13 @@ static void test_close_callbacks(void) {
 	const perone_ui_api api = {.free = end_gesture};
 	unsigned char data[MESSAGE_SLOTS];
 	DSP dsp = {.to_dsp = {.limit = 1, .data = data}};
-	Node node = {.dsp = {{.dsp = &dsp, .config = {.nparams = 1}}}};
+	Session session = {.nnodes = 1};
+	session.nodes[0].dsp[0] = (Plugin){.dsp = &dsp, .config = {.nparams = 1}};
 	UI *ui = calloc(1, sizeof(*ui));
 	assert(ui);
-	ui->node = &node;
+	ui->session = &session;
 	ui->instance = ui;
 	ui->api = &api;
-	ui->high[0] = 1;
 	ui_close(ui);
 	assert(!atomic_load(&dsp.pending));
 	puts("OK: callbacks emitted during native UI destruction cannot edit the DSP");
@@ -37,10 +38,12 @@ static void test_close_callbacks(void) {
 
 static void test_delayed_widget(void) {
 	DSP dsp = {0};
-	Node node = {0};
-	node.dsp[0].dsp = &dsp;
+	Revision revision = {0};
+	revision.score.nodes[0].info.resizable = 1;
+	Session session = {.active = &revision};
+	session.nodes[0].dsp[0].dsp = &dsp;
 	const perone_ui_api api = {.idle = idle};
-	UI ui = {.node = &node, .api = &api, .resizable = 1, .width = 100, .height = 100};
+	UI ui = {.session = &session, .api = &api, .width = 100, .height = 100};
 	ui.display = XOpenDisplay(NULL);
 	Display *plugin = XOpenDisplay(NULL);
 	assert(ui.display && plugin);
@@ -89,14 +92,27 @@ static void mouse(UI *ui, int type, int x, int y) {
 }
 
 static void test_view(const char *bundle, int tibia) {
-	Node node = {0};
+	Score score = {.sample_rate = 48000};
+	Session session = {0};
+	char *binary;
 	PluginConfig config;
-	assert(!read_bundle(bundle, &node.path, &config));
-	assert(!open_engine(node.dsp, node.path, &config, 48000));
-	// A mono effect on stereo has two DSPs but one editor.
-	assert(!open_engine(node.dsp + 1, node.path, &config, 48000));
+	PluginInfo info = {0};
+	assert(!read_bundle(bundle, &binary, &config, &info));
+	int id = score_plugin(&score, binary, &config);
+	assert(id == 0);
+	score.nodes[id].info = info;
+	// Exercise an effect with two independent instances and one UI, without an input device.
+	NodeState *node = session.nodes;
+	assert(!open_plugin(node->dsp, binary, &config, 48000));
+	assert(!open_plugin(node->dsp + 1, binary, &config, 48000));
+	free(binary);
+	Revision *revision = calloc(1, sizeof(*revision));
+	assert(revision);
+	revision->score = score;
+	session.active = revision;
+	session.nnodes = 1;
 	UI *ui;
-	assert(!ui_open(&ui, &node) && ui);
+	assert(!ui_open(&ui, &session, 0) && ui);
 	XUnmapWindow(ui->display, ui->parent);
 	pump(ui);
 	Window root, parent, *children;
@@ -107,12 +123,12 @@ static void test_view(const char *bundle, int tibia) {
 	assert(parent == ui->parent);
 	float value;
 	for (int i = 0; i < config.nparams; ++i)
-		assert(read_dsp(node.dsp[0].dsp, i, &value));
+		assert(read_dsp(node->dsp[0].dsp, i, &value));
 	float input[BLOCK], before[BLOCK], after[BLOCK], right[BLOCK];
 	for (int i = 0; i < BLOCK; ++i)
 		input[i] = i % 2 ? .1f : -.1f;
-	render(node.dsp, before, input, BLOCK);
-	render(node.dsp + 1, right, input, BLOCK);
+	render_plugin(node->dsp, before, input, BLOCK);
+	render_plugin(node->dsp + 1, right, input, BLOCK);
 	pump(ui);
 	if (tibia) {
 		mouse(ui, ButtonPress, 300, 65);
@@ -122,12 +138,12 @@ static void test_view(const char *bundle, int tibia) {
 		mouse(ui, MotionNotify, 68, 205);
 		mouse(ui, ButtonRelease, 68, 205);
 	}
-	DSP *dsp = node.dsp[0].dsp;
+	DSP *dsp = node->dsp[0].dsp;
 	assert(!read_dsp(dsp, 0, &value));
 	assert(atomic_load(&dsp->values[0]) == config.defaults[0]); // The UI has not called the DSP.
-	sync_dsp(dsp, node.dsp[1].dsp);
-	render(node.dsp, after, input, BLOCK);
-	render(node.dsp + 1, right, input, BLOCK);
+	sync_dsp(dsp, node->dsp[1].dsp);
+	render_plugin(node->dsp, after, input, BLOCK);
+	render_plugin(node->dsp + 1, right, input, BLOCK);
 	assert(!memcmp(after, right, sizeof(after)));
 	assert(memcmp(after, before, sizeof(after)));
 	assert(atomic_load(&dsp->values[0]) < config.defaults[0]);
@@ -136,36 +152,34 @@ static void test_view(const char *bundle, int tibia) {
 	int output = tibia ? 5 : 4;
 	assert(ui->shown[output] == dsp->api->get_parameter(dsp->instance, output));
 	// An edit arriving between L and R must wait for the next shared block boundary.
-	render(node.dsp, after, input, BLOCK);
+	render_plugin(node->dsp, after, input, BLOCK);
 	ui->callbacks.set_parameter(ui, 0, config.defaults[0]);
-	render(node.dsp + 1, right, input, BLOCK);
+	render_plugin(node->dsp + 1, right, input, BLOCK);
 	assert(!memcmp(after, right, sizeof(after)) && !read_dsp(dsp, 0, &value));
-	sync_dsp(dsp, node.dsp[1].dsp);
+	sync_dsp(dsp, node->dsp[1].dsp);
 	assert(atomic_load(&dsp->values[0]) == config.defaults[0]);
-	assert(atomic_load(&node.dsp[1].dsp->values[0]) == config.defaults[0]);
+	assert(atomic_load(&node->dsp[1].dsp->values[0]) == config.defaults[0]);
 	pump(ui);
 	// A scheduled parameter reaches both the DSP and UI at its sample boundary, without a gesture.
-	Event automation = {.time = node.dsp[0].time + 31, .parameter = 0, .value = tibia ? -12 : 60};
-	for (int i = 0; i < 2; ++i) {
-		node.dsp[i].events = &automation;
-		node.dsp[i].count = 1;
-		render(node.dsp + i, after, input, 31);
-	}
+	float automation = tibia ? -12 : 60;
+	for (int i = 0; i < 2; ++i)
+		render_plugin(node->dsp + i, after, input, 31);
 	pump(ui);
 	assert(ui->shown[0] == config.defaults[0]);
 	for (int i = 0; i < 2; ++i) {
-		render(node.dsp + i, after, input, 1);
-		assert(atomic_load(&node.dsp[i].dsp->values[0]) == automation.value);
-		assert(read_dsp(node.dsp[i].dsp, 0, &value) && value == automation.value);
+		set_dsp(node->dsp[i].dsp, 0, automation);
+		render_plugin(node->dsp + i, after, input, 1);
+		assert(atomic_load(&node->dsp[i].dsp->values[0]) == automation);
+		assert(read_dsp(node->dsp[i].dsp, 0, &value) && value == automation);
 	}
 	pump(ui);
-	assert(ui->shown[0] == automation.value);
+	assert(ui->shown[0] == automation);
 	if (tibia) {
 		mouse(ui, ButtonPress, 510, 438);
 		mouse(ui, ButtonRelease, 510, 438);
 		assert(atomic_load(&dsp->to_dsp.write) - atomic_load(&dsp->to_dsp.read) == 1);
-		sync_dsp(dsp, node.dsp[1].dsp);
-		render(node.dsp, after, input, BLOCK);
+		sync_dsp(dsp, node->dsp[1].dsp);
+		render_plugin(node->dsp, after, input, BLOCK);
 		// The GUI's reset message reaches the DSP, whose reply starts counting again.
 		char data[MAX_MESSAGE + 1];
 		size_t size;
@@ -194,9 +208,7 @@ static void test_view(const char *bundle, int tibia) {
 	assert(ui_poll(ui) == 1);
 	ui_close(ui);
 	assert(!atomic_load(&dsp->viewing));
-	close_engine(node.dsp);
-	close_engine(node.dsp + 1);
-	free(node.path);
+	session_free(&session);
 	printf("OK: %s: original UI gestures, audio, stereo copies, automation feedback, resize and close\n", bundle);
 }
 

@@ -141,27 +141,17 @@ static void mock_param(void *p, size_t index, float v) {
 	*(float *)p = v;
 }
 
-static void mock_midi(void *p, size_t index, const uint8_t *v) {
-	assert(index == 7);
-	*(float *)p = v[1];
-}
-
-static void test_scheduler(void) {
-	float value = 0, out[8195] = {123};
+static void test_mono_adapter(void) {
+	float value = 3, out[8195] = {123};
 	out[8194] = 123;
-	const perone_api api = {.process = mock_process, .set_parameter = mock_param, .midi_msg_in = mock_midi};
+	const perone_api api = {.process = mock_process};
 	DSP dsp = {.api = &api, .instance = &value};
-	PluginConfig config = {.input = 1, .inputs = 1, .output = 1, .midi = 7};
-	const Event events[] = {
-	    {0, 0, 1, {0}, 0}, {4, 0, 2, {0}, 0}, {4, -1, 0, {0x90, 3, 100}, 0}, {8, 0, 4, {0}, 0}, {8192, 0, 5, {0}, 0}};
-	Engine e = {.dsp = &dsp, .config = config, .events = events, .count = 5};
-	render(&e, out + 1, NULL, 8);
-	assert(e.next == 3 && e.time == 8);
-	render(&e, out + 9, NULL, 8185);
+	Plugin e = {.dsp = &dsp, .config = {.input = 1, .inputs = 1, .output = 1}};
+	render_plugin(&e, out + 1, NULL, 8193);
 	for (int i = 0; i < 8193; ++i)
-		assert(out[i + 1] == (i < 4 ? 1 : i < 8 ? 3 : i < 8192 ? 4 : 5));
-	assert(out[0] == 123 && out[8194] == 123 && e.time == 8193 && e.next == 5);
-	puts("OK: sample timing, simultaneous events, callback boundaries, large buffers");
+		assert(out[i + 1] == 3);
+	assert(out[0] == 123 && out[8194] == 123);
+	puts("OK: mono adapter, silent input, large buffers and output bounds");
 }
 
 static void stereo_process(void *p, const float **in, float **out, size_t n) {
@@ -171,10 +161,10 @@ static void stereo_process(void *p, const float **in, float **out, size_t n) {
 	}
 }
 
-static void test_stereo_scheduler(void) {
+static void test_stereo_adapter(void) {
 	enum { FRAMES = 8193 };
 
-	float value = 0, input[FRAMES * 2], out[FRAMES * 2 + 2], split[FRAMES * 2];
+	float value = 4, input[FRAMES * 2], out[FRAMES * 2 + 2], split[FRAMES * 2];
 	for (int i = 0; i < FRAMES; ++i) {
 		input[2 * i] = i;
 		input[2 * i + 1] = -2 * i;
@@ -182,26 +172,24 @@ static void test_stereo_scheduler(void) {
 	const perone_api api = {.process = stereo_process, .set_parameter = mock_param};
 	DSP dsp = {.api = &api, .instance = &value};
 	PluginConfig config = {.input = 2, .inputs = 2, .output = 2, .midi = -1};
-	const Event events[] = {{0, 0, 1, {0}, 0}, {7, 0, 2, {0}, 0}, {512, 0, 3, {0}, 0}, {8192, 0, 4, {0}, 0}};
-	Engine e = {.dsp = &dsp, .config = config, .events = events, .count = 4};
+	Plugin e = {.dsp = &dsp, .config = config};
 	out[0] = out[FRAMES * 2 + 1] = 123;
-	render(&e, out + 1, input, FRAMES);
+	render_plugin(&e, out + 1, input, FRAMES);
 	assert(out[0] == 123 && out[FRAMES * 2 + 1] == 123);
-	e.next = e.time = 0;
 	for (size_t i = 0; i < FRAMES;) {
 		size_t n = FRAMES - i < 43 ? FRAMES - i : 43;
-		render(&e, split + 2 * i, input + 2 * i, n);
+		render_plugin(&e, split + 2 * i, input + 2 * i, n);
 		i += n;
 	}
 	for (int i = 0; i < FRAMES; ++i) {
-		float v = i < 7 ? 1 : i < 512 ? 2 : i < 8192 ? 3 : 4;
+		float v = 4;
 		assert(out[2 * i + 1] == i + v && out[2 * i + 2] == -2 * i - v);
 		assert(split[2 * i] == out[2 * i + 1] && split[2 * i + 1] == out[2 * i + 2]);
 	}
-	render(&e, split, NULL, 3);
+	render_plugin(&e, split, NULL, 3);
 	for (int i = 0; i < 3; ++i)
 		assert(split[2 * i] == 4 && split[2 * i + 1] == -4);
-	puts("OK: stereo channel separation, event offsets, large buffers, block invariance and silent input");
+	puts("OK: stereo channel separation, large buffers, block invariance and silent input");
 }
 
 static void disconnected_process(void *p, const float **in, float **out, size_t n) {
@@ -214,10 +202,10 @@ static void test_disconnected_inputs(void) {
 	const perone_api api = {.process = disconnected_process};
 	DSP dsp = {.api = &api, .instance = &value};
 	PluginConfig config = {.input = 2, .output = 2, .inputs = 4, .input_offset = 1, .midi = -1};
-	Engine e = {.dsp = &dsp, .config = config};
-	render(&e, out, in, 2);
+	Plugin e = {.dsp = &dsp, .config = config};
+	render_plugin(&e, out, in, 2);
 	assert(out[0] == 3 && out[1] == 2 && out[2] == 5 && out[3] == 4);
-	render(&e, out, NULL, 2);
+	render_plugin(&e, out, NULL, 2);
 	assert(out[0] == 1 && out[1] == -1);
 	puts("OK: disconnected optional inputs preserve flattened bus positions");
 }
@@ -227,32 +215,32 @@ static void test_lifecycle(void) {
 	const char *stages[] = {"alloc", "init", "memory", "abi", "function"};
 	for (size_t i = 0; i < sizeof(stages) / sizeof(*stages); ++i) {
 		assert(!setenv("PERONE_TEST_FAIL", stages[i], 1));
-		Engine e = {0};
+		Plugin e = {0};
 		assert(open_bundle(&e, path, DEFAULT_SAMPLE_RATE) < 0);
 		assert(!e.dsp);
-		close_engine(&e);
+		close_plugin(&e);
 	}
 	assert(!unsetenv("PERONE_TEST_FAIL"));
-	Engine e = {0};
+	Plugin e = {0};
 	assert(!open_bundle(&e, path, DEFAULT_SAMPLE_RATE));
 	DSP *original = e.dsp;
 	assert(open_bundle(&e, path, DEFAULT_SAMPLE_RATE) < 0 && e.dsp == original);
 	assert(e.config.nparams == 3 && e.config.outputs == 1);
 	float out[6];
-	render(&e, out, NULL, 3);
+	render_plugin(&e, out, NULL, 3);
 	assert(out[0] == .5f && out[1] == -.5f);
 	assert(e.dsp->api->get_parameter(e.dsp->instance, 0) == .5f);
-	close_engine(&e);
+	close_plugin(&e);
 	puts("OK: Perone allocation/init/memory/ABI failures, cleanup, callbacks and output-first defaults");
 }
 
 static void test_notifications(void) {
-	Engine e = {0};
+	Plugin e = {0};
 	PluginConfig config;
 	char *binary;
-	assert(!read_bundle("build/test/fixture.perone", &binary, &config));
+	assert(!read_bundle("build/test/fixture.perone", &binary, &config, NULL));
 	config.to_ui = config.to_dsp = 16;
-	assert(!open_engine(&e, binary, &config, DEFAULT_SAMPLE_RATE));
+	assert(!open_plugin(&e, binary, &config, DEFAULT_SAMPLE_RATE));
 	free(binary);
 	DSP *dsp = e.dsp;
 	unsigned char sent = 7, received[16];
@@ -262,7 +250,7 @@ static void test_notifications(void) {
 	for (int i = 0; i <= MESSAGE_SLOTS; ++i) {
 		assert(!send_dsp(dsp, 1, &sent));
 		sync_dsp(dsp, NULL);
-		render(&e, audio, NULL, 1);
+		render_plugin(&e, audio, NULL, 1);
 	}
 	assert(receive_dsp(dsp, &size, received) == -1);
 	watch_dsp(dsp, 0);
@@ -270,79 +258,80 @@ static void test_notifications(void) {
 	assert(!receive_dsp(dsp, &size, received));
 	assert(!send_dsp(dsp, 1, &sent));
 	sync_dsp(dsp, NULL);
-	render(&e, audio, NULL, 1);
+	render_plugin(&e, audio, NULL, 1);
 	assert(receive_dsp(dsp, &size, received) == 1 && size == 1 && received[0] == sent);
 	// Detaching discards notifications, without cancelling edits already accepted by the DSP.
 	edit_dsp(dsp, 1, .25f);
 	assert(!send_dsp(dsp, 1, &sent));
 	watch_dsp(dsp, 0);
 	sync_dsp(dsp, NULL);
-	render(&e, audio, NULL, 1);
+	render_plugin(&e, audio, NULL, 1);
 	watch_dsp(dsp, 1);
 	assert(!receive_dsp(dsp, &size, received));
 	assert(read_dsp(dsp, 1, &value) && value == .25f && audio[0] == .25f);
 	assert(!send_dsp(dsp, 1, &sent));
 	sync_dsp(dsp, NULL);
-	render(&e, audio, NULL, 1); // Leave a notification and another input queued across rewind.
+	render_plugin(&e, audio, NULL, 1); // Leave a notification and another input queued across rewind.
 	assert(!send_dsp(dsp, 1, &sent));
 	edit_dsp(dsp, 1, .75f);
 	set_dsp(dsp, 1, .5f);
 	reset_dsp(dsp);
 	sync_dsp(dsp, NULL);
-	render(&e, audio, NULL, 1);
+	render_plugin(&e, audio, NULL, 1);
 	assert(!receive_dsp(dsp, &size, received));
 	assert(read_dsp(dsp, 1, &value) && value == .5f && audio[0] == .5f);
-	close_engine(&e);
+	close_plugin(&e);
 	puts("OK: DSP notifications, overflow recovery, fresh attachment and pending edits after detach");
 }
 
 static void test_modules(void) {
 	Modules modules = {0};
-	Engine first = {.modules = &modules}, second = {.modules = &modules};
+	Plugin first = {.modules = &modules}, second = {.modules = &modules};
 	assert(!open_bundle(&first, "build/test/fixture.perone", DEFAULT_SAMPLE_RATE));
 	Module *module = first.dsp->module;
 	assert(!open_bundle(&second, "./build/test/../test/fixture.perone", DEFAULT_SAMPLE_RATE));
 	assert(second.dsp->module == module && second.dsp->instance != first.dsp->instance);
-	close_engine(&first);
-	close_engine(&second);
+	close_plugin(&first);
+	close_plugin(&second);
 	first.modules = &modules;
 	assert(!open_bundle(&first, "build/test/fixture.perone", DEFAULT_SAMPLE_RATE));
 	assert(first.dsp->module == module); // Cache outlives every instance.
 	modules_free(&modules);
 	modules_free(&modules);
 	float out[2];
-	render(&first, out, NULL, 1); // An instance also keeps its binary alive after releasing the cache.
+	render_plugin(&first, out, NULL, 1); // An instance also keeps its binary alive after releasing the cache.
 	assert(out[0] == .5f && out[1] == -.5f);
-	close_engine(&first);
+	close_plugin(&first);
 	puts("OK: canonical module reuse, independent instances and cache/instance lifetime ordering");
 }
 
 static void test_bundle(const char *path) {
-	Engine e = {0};
+	Plugin e = {0};
 	assert(!open_bundle(&e, path, DEFAULT_SAMPLE_RATE));
 	const PluginConfig *c = &e.config;
 	float in[BLOCK * 2], out[BLOCK * 2];
-	const Event notes[] = {{0, -1, 0, {0x90, 60, 100}, 0}, {4097, -1, 0, {0x80, 60, 0}, 1}};
-	if (c->midi >= 0) {
-		e.events = notes;
-		e.count = 2;
-	}
+	if (c->midi >= 0)
+		midi_dsp(e.dsp, c->midi, (const uint8_t[]){0x90, 60, 100});
 	double energy = 0;
 	for (int pos = 0; pos < 8193;) {
+		if (pos == 4097 && c->midi >= 0)
+			midi_dsp(e.dsp, c->midi, (const uint8_t[]){0x80, 60, 0});
 		int n = 8193 - pos < BLOCK ? 8193 - pos : BLOCK;
+		if (pos < 4097 && pos + n > 4097)
+			n = 4097 - pos;
 		for (int i = 0; i < n; ++i)
 			for (int ch = 0; ch < c->input; ++ch)
 				in[i * c->input + ch] = .2f * sinf((pos + i) * (ch ? .09f : .06f));
-		render(&e, out, c->input ? in : NULL, n);
+		render_plugin(&e, out, c->input ? in : NULL, n);
 		for (int i = 0; i < n * c->output; ++i) {
 			assert(isfinite(out[i]));
 			energy += out[i] * out[i];
 		}
 		pos += n;
 	}
-	assert(energy > 0 && e.time == 8193);
+	assert(energy > 0);
 	printf("OK: %s (%d -> %d channels)\n", path, c->input, c->output);
-	close_engine(&e);
+	close_plugin(&e);
 }
 
 int main(int argc, char **argv) {
@@ -353,15 +342,15 @@ int main(int argc, char **argv) {
 	}
 	test_messages();
 	test_controls();
-	test_scheduler();
-	test_stereo_scheduler();
+	test_mono_adapter();
+	test_stereo_adapter();
 	test_disconnected_inputs();
 	test_lifecycle();
 	test_modules();
 	test_notifications();
-	Engine missing = {0};
+	Plugin missing = {0};
 	assert(open_bundle(&missing, "build/test/nonexistent.so", DEFAULT_SAMPLE_RATE) != 0);
-	close_engine(&missing);
+	close_plugin(&missing);
 	puts("All tests passed.");
 	return 0;
 }

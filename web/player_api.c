@@ -2,17 +2,17 @@
 #include "host.h"
 #include <stdio.h>
 
-Player *score_player(Score *score) {
+Player *score_player(WebScore *score) {
 	Player *p = player_new(&score->session);
 	if (!p)
 		fprintf(stderr, "Audio init: %s\n", score->session.error);
 	return p;
 }
 
-const char *player_update_score(Player *player, Score *next, unsigned revision) {
+const char *player_update_score(Player *player, WebScore *next, unsigned revision) {
 	int mapping[MAX_NODES];
-	if (player_update(player, &next->session, revision, mapping))
-		return next->session.error;
+	if (player_update(player, &next->description, revision, mapping))
+		return next->description.error;
 	if (next->view)
 		score_view_remap(next->view, mapping);
 	return NULL;

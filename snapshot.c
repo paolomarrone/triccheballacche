@@ -3,7 +3,7 @@
 #include <string.h>
 
 #define SNAPSHOT_LIMIT (256u * 1024u * 1024u)
-#define SNAPSHOT_MAGIC UINT32_C(0x54424333)
+#define SNAPSHOT_MAGIC UINT32_C(0x54424334)
 
 typedef struct {
 	unsigned char *data;
@@ -71,7 +71,7 @@ static void string(Transfer *t, char **value) {
 
 #define FIELD(t, field) bytes(t, &(field), sizeof(field))
 
-static void transfer(Transfer *t, Session *s, Output *output, ScoreView *view) {
+static void transfer(Transfer *t, Score *s, Output *output, ScoreView *view) {
 	uint32_t magic = SNAPSHOT_MAGIC;
 	FIELD(t, magic);
 	if (magic != SNAPSHOT_MAGIC) {
@@ -80,6 +80,7 @@ static void transfer(Transfer *t, Session *s, Output *output, ScoreView *view) {
 	}
 	FIELD(t, s->sample_rate);
 	FIELD(t, s->frames);
+	FIELD(t, s->live);
 	FIELD(t, *output);
 	FIELD(t, s->nnodes);
 	FIELD(t, s->ntracks);
@@ -96,41 +97,35 @@ static void transfer(Transfer *t, Session *s, Output *output, ScoreView *view) {
 		string(t, &n->path);
 		string(t, &n->name);
 		string(t, &n->key);
-		FIELD(t, n->dsp[0].config);
-		FIELD(t, n->defaults);
+		FIELD(t, n->config);
+		string(t, &n->info.name);
+		string(t, &n->info.product);
+		string(t, &n->info.ui);
+		FIELD(t, n->info.resizable);
+		FIELD(t, n->info.minimum);
+		FIELD(t, n->info.maximum);
+		FIELD(t, n->info.integers);
 		FIELD(t, n->track);
 		FIELD(t, n->ninputs);
-		FIELD(t, n->count);
 		if (n->ninputs < 0 || n->ninputs > MAX_NODES || n->track < 0 || n->track > s->ntracks) {
 			t->failed = 1;
 			return;
 		}
-		n->inputs = array(t, n->inputs, n->ninputs, sizeof(Input));
-		n->events = array(t, n->events, n->count, sizeof(Event));
+		n->inputs = array(t, n->inputs, n->ninputs, sizeof(int));
 		for (int j = 0; j < n->ninputs && !t->failed; ++j)
-			if (n->inputs[j].node < 0 || n->inputs[j].node >= s->nnodes)
+			if (n->inputs[j] < 0 || n->inputs[j] >= s->nnodes)
 				t->failed = 1;
-		if (t->reading)
-			n->capacity = n->count;
 	}
 	bytes(t, s->tracks, s->ntracks * sizeof(Track));
 	FIELD(t, s->master);
-	int sequence = s->sequence != NULL;
-	FIELD(t, sequence);
-	if (sequence) {
-		if (t->reading && !(s->sequence = calloc(1, sizeof(Sequence)))) {
-			t->failed = 1;
-			return;
-		}
-		Sequence *q = s->sequence;
-		FIELD(t, q->count);
-		FIELD(t, q->bpm);
-		FIELD(t, q->quantum);
-		void *cues = array(t, q->cues, q->count, sizeof(Cue));
-		if (t->reading) {
-			q->cues = cues;
-			q->capacity = q->count;
-		}
+	Sequence *q = &s->sequence;
+	FIELD(t, q->count);
+	FIELD(t, q->bpm);
+	FIELD(t, q->quantum);
+	void *cues = array(t, q->cues, q->count, sizeof(Cue));
+	if (t->reading) {
+		q->cues = cues;
+		q->capacity = q->count;
 	}
 	FIELD(t, view->nnodes);
 	FIELD(t, view->ntracks);
@@ -151,19 +146,18 @@ static void transfer(Transfer *t, Session *s, Output *output, ScoreView *view) {
 		FIELD(t, n->ninputs);
 		FIELD(t, n->upstream);
 		FIELD(t, n->downstream);
+		FIELD(t, n->defaults);
 		FIELD(t, n->minimum);
 		FIELD(t, n->maximum);
 		FIELD(t, n->integers);
-		FIELD(t, n->defaults);
 		FIELD(t, n->offsets);
 		string(t, &n->label);
 		string(t, &n->name);
 		string(t, &n->bundle);
 		string(t, &n->product);
 		FIELD(t, n->count);
-		FIELD(t, n->raw_count);
 		n->events = array(t, n->events, n->count, sizeof(ScoreEvent));
-		n->by_order = array(t, n->by_order, n->raw_count, sizeof(size_t));
+		n->by_order = array(t, n->by_order, n->count, sizeof(size_t));
 		n->controls = array(t, n->controls, n->offsets[MAX_PARAMS], sizeof(size_t));
 	}
 	FIELD(t, view->norigins);
@@ -201,9 +195,9 @@ static void transfer(Transfer *t, Session *s, Output *output, ScoreView *view) {
 	view->references = array(t, view->references, view->nreferences, sizeof(size_t));
 }
 
-void *score_pack(const Session *s, const Output *output, const ScoreView *view, size_t *length) {
+void *score_pack(const Score *s, const Output *output, const ScoreView *view, size_t *length) {
 	Transfer t = {0};
-	Session description = *s;
+	Score description = *s;
 	ScoreView projection = *view;
 	Output config = *output;
 	transfer(&t, &description, &config, &projection);
@@ -215,14 +209,13 @@ void *score_pack(const Session *s, const Output *output, const ScoreView *view, 
 	return t.data;
 }
 
-int score_unpack(Session *s, Output *output, ScoreView *view, const void *data, size_t length) {
+int score_unpack(Score *s, Output *output, ScoreView *view, const void *data, size_t length) {
 	Transfer t = {.data = (unsigned char *)data, .length = length, .reading = 1};
 	if (s->nnodes || view->nnodes || length > SNAPSHOT_LIMIT)
 		return -1;
-	s->describe = 1;
 	transfer(&t, s, output, view);
 	if (t.failed || t.position != length)
 		return -1;
 	s->has_output = 1;
-	return session_end(s, s->frames);
+	return score_end(s, s->frames);
 }

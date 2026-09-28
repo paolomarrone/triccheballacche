@@ -4,11 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static int by_time(const void *aa, const void *bb) {
-	const Event *a = aa, *b = bb;
-	return a->time == b->time ? (a->order > b->order) - (a->order < b->order) : a->time > b->time ? 1 : -1;
-}
-
 typedef struct {
 	const ScoreEvent *events[400];
 	size_t count;
@@ -22,12 +17,12 @@ static int collect(const ScoreEvent *event, void *context) {
 }
 
 static void automation(void) {
-	Session s = {.nnodes = 1, .sample_rate = 48000, .frames = 480000};
-	Event events[] = {{.time = 96000, .parameter = 0, .value = 2, .order = 0},
-	    {.time = 48000, .parameter = 0, .value = 1, .order = 1},
-	    {.time = 48000, .parameter = 0, .value = 1.5f, .order = 2},
-	    {.time = 24000, .parameter = 1, .value = -.5f, .order = 3}};
-	s.nodes[0] = (Node){.events = events, .count = 4, .defaults = {.25f, 0}};
+	Score s = {.nnodes = 1, .sample_rate = 48000, .frames = 480000};
+	Cue events[] = {{.start = 2, .end = 2, .parameter = 0, .value = 2},
+	    {.start = 1, .end = 1, .parameter = 0, .value = 1}, {.start = 1, .end = 1, .parameter = 0, .value = 1.5f},
+	    {.start = .5, .end = .5, .parameter = 1, .value = -.5f}};
+	s.sequence = (Sequence){.cues = events, .count = 4};
+	s.nodes[0].config = (PluginConfig){.nparams = 2, .defaults = {.25f, 0}};
 	ScoreView view;
 	ScoreAutomation out;
 	assert(!score_view_init(&view, &s) && !score_view_index(&view));
@@ -49,13 +44,13 @@ static void automation(void) {
 	score_view_free(&view);
 
 	// Dense finite changes preserve a brief spike as well as the held value in empty bins.
-	s.nodes[0].count = 1200;
-	s.nodes[0].events = calloc(1200, sizeof(Event));
-	assert(s.nodes[0].events);
+	s.sequence.count = 1200;
+	s.sequence.cues = calloc(1200, sizeof(Cue));
+	assert(s.sequence.cues);
 	for (int i = 0; i < 1200; ++i)
-		s.nodes[0].events[i] = (Event){.time = 48 * i, .parameter = 0, .value = i == 591 ? 3 : .5f, .order = i};
+		s.sequence.cues[i] = (Cue){.start = i / 1000.0, .end = i / 1000.0, .parameter = 0, .value = i == 591 ? 3 : .5f};
 	assert(!score_view_init(&view, &s) && !score_view_index(&view));
-	free(s.nodes[0].events);
+	free(s.sequence.cues);
 	assert(!score_view_automation(&view, 0, 0, 0, 4, 16, &out));
 	assert(out.dense && out.count == 17);
 	for (int i = 0; i < 16; ++i) {
@@ -71,41 +66,34 @@ int main(void) {
 	automation();
 	// Deliberately schedule out of time order, with overlapping equal pitches and nested durations.
 	// No DSP and no provenance are needed to construct or query a projection.
-	Session session = {.nnodes = 1, .ntracks = 1, .sample_rate = 48000, .sealed = 1};
-	session.nodes[0].events = calloc(700, sizeof(Event));
-	assert(session.nodes[0].events);
+	Score session = {.nnodes = 1, .ntracks = 1, .sample_rate = 48000, .sealed = 1};
+	session.sequence.cues = calloc(400, sizeof(Cue));
+	assert(session.sequence.cues);
 	ScoreEvent expected[400];
 	size_t count = 0, raw = 0;
 	for (size_t i = 0; i < 300; ++i) {
 		size_t start = ((i * 7919) % 10000), end = start + 1 + ((i * 97) % 6000);
 		expected[count++] = (ScoreEvent){
 		    .start = start / 48000.0, .end = end / 48000.0, .pitch = 60 + i % 12, .velocity = 80, .order = raw};
-		session.nodes[0].events[raw] =
-		    (Event){.time = start, .parameter = -1, .midi = {0x90, 60 + i % 12, 80}, .order = raw};
-		++raw;
-		session.nodes[0].events[raw] =
-		    (Event){.time = end, .parameter = -1, .midi = {0x80, 60 + i % 12, 0}, .order = raw};
-		++raw;
+		session.sequence.cues[raw++] = (Cue){
+		    .start = start / 48000.0, .end = end / 48000.0, .parameter = -1, .pitch = 60 + i % 12, .velocity = 80};
 	}
 	for (size_t i = 0; i < 100; ++i) {
 		size_t start = i * 99;
 		expected[count++] = (ScoreEvent){.start = start / 48000.0, .end = start / 48000.0, .pitch = -1, .order = raw};
-		session.nodes[0].events[raw] = (Event){.time = start, .parameter = 0, .order = raw};
+		session.sequence.cues[raw] = (Cue){.start = start / 48000.0, .end = start / 48000.0, .parameter = 0};
 		++raw;
 	}
-	session.nodes[0].count = raw;
+	session.sequence.count = raw;
 	session.frames = 20000;
-	qsort(session.nodes[0].events, raw, sizeof(Event), by_time);
 	ScoreView view;
 	assert(!score_view_init(&view, &session) && !score_view_index(&view));
-	free(session.nodes[0].events); // Projection must survive destruction of its source.
+	free(session.sequence.cues); // Projection must survive destruction of its source.
 	assert(view.nodes[0].count == count && !view.norigins);
 	for (size_t i = 0; i < count; ++i) {
 		const ScoreEvent *actual = score_view_find(&view, 0, expected[i].order);
 		assert(actual && actual->start == expected[i].start && actual->end == expected[i].end);
 		assert(actual->pitch == expected[i].pitch);
-		if (actual->pitch >= 0)
-			assert(!score_view_find(&view, 0, actual->order + 1));
 	}
 	for (int i = 0; i < 1000; ++i) {
 		double from = ((i * 313) % 20000) / 48000.0, to = from + (i % 51 + 1) / 1000.0;
@@ -138,6 +126,7 @@ int main(void) {
 		}
 	}
 	// Queries and indexes use absolute seconds without a song-length or canvas-size assumption.
+	view.end = 0;
 	for (size_t i = 0; i < view.nodes[0].count; ++i) {
 		view.nodes[0].events[i].start += 1e9;
 		view.nodes[0].events[i].end += 1e9;
@@ -151,5 +140,5 @@ int main(void) {
 	assert(!score_view_summary(&view, 0, NAN, 1).count);
 	score_view_free(&view);
 	assert(!view.nnodes && !view.nreferences);
-	puts("OK: projection ownership, exact note pairing, indexed overlaps/density, short source pulses and large times");
+	puts("OK: projection ownership, note durations, indexed overlaps/density, short source pulses and large times");
 }

@@ -1,4 +1,4 @@
-# Public score API: metadata stays here; native calls receive numeric configuration.
+# Public score API: Janet reads product metadata and passes owned descriptions to C.
 
 (def daw/nodes @{})
 (def daw/products @{})
@@ -39,7 +39,8 @@
   (eachp [key value] params
     (def p (daw/parameter (plugin :parameters) key))
     (put defaults (p :index) (perone/value p value)))
-  (def id (native/plugin (plugin :binary) (plugin :layout) defaults))
+  (def id (native/plugin (plugin :binary) (plugin :layout) defaults
+                        plugin (string (json/encode (plugin :product)))))
   (when named (native/key id (string id-or-path)))
   (put daw/nodes id (plugin :parameters))
   (put daw/products id (plugin :product))

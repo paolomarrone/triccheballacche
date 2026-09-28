@@ -92,7 +92,7 @@ static void device_free(ma_device *p) {
 	assert(p == device);
 	Player *player = p->pUserData;
 	Session *s = player->session;
-	assert(s->sealed && s->nnodes && s->nodes[0].dsp[0].dsp);
+	assert(s->audio && s->nnodes && s->nodes[0].dsp[0].dsp);
 	// A callback that arrives during teardown must neither render nor access freed DSPs.
 	size_t time = s->time;
 	float audio[2] = {123, 123};
@@ -229,7 +229,7 @@ static void test_lifecycle(void) {
 	assert(!load_score(&s, &output, "test/playback.janet"));
 	p = player_new(&s);
 	assert(p && !player_start(p));
-	s.nodes[s.tracks[0].mixer].values[0] = INFINITY;
+	s.nodes[session_score(&s)->tracks[0].mixer].values[0] = INFINITY;
 	float audio[256];
 	device->onData(device, audio, NULL, 128);
 	assert(player_status(p) == -1 && s.error);
@@ -249,19 +249,20 @@ static void test_lifecycle(void) {
 static void test_live_clock(void) {
 	const unsigned rates[] = {44100, 96000};
 	for (size_t i = 0; i < sizeof(rates) / sizeof(*rates); ++i) {
-		Session s = {.sample_rate = rates[i]}, next = {.sample_rate = rates[i], .describe = 1};
+		Session s = {.sample_rate = rates[i]};
+		Score next = {.sample_rate = rates[i]};
 		Output output;
 		assert(!load_score(&s, &output, "test/sequence.janet"));
-		assert(!load_score(&next, &output, "test/sequence.janet"));
+		assert(!prepare_score(&next, &output, "test/sequence.janet", NULL, NULL, NULL));
 		Player *p = player_new(&s);
 		assert(p);
 		uint64_t position = rates[i] * 165 / 100;
 		atomic_store(&p->position, position);
 		assert(!player_update(p, &next, 1, NULL));
-		assert(s.pending->at == sequence_boundary(s.sequence, position + rates[i] / 10));
+		assert(s.pending->at == sequence_boundary(&session_score(&s)->sequence, rates[i], position + rates[i] / 10));
 		player_free(p);
 		session_free(&s);
-		session_free(&next);
+		score_free(&next);
 	}
 	puts("OK: live revisions use the player's sample clock at 44.1 and 96 kHz");
 }

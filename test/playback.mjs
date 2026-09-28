@@ -17,7 +17,7 @@ function renderMix(host, path, rate) {
             position += n * 2;
         }
         return audio;
-    } finally { host._score_free(score); }
+    } finally { host._web_score_free(score); }
 }
 
 export async function testPlayback(host, reference, path, rate, replay = false) {

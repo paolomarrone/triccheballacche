@@ -28,7 +28,7 @@ static void callback(ma_device *device, void *out, const void *in, ma_uint32 fra
 }
 
 Player *player_new(Session *s) {
-	if (!s->sealed || !s->audio || s->describe) {
+	if (!s->audio) {
 		s->error = "playback requires a prepared session";
 		return NULL;
 	}
@@ -83,7 +83,7 @@ double player_time(Player *p) {
 	return (double)atomic_load(&p->position) / p->session->sample_rate;
 }
 
-int player_update(Player *p, Session *description, unsigned revision, int *mapping) {
+int player_update(Player *p, Score *description, unsigned revision, int *mapping) {
 	uint64_t earliest = atomic_load(&p->position) + p->session->sample_rate / 10;
 	return session_update(p->session, description, earliest, revision, mapping);
 }

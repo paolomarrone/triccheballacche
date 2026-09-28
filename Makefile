@@ -19,15 +19,15 @@ WEBUI ?= .deps/webui-$(WEBUI_REV)
 PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
-ENGINE_SOURCES = engine.c script.c trace.c
-SCORE_SOURCES = daw.c score_view.c score_automation.c session.c sequence.c $(ENGINE_SOURCES)
+PLUGIN_SOURCES = plugin.c script.c trace.c
+SCORE_SOURCES = score_janet.c score.c score_view.c score_automation.c session.c sequence.c $(PLUGIN_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c
-ENGINE_OBJECTS = $(addprefix build/obj/native/,engine.o posix/loader.o script.o trace.o json.o janet.o)
-SCORE_OBJECTS = $(addprefix build/obj/native/,daw.o score_view.o score_automation.o session.o sequence.o) $(ENGINE_OBJECTS)
+PLUGIN_OBJECTS = $(addprefix build/obj/native/,plugin.o posix/loader.o script.o trace.o json.o janet.o)
+SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o score_automation.o session.o sequence.o) $(PLUGIN_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host
 NATIVE_TESTS = $(addprefix build/test/,loader daw player routing score_view plugins ui view_json sequence)
-FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h tools/*.c test/*.c test/perone/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
+FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h tools/*.c test/*.c test/*.h test/perone/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
 
 .PHONY: all cli gui tools clean format format-check
 all: cli
@@ -84,10 +84,10 @@ build/obj/native/janet.o: build/generated/janet.c Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -MMD -MP -c $< -o $@
 
 build/obj/native/test/%.o: CFLAGS += -UNDEBUG
-$(addprefix build/obj/native/,daw.o script.o trace.o posix/files.o posix/prepare.o posix/ui.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
+$(addprefix build/obj/native/,score_janet.o script.o trace.o posix/files.o posix/prepare.o posix/ui_x11.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
 build/obj/native/script.o: build/generated/perone.inc
 build/obj/native/posix/files.o: build/generated/library.inc
-build/obj/native/daw.o: build/generated/daw.inc
+build/obj/native/score_janet.o: build/generated/daw.inc
 $(addprefix build/obj/native/,audio.o player.o posix/cli.o posix/export.o posix/gui.o tools/perone-host.o test/player.o): $(MINIAUDIO)
 $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): CPPFLAGS += -I$(WEBUI)/include
 $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): $(WEBUI)/include/webui.h
@@ -97,8 +97,8 @@ $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
 	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(LDLIBS) -o $@
 
 build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
-build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o posix/ui.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
-build/tools/perone-host: build/obj/native/tools/perone-host.o $(ENGINE_OBJECTS) build/obj/native/audio.o
+build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o posix/ui_x11.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
+build/tools/perone-host: build/obj/native/tools/perone-host.o $(PLUGIN_OBJECTS) build/obj/native/audio.o
 build/gui build/test/ui: LDLIBS += -lX11
 
 # Only the GUI needs WebUI. Compile its two sources once, without an unused shared library.
@@ -125,8 +125,9 @@ endif
 
 # Tests link only the components they exercise. Fixtures are independent of Tibia.
 $(NATIVE_TESTS): build/test/%: build/obj/native/test/%.o
-build/test/loader build/test/ui: $(ENGINE_OBJECTS)
-build/test/routing: build/obj/native/session.o build/obj/native/sequence.o $(ENGINE_OBJECTS)
+build/test/loader: $(PLUGIN_OBJECTS)
+build/test/ui: $(SCORE_OBJECTS)
+build/test/routing: build/obj/native/score.o build/obj/native/session.o build/obj/native/sequence.o $(PLUGIN_OBJECTS)
 build/test/daw build/test/player build/test/plugins build/test/view_json build/test/sequence: $(SCORE_OBJECTS)
 build/test/daw build/test/player: build/obj/native/posix/export.o build/obj/native/audio.o
 build/test/score_view: build/obj/native/score_view.o build/obj/native/score_automation.o
@@ -152,8 +153,13 @@ $(TEST_EFFECT)/product.json: test/perone/effect.json
 	mkdir -p $(dir $@)
 	cp $< $@
 
+MIXER_FIXTURE = build/test/mixer$(PERONE_SUFFIX)
+$(MIXER_FIXTURE): test/perone/mixer.c perone.h Makefile
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -fPIC -fvisibility=hidden -shared $< -o $@
+
 .PHONY: test test-plugins test-ui test-editor test-prog test-brickworks check-plugins prog
-test: $(addprefix build/test/,loader daw player routing score_view sequence) $(NATIVE_FIXTURES)
+test: $(addprefix build/test/,loader daw player routing score_view sequence) $(NATIVE_FIXTURES) $(MIXER_FIXTURE)
 	./build/test/loader
 	./build/test/daw
 	./build/test/routing
@@ -214,8 +220,8 @@ WEB_OBJECTS = $(addprefix build/obj/web-offline/,$(WEB_SOURCES:.c=.o) janet.o js
 PLAYER_OBJECTS = $(addprefix build/obj/web-player/,$(WEB_SOURCES:.c=.o) player.o web/player_api.o audio.o janet.o json.o)
 WEB_LINK = -lm --no-entry -sMODULARIZE -sEXPORT_ES6 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=2097152
 WEB_METHODS = "FS","UTF8ToString","ccall","HEAPU8","HEAPU32","HEAPF32"
-VIEW_EXPORTS = "_score_prepare","_score_describe","_score_pack_web","_score_pack_length","_score_import","_score_revision","_score_live","_score_cancel","_score_activate","_malloc","_score_take_view","_view_free","_score_view_json","_score_view_activate_web","_free"
-SCORE_EXPORTS = "_score_new","_score_free","_score_listen","_score_duration","_score_can_seek"
+VIEW_EXPORTS = "_score_prepare","_score_describe","_score_pack_web","_score_pack_length","_score_import","_score_revision","_score_live","_score_cancel","_web_score_activate","_malloc","_score_take_view","_view_free","_score_view_json","_score_view_activate_web","_free"
+SCORE_EXPORTS = "_score_new","_web_score_free","_score_listen","_score_duration","_score_can_seek"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sWASM_WORKERS -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
 PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_player_time","_score_player","_player_update_score","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node"]'
@@ -239,7 +245,7 @@ build/obj/web-player/%.o: %.c Makefile | $(JANET)/Makefile
 	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) -MMD -MP -c $< -o $@
 
 $(PLAYER_OBJECTS): WEB_FLAGS += $(PLAYER_FLAGS) -Ibuild/generated/web
-build/obj/web-offline/daw.o build/obj/web-player/daw.o: build/generated/daw.inc
+build/obj/web-offline/score_janet.o build/obj/web-player/score_janet.o: build/generated/daw.inc
 build/obj/web-offline/script.o build/obj/web-player/script.o: build/generated/perone.inc
 
 build/obj/web-offline/janet.o build/obj/web-player/janet.o: build/generated/janet.c Makefile

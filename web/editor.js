@@ -83,14 +83,14 @@ async function run(path, source) {
         if (live) {
             player.update(nextScore, revision + 1);
             queued = host._score_take_view(nextScore);
-            host._score_free(nextScore);
+            host._web_score_free(nextScore);
             nextScore = 0;
             return {};
         }
         await stop();
         host.perone.deferred = true;
         try {
-            if (host._score_activate(nextScore)) throw Error("Cannot activate plugin graph");
+            if (host._web_score_activate(nextScore)) throw Error("Cannot activate plugin graph");
         } finally { host.perone.deferred = false; }
         replacing = true;
         player = undefined;
@@ -110,7 +110,7 @@ async function run(path, source) {
         time = 0;
         return query("score");
     } catch (error) {
-        if (nextScore) host._score_free(nextScore);
+        if (nextScore) host._web_score_free(nextScore);
         const diagnostics = log.join("\n");
         try {
             if (replacing) {

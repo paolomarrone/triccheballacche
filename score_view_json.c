@@ -177,7 +177,7 @@ char *score_view_json(const ScoreView *view, unsigned revision, const char *op, 
 		error = automation(&json, view, b, c, d, e, f);
 	} else if (!strcmp(op, "origin")) {
 		const ScoreEvent *event =
-		    integer(b, 0, view->nnodes - 1) && integer(c, 0, 0x1p53 - 1) && c < view->nodes[(int)b].raw_count
+		    integer(b, 0, view->nnodes - 1) && integer(c, 0, 0x1p53 - 1) && c < view->nodes[(int)b].count
 		    ? score_view_find(view, (int)b, (uint64_t)c)
 		    : NULL;
 		Frames frames = {.view = view};

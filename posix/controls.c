@@ -40,22 +40,22 @@ static int hex(char c) {
 	return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
 }
 
-void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned revision, webui_event_t *event) {
+void controls_command(Controls *c, Session *s, unsigned revision, webui_event_t *event) {
 	const char *op = webui_get_string_at(event, 0), *error = NULL;
 	double version = number(event, 1), id = number(event, 2);
 	Json json = {0};
 	json_print(&json, "{");
-	if (version != revision || !s->sealed) {
+	if (version != revision || !s->audio) {
 		error = "Stale plugin view";
 		goto done;
 	}
-	if (!isfinite(id) || id < 0 || id >= s->nnodes || id != floor(id) || !s->nodes[(int)id].path) {
+	if (!isfinite(id) || id < 0 || id >= s->nnodes || id != floor(id) || !s->nodes[(int)id].dsp[0].dsp) {
 		error = "Invalid module";
 		goto done;
 	}
-	Node *node = s->nodes + (int)id;
-	DSP *dsp = node->dsp[0].dsp;
-	const PluginConfig *config = &node->dsp[0].config;
+	const Node *node = session_score(s)->nodes + (int)id;
+	DSP *dsp = s->nodes[(int)id].dsp[0].dsp;
+	const PluginConfig *config = &node->config;
 	int n = id;
 	if (!strcmp(op, "watch")) {
 		const char *mode = webui_get_string_at(event, 3);
@@ -65,7 +65,7 @@ void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned r
 		}
 		detach(c, s, n);
 		if (!strcmp(mode, "native")) {
-			if (ui_open(&c->native[n], node) || !c->native[n]) {
+			if (ui_open(&c->native[n], s, n) || !c->native[n]) {
 				detach(c, s, n);
 				error = "Native UI unavailable";
 			} else
@@ -82,15 +82,11 @@ void controls_command(Controls *c, Session *s, const ScoreView *view, unsigned r
 		    (config->outputs & (UINT64_C(1) << (int)index)) || !isfinite((float)value)) {
 			error = "Invalid parameter";
 		} else {
-			const ScoreNode *meta = view->nodes + (int)id;
-			int p = index, integer = !!(meta->integers & (UINT64_C(1) << p));
-			float low = meta->minimum[p], high = meta->maximum[p];
-			if (integer) {
-				value = round(value);
-				low = ceilf(low);
-				high = floorf(high);
-			}
-			edit_dsp(dsp, p, fmin(high, fmax(low, value)));
+			float adjusted = value;
+			if (plugin_parameter(config, &node->info, (size_t)index, &adjusted))
+				error = "Invalid parameter";
+			else
+				edit_dsp(dsp, (size_t)index, adjusted);
 		}
 	} else if (!strcmp(op, "message")) {
 		const char *text = webui_get_string_at(event, 3);

@@ -10,7 +10,7 @@ async function rejects(promise, pattern) {
 }
 
 export async function testPlayerLifecycle(host) {
-    const freePlayer = host._player_free, freeScore = host._score_free;
+    const freePlayer = host._player_free, freeScore = host._web_score_free;
     const NativeNode = globalThis.AudioWorkletNode;
     let players = 0, scores = 0, fault, interruptedClose;
     host._player_free = pointer => {
@@ -19,7 +19,7 @@ export async function testPlayerLifecycle(host) {
         freePlayer(pointer);
         players++;
     };
-    host._score_free = pointer => { freeScore(pointer); scores++; };
+    host._web_score_free = pointer => { freeScore(pointer); scores++; };
     globalThis.AudioWorkletNode = class extends NativeNode {
         constructor(context, name, options) {
             super(context, name, options);
@@ -143,7 +143,7 @@ export async function testPlayerLifecycle(host) {
         try { await closePlayer(host); } finally {
             globalThis.AudioWorkletNode = NativeNode;
             host._player_free = freePlayer;
-            host._score_free = freeScore;
+            host._web_score_free = freeScore;
         }
     }
 }

@@ -1,6 +1,6 @@
 #ifndef SCORE_VIEW_H
 #define SCORE_VIEW_H
-#include "session.h"
+#include "score.h"
 
 typedef struct {
 	char *file;
@@ -22,7 +22,7 @@ typedef struct {
 	uint64_t order;
 	size_t first_origin, norigins;
 	ScoreSummary summary;
-	int pitch, velocity; // pitch -1: parameter; -2: note-off, removed when indexing.
+	int pitch, velocity; // pitch -1: parameter.
 	int parameter, stream;
 	float value;
 } ScoreEvent;
@@ -36,7 +36,7 @@ typedef struct {
 	float defaults[MAX_PARAMS];
 	uint64_t integers;
 	ScoreEvent *events;
-	size_t *by_order, count, raw_count;
+	size_t *by_order, count;
 	size_t *controls, offsets[MAX_PARAMS + 1]; // Event indices grouped by parameter, in time order.
 } ScoreNode;
 
@@ -53,11 +53,11 @@ typedef struct {
 } ScoreView;
 
 // Copy actual scheduled events. Optional origins attach by node and original event order before indexing.
-int score_view_init(ScoreView *view, const Session *session);
+int score_view_init(ScoreView *view, const Score *score);
 int score_view_index(ScoreView *view);
 void score_view_free(ScoreView *view);
 void score_view_remap(ScoreView *view, const int *mapping);
-void score_view_activate(ScoreView *view, const Session *session);
+void score_view_activate(ScoreView *view, uint64_t at);
 // Overlapping events in [from, to). Sources use an 80 ms pulse; notes retain their exact duration.
 // Returning zero from visit stops the query. Subtrees outside the interval are skipped.
 void score_view_visit(const ScoreView *view, int node, double from, double to, int notes_only,

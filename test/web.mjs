@@ -109,7 +109,7 @@ try {
 } finally {
     destination.closeAll();
     host.perone = source;
-    host._score_free(score);
+    host._web_score_free(score);
 }
 assert.equal(source.remote.size, 0);
 console.log("OK: explicit DSP ownership, initial-state reconstruction, rollback and cleanup after fini failure");

@@ -1,7 +1,6 @@
 #include "ui.h"
 #include "module.h"
 #include "perone_ui.h"
-#include "script.h"
 #include "util.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -9,121 +8,68 @@
 #include <errno.h>
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 
 struct UI {
-	Node *node;
+	Session *session;
+	int node;
 	Display *display;
 	Window parent, widget;
 	Atom quit;
 	void *library, *instance;
 	const perone_ui_api *api;
 	perone_ui_callbacks callbacks;
-	char *path, *name;
 	unsigned width, height;
-	float low[MAX_PARAMS], high[MAX_PARAMS], shown[MAX_PARAMS];
-	int integer[MAX_PARAMS], resizable, ready, closing, error;
+	float shown[MAX_PARAMS];
+	int ready, closing, error;
 };
 
 static const char *bindir(void *handle) {
-	return ((UI *)handle)->node->dsp[0].dsp->bindir;
+	UI *ui = handle;
+	return ui->session->nodes[ui->node].dsp[0].dsp->bindir;
 }
 
 static const char *datadir(void *handle) {
-	return ((UI *)handle)->node->dsp[0].dsp->datadir;
+	UI *ui = handle;
+	return ui->session->nodes[ui->node].dsp[0].dsp->datadir;
 }
 
 static void parameter(void *handle, size_t index, float value) {
 	UI *ui = handle;
 	if (ui->closing)
 		return;
-	const PluginConfig *config = &ui->node->dsp[0].config;
-	if (index >= (size_t)config->nparams || (config->outputs & (UINT64_C(1) << index)) || !isfinite(value)) {
+	const Node *node = session_score(ui->session)->nodes + ui->node;
+	if (plugin_parameter(&node->config, &node->info, index, &value)) {
 		ui->error = 1;
 		return;
 	}
-	if (ui->integer[index])
-		value = roundf(value);
-	value = fminf(ui->high[index], fmaxf(ui->low[index], value));
-	edit_dsp(ui->node->dsp[0].dsp, index, value);
+	edit_dsp(ui->session->nodes[ui->node].dsp[0].dsp, index, value);
 }
 
 static void message(void *handle, size_t size, const void *data) {
 	UI *ui = handle;
-	if (!ui->closing && send_dsp(ui->node->dsp[0].dsp, size, data))
+	if (!ui->closing && send_dsp(ui->session->nodes[ui->node].dsp[0].dsp, size, data))
 		ui->error = 1;
 }
 
-static float field(Janet value, const char *key) {
-	Janet x = janet_get(value, janet_ckeywordv(key));
-	return janet_getnumber(&x, 0);
-}
-
-static Janet configure(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 4);
-	UI *ui = janet_getpointer(argv, 0);
-	Janet metadata = janet_get(argv[1], janet_ckeywordv("ui"));
-	if (janet_checktype(metadata, JANET_NIL))
-		return janet_wrap_nil();
-	ui->path = copy_string(janet_getcstring(argv, 3));
-	Janet name = janet_get(argv[1], janet_ckeywordv("name"));
-	ui->name = copy_string(janet_checktype(name, JANET_STRING) ? (const char *)janet_unwrap_string(name) : "Perone");
-	if (!ui->path || !ui->name)
-		janet_panic("out of memory");
-	ui->resizable = janet_truthy(janet_get(metadata, janet_ckeywordv("userResizable")));
-	JanetView parameters = janet_getindexed(&argv[2], 0);
-	if (parameters.len != ui->node->dsp[0].config.nparams)
-		janet_panic("plugin parameter metadata changed after preparation");
-	for (int i = 0; i < parameters.len; ++i) {
-		Janet p = parameters.items[i];
-		ui->integer[i] = janet_truthy(janet_get(p, janet_ckeywordv("integer")));
-		ui->low[i] = ui->integer[i] ? ceilf(field(p, "min")) : field(p, "min");
-		ui->high[i] = ui->integer[i] ? floorf(field(p, "max")) : field(p, "max");
-	}
-	return janet_wrap_nil();
-}
-
 int ui_available(const Node *node) {
-	const char *suffix = node->path ? strrchr(node->path, '.') : NULL;
-	if (!suffix || strchr(suffix, '/'))
-		return 0;
-	char *path = malloc(strlen(node->path) + 4);
-	if (!path)
-		return 0;
-	sprintf(path, "%.*s-ui%s", (int)(suffix - node->path), node->path, suffix);
-	int available = !access(path, R_OK);
-	free(path);
-	return available;
+	return node->info.ui && !access(node->info.ui, R_OK);
 }
 
-int ui_open(UI **out, Node *node) {
+int ui_open(UI **out, Session *session, int id) {
 	*out = NULL;
-	if (!node->path)
+	const Node *node = session_score(session)->nodes + id;
+	if (!node->info.ui || (access(node->info.ui, F_OK) && errno == ENOENT))
 		return 0;
 	UI *ui = calloc(1, sizeof(*ui));
 	if (!ui)
 		return -1;
-	ui->node = node;
-	JanetTable *env = script_env();
-	const char *error = "cannot read UI metadata";
-	if (!env)
-		goto fail;
-	janet_def(env, "host/ui", janet_wrap_cfunction(configure), NULL);
-	janet_def(env, "host/view", janet_wrap_pointer(ui), NULL);
-	janet_def(env, "host/bundle", janet_cstringv(datadir(ui)), NULL);
-	int result = janet_dostring(env,
-	    "(def p (perone/read host/bundle)) "
-	    "(host/ui host/view (p :product) (p :parameters) (p :ui-binary))",
-	    "UI metadata", NULL);
-	janet_deinit();
-	if (result)
-		goto fail;
-	if (!ui->path || (access(ui->path, F_OK) && errno == ENOENT)) {
-		ui_close(ui);
-		return 0;
-	}
-	ui->library = dlopen(ui->path, RTLD_NOW | RTLD_LOCAL);
+	ui->session = session;
+	ui->node = id;
+	ui->library = dlopen(node->info.ui, RTLD_NOW | RTLD_LOCAL);
+	const char *error;
 	if (!ui->library) {
 		error = dlerror();
 		goto fail;
@@ -135,7 +81,7 @@ int ui_open(UI **out, Node *node) {
 	const perone_ui_api *a = ui->api;
 	error = "missing Perone UI function";
 	if (!a->get_default_size || !a->create || !a->free || !a->idle || !a->get_widget ||
-	    (node->dsp[0].config.nparams && !a->set_parameter) || (node->dsp[0].config.to_ui && !a->msg_in))
+	    (node->config.nparams && !a->set_parameter) || (node->config.to_ui && !a->msg_in))
 		goto fail;
 	error = "cannot open X11 display";
 	ui->display = XOpenDisplay(NULL);
@@ -149,11 +95,11 @@ int ui_open(UI **out, Node *node) {
 	ui->width = width;
 	ui->height = height;
 	ui->parent = XCreateSimpleWindow(ui->display, DefaultRootWindow(ui->display), 0, 0, width, height, 0, 0, 0);
-	XStoreName(ui->display, ui->parent, ui->name);
+	XStoreName(ui->display, ui->parent, node->info.name);
 	XSelectInput(ui->display, ui->parent, StructureNotifyMask | SubstructureNotifyMask);
 	ui->quit = XInternAtom(ui->display, "WM_DELETE_WINDOW", False);
 	XSetWMProtocols(ui->display, ui->parent, &ui->quit, 1);
-	if (!ui->resizable) {
+	if (!node->info.resizable) {
 		XSizeHints hints = {.flags = PMinSize | PMaxSize,
 		    .min_width = width,
 		    .max_width = width,
@@ -167,12 +113,12 @@ int ui_open(UI **out, Node *node) {
 	ui->instance = a->create(PERONE_UI_X11, 1, (void *)(uintptr_t)ui->parent, &ui->callbacks);
 	if (!ui->instance || !(ui->widget = (Window)(uintptr_t)a->get_widget(ui->instance)))
 		goto fail;
-	for (int i = 0; i < node->dsp[0].config.nparams; ++i) {
-		ui->shown[i] = node->dsp[0].config.defaults[i];
-		read_dsp(node->dsp[0].dsp, i, &ui->shown[i]);
+	for (int i = 0; i < node->config.nparams; ++i) {
+		ui->shown[i] = node->config.defaults[i];
+		read_dsp(session->nodes[id].dsp[0].dsp, i, &ui->shown[i]);
 		a->set_parameter(ui->instance, i, ui->shown[i]);
 	}
-	watch_dsp(node->dsp[0].dsp, 1);
+	watch_dsp(session->nodes[id].dsp[0].dsp, 1);
 	XFlush(ui->display);
 	*out = ui;
 	return 0;
@@ -195,6 +141,7 @@ void ui_show(UI *ui, int visible) {
 int ui_poll(UI *ui) {
 	if (!ui)
 		return 0;
+	const Node *node = session_score(ui->session)->nodes + ui->node;
 	int resize = 0;
 	while (XPending(ui->display)) {
 		XEvent event;
@@ -214,11 +161,11 @@ int ui_poll(UI *ui) {
 			resize = 1;
 		}
 	}
-	if (resize && ui->ready && ui->resizable)
+	if (resize && ui->ready && node->info.resizable)
 		XResizeWindow(ui->display, ui->widget, ui->width, ui->height);
 	XFlush(ui->display);
-	DSP *first = ui->node->dsp[0].dsp;
-	for (int i = 0; i < ui->node->dsp[0].config.nparams; ++i) {
+	DSP *first = ui->session->nodes[ui->node].dsp[0].dsp;
+	for (int i = 0; i < node->config.nparams; ++i) {
 		float value;
 		if (read_dsp(first, i, &value) && isfinite(value) && value != ui->shown[i]) {
 			ui->api->set_parameter(ui->instance, i, value);
@@ -237,7 +184,7 @@ int ui_poll(UI *ui) {
 	}
 	ui->api->idle(ui->instance);
 	if (ui->error)
-		fprintf(stderr, "[UI] %s: invalid control or message queue overflow\n", ui->name);
+		fprintf(stderr, "[UI] %s: invalid control or message queue overflow\n", node->info.name);
 	return ui->error ? -1 : 0;
 }
 
@@ -245,7 +192,7 @@ void ui_close(UI *ui) {
 	if (!ui)
 		return;
 	ui->closing = 1;
-	watch_dsp(ui->node->dsp[0].dsp, 0);
+	watch_dsp(ui->session->nodes[ui->node].dsp[0].dsp, 0);
 	if (ui->instance)
 		ui->api->free(ui->instance);
 	if (ui->parent)
@@ -254,7 +201,5 @@ void ui_close(UI *ui) {
 		XCloseDisplay(ui->display);
 	if (ui->library)
 		dlclose(ui->library);
-	free(ui->path);
-	free(ui->name);
 	free(ui);
 }

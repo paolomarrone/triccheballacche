@@ -1,4 +1,4 @@
-#include "daw.h"
+#include "score_janet.h"
 #include "player.h"
 #include <signal.h>
 #include <stdio.h>

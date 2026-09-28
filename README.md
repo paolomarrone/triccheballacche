@@ -67,7 +67,9 @@ make gui
 ./build/gui --serve examples/prog/polpo.janet  # Print a URL without opening a browser.
 ```
 
-For the browser, install Emscripten, Node.js and `patch`. Build A-SID and Tibia's
+For the browser, use Emscripten 5.0.6, Node.js and `patch`. Emscripten 6.0.9 corrupts
+released worklet memory when creating another audio context with pthread support;
+5.0.6 passes the repeated playback and teardown tests. Build A-SID and Tibia's
 test product for Perone `wasm32` in their repositories, then build the library and
 local plugins:
 
@@ -225,7 +227,9 @@ parameters are errors. Output parameters are readable but cannot be scheduled.
 `daw/info` retains the product defaults, independently of initial overrides.
 
 At the same sample, parameters precede note-offs, then note-ons. Insertion order
-breaks ties; the last value of a parameter wins. Controls are discrete events;
+breaks ties; the last value of a parameter wins. Retriggering a held pitch on the
+same plugin ends the previous note and replaces its note-off deadline.
+Controls are discrete events;
 DSP smoothing depends on the plugin. The mono synth's `:volume` sets amplitude;
 its MIDI velocity does not. Track gain remains independent and automatable.
 
@@ -323,9 +327,10 @@ Events are compiled into finite templates with optional repetition periods. The
 scheduler keeps one cursor per template in a heap and computes occurrence times
 from absolute positions, without accumulating rounding error. It allocates nothing
 and executes no Janet during audio processing. Memory is independent of elapsed
-time; the sample clock is 64-bit on native and Wasm. There is a 65536-template limit
-and periods/note lengths must be at least one sample. Timing remains exact to the
-nearest sample within the double-precision integer range.
+time; the sample clock is 64-bit on native and Wasm. A score may contain up to
+1048576 templates. Note endpoints must round to distinct samples; repeating notes
+and periods must also span at least one sample before rounding. Occurrences are
+rounded independently within the double-precision integer range.
 
 A revision replaces future note starts and parameter events. Already-started notes
 retain their note-offs. Retriggering the same pitch on the same plugin explicitly
@@ -343,8 +348,9 @@ Omitting `:duration` uses a finite pattern's nominal length, or runs an unbounde
 pattern until stopped. Export needs an explicit finite interval: add
 `{:duration 30}` to `daw/score` to render thirty seconds with the same scheduler.
 This also sets the playback duration. Allow extra time explicitly for effect tails.
-The existing `daw/note`, `daw/param`, `daw/schedule` and `daw/end` score API remains
-available; choose one scheduling API per score.
+`daw/note`, `daw/param` and `daw/schedule` use the same scheduler. They may precede
+`daw/score` to add finite events to its sequence. Finish preparation with either
+`daw/score` or `daw/end`.
 
 ## Audio and export
 
@@ -399,7 +405,9 @@ The binary name comes from `product.bundleName`; the bundle directory may be ren
 `PERONE_PLATFORM` and `PERONE_SUFFIX` select the host target, normally
 `<uname -m>-<lowercase TARGET_OS>` and `.so` on native builds.
 
-Janet reads the JSON and passes numeric configuration to C. The DSP loader uses
+Janet reads the JSON and copies configuration and metadata into the prepared score.
+Controls, native UIs and the timeline use those owned copies after Janet closes.
+The DSP loader uses
 `perone_get_api(PERONE_ABI_VERSION)`; `perone.h` is an unchanged copy of Tibia's
 ABI v2. No internal `parameters.h`, C metadata tables or per-plugin Janet wrapper
 is needed. Native UIs use the separate ABI v1 in `perone_ui.h`.
@@ -479,7 +487,7 @@ export it, or `--input` to process microphone input.
 
 | Location | Responsibility |
 | --- | --- |
-| Root C files | Engine, session, player, Janet adapter, trace bridge and score projection. |
+| Root C files | Prepared score, sequencer, audio session, player, Janet adapter and score projection. |
 | `lib/` | Perone metadata, score API, music, patterns and optional source tracking. |
 | `posix/` | Native loader, file export, CLI, X11 and WebUI backend. |
 | `web/` | Wasm loader, AudioWorklet lifecycle and browser editor backend. |
@@ -492,13 +500,20 @@ Wasm are verified. `TARGET_OS=Darwin` omits `-ldl`, but macOS remains unverified
 Windows still needs native loader, export and CLI backends. Desktop UI hosts
 currently require X11. Each native platform needs matching plugin binaries.
 
-Preparation validates channel layouts, orders the audio graph and compiles events,
-then closes Janet. A description owns no DSP instances or audio buffers.
-Initial activation creates those resources in one place; compatible
-revisions replace only the sequence. Browser workers transfer owned descriptions
-using a private same-build snapshot, without sharing Janet objects or plugin pointers.
-The editor owns a cache of loaded modules; each prepared session owns its DSP
-instances, and the player owns the audio device. Stop retains all three.
+`score.c` builds and validates a `Score`: graph, metadata and one `Sequence` of
+note intervals and parameter changes. `score_janet.c` prepares it from Janet and
+closes the interpreter. `sequence.c` keeps playback cursors in a separate `Sequencer`;
+finite and repeating events share scheduling, retrigger and seek semantics.
+`session.c` owns DSP instances, buffers, mixer state and held notes. `plugin.c`
+adapts interleaved audio to Perone's channel buffers; it has no scheduler or clock.
+
+Activation moves a prepared score into a session only on success. A live revision
+moves a new score and cursor into that same session; DSPs and held notes survive.
+The audio callback publishes the revision at its boundary, and the control thread
+frees retired data. `ScoreView` owns its query index independently of the session.
+Browser workers transfer prepared data using a private same-build snapshot,
+without sharing Janet objects or plugin pointers. The editor owns a module cache,
+the session owns DSPs, and the player owns the audio device. Stop retains all three.
 Play resumes the existing state. Seeking restores score parameters and held notes,
 resets DSPs and event cursors, and discards pending host messages and edits.
 UI gestures are temporary; put lasting changes in the score. Plugin reset semantics govern internal state,
@@ -507,7 +522,7 @@ Native binaries stay loaded until the editor closes, so restart it after rebuild
 a plugin. Janet caches immutable bundle metadata within each evaluation and rereads
 it on Run. The web host caches compiled Wasm modules and creates DSP instances
 directly in the worklet, once per activated session.
-The engine allocates no memory during processing; mixing buffers are independent
+The session allocates no memory during processing; mixing buffers are independent
 of duration, while stored events are not. Current limits are 32 tracks, 128 nodes,
 8 effects in a track convenience call (longer paths use `daw/through`),
 64 parameters per plugin, and one export per run. Finite exports and the original

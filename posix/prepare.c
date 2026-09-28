@@ -7,7 +7,7 @@
 typedef struct {
 	pthread_mutex_t mutex;
 	pthread_cond_t ready;
-	Session *session;
+	Score *score;
 	Output *output;
 	const char *path, *source;
 	char **diagnostics;
@@ -22,7 +22,7 @@ static void *evaluate(void *context) {
 	p->vm = janet_local_vm();
 	pthread_cond_signal(&p->ready);
 	pthread_mutex_unlock(&p->mutex);
-	int result = prepare_score(p->session, p->output, p->path, p->source, p->diagnostics, p->view);
+	int result = prepare_score(p->score, p->output, p->path, p->source, p->diagnostics, p->view);
 	pthread_mutex_lock(&p->mutex);
 	p->result = result;
 	p->done = 1;
@@ -32,10 +32,10 @@ static void *evaluate(void *context) {
 }
 
 int prepare_background(
-    Session *session, Output *output, const char *path, const char *source, char **diagnostics, ScoreView *view) {
+    Score *score, Output *output, const char *path, const char *source, char **diagnostics, ScoreView *view) {
 	Preparation p = {.mutex = PTHREAD_MUTEX_INITIALIZER,
 	    .ready = PTHREAD_COND_INITIALIZER,
-	    .session = session,
+	    .score = score,
 	    .output = output,
 	    .path = path,
 	    .source = source,
@@ -43,7 +43,7 @@ int prepare_background(
 	    .view = view};
 	pthread_t thread;
 	if (pthread_create(&thread, NULL, evaluate, &p)) {
-		session->error = "Cannot start preparation worker";
+		score->error = "Cannot start preparation worker";
 		pthread_cond_destroy(&p.ready);
 		pthread_mutex_destroy(&p.mutex);
 		return -1;

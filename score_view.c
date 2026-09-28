@@ -22,39 +22,49 @@ void score_view_free(ScoreView *view) {
 	*view = (ScoreView){0};
 }
 
-int score_view_init(ScoreView *view, const Session *session) {
-	*view = (ScoreView){.nnodes = session->nnodes,
-	    .ntracks = session->ntracks,
-	    .output = session->output,
-	    .repeating = session->sequence != NULL,
-	    .sample_rate = session->sample_rate,
-	    .end = session->frames == UINT64_MAX ? 0 : (double)session->frames / session->sample_rate};
-	memcpy(view->tracks, session->tracks, session->ntracks * sizeof(Track));
+int score_view_init(ScoreView *view, const Score *score) {
+	*view = (ScoreView){.nnodes = score->nnodes,
+	    .ntracks = score->ntracks,
+	    .output = score->output,
+	    .repeating = 0,
+	    .sample_rate = score->sample_rate,
+	    .end = score->frames == UINT64_MAX ? 0 : (double)score->frames / score->sample_rate};
+	const Sequence *sequence = &score->sequence;
+	for (size_t i = 0; i < sequence->count; ++i)
+		++view->nodes[sequence->cues[i].node].count;
+	memcpy(view->tracks, score->tracks, score->ntracks * sizeof(Track));
 	// A serial processing path keeps the original source's notes. Stop at another
 	// track or a sum: group rows do not duplicate the notes of their input tracks.
 	for (int i = 0; i < view->ntracks; ++i) {
 		int *id = &view->tracks[i].source;
-		while (!session->nodes[*id].track && session->nodes[*id].ninputs == 1)
-			*id = session->nodes[*id].inputs[0].node;
+		while (!score->nodes[*id].track && score->nodes[*id].ninputs == 1)
+			*id = score->nodes[*id].inputs[0];
 	}
-	if (session->has_master) {
-		view->tracks[view->ntracks] = session->master;
+	if (score->has_master) {
+		view->tracks[view->ntracks] = score->master;
 		view->tracks[view->ntracks++].source = -1;
 	}
-	for (int i = 0; i < session->nnodes; ++i) {
-		const Node *source = session->nodes + i;
+	for (int i = 0; i < score->nnodes; ++i) {
+		const Node *source = score->nodes + i;
 		ScoreNode *node = view->nodes + i;
-		memcpy(node->defaults, source->path ? source->dsp[0].config.defaults : source->defaults,
-		    (source->path ? source->dsp[0].config.nparams : 2) * sizeof(float));
+		memcpy(node->defaults, source->config.defaults, source->config.nparams * sizeof(float));
+		memcpy(node->minimum, source->info.minimum, sizeof(node->minimum));
+		memcpy(node->maximum, source->info.maximum, sizeof(node->maximum));
+		node->integers = source->info.integers;
+		if (source->info.product && !(node->product = copy_string(source->info.product)))
+			return -1;
 		node->ninputs = source->ninputs;
 		for (int j = 0; j < source->ninputs; ++j)
-			node->inputs[j] = source->inputs[j].node;
+			node->inputs[j] = source->inputs[j];
 		node->upstream = source->upstream;
 		node->downstream = source->downstream;
 		if (source->name && !(node->label = copy_string(source->name)))
 			return -1;
 		const char *name = source->path ? strrchr(source->path, '/') : NULL;
-		node->name = copy_string(name ? name + 1 : source->path ? source->path : "Mixer");
+		node->name = copy_string(source->info.name ? source->info.name
+		        : name                             ? name + 1
+		        : source->path                     ? source->path
+		                                           : "Mixer");
 		if (source->path) {
 			node->bundle = copy_string(source->path);
 			if (!node->bundle)
@@ -67,56 +77,26 @@ int score_view_init(ScoreView *view, const Session *session) {
 				*slash = 0;
 			}
 		}
-		if (session->sequence) {
-			const Sequence *sequence = session->sequence;
-			for (size_t j = 0; j < sequence->count; ++j)
-				node->count += sequence->cues[j].node == i;
-			node->raw_count = node->count;
-			node->events = calloc(node->count ? node->count : 1, sizeof(ScoreEvent));
-			if (!node->name || !node->events)
-				return -1;
-			size_t k = 0;
-			for (size_t j = 0; j < sequence->count; ++j) {
-				const Cue *c = sequence->cues + j;
-				if (c->node != i)
-					continue;
-				node->events[k] = (ScoreEvent){.start = c->start,
-				    .end = c->end,
-				    .period = c->period,
-				    .order = k,
-				    .pitch = c->parameter < 0 ? c->pitch : -1,
-				    .velocity = c->velocity,
-				    .parameter = c->parameter,
-				    .stream = c->stream,
-				    .value = c->value};
-				++k;
-			}
-			continue;
-		}
-		node->raw_count = node->count = source->count;
-		if (!node->name || source->count > SIZE_MAX / sizeof(ScoreEvent))
+		if (node->count && !(node->events = calloc(node->count, sizeof(ScoreEvent))))
 			return -1;
-		if (!source->count)
-			continue;
-		node->events = calloc(source->count, sizeof(ScoreEvent));
-		if (!node->events)
+		if (!node->name)
 			return -1;
-		for (size_t j = 0; j < source->count; ++j) {
-			const Event *event = source->events + j;
-			ScoreEvent *out = node->events + event->order;
-			*out = (ScoreEvent){.start = (double)event->time / session->sample_rate,
-			    .order = event->order,
-			    .pitch = event->parameter >= 0 ? -1
-			        : event->midi[0] == 0x90   ? event->midi[1]
-			                                   : -2,
-			    .velocity = event->midi[2],
-			    .parameter = event->parameter,
-			    .value = event->value};
-			out->end = out->start;
-			// session_note emits adjacent on/off orders even for overlapping notes of the same pitch.
-			if (out->pitch == -2)
-				node->events[event->order - 1].end = out->start;
-		}
+		node->count = 0;
+	}
+	for (size_t i = 0; i < sequence->count; ++i) {
+		const Cue *c = sequence->cues + i;
+		ScoreNode *node = view->nodes + c->node;
+		node->events[node->count] = (ScoreEvent){.start = c->start,
+		    .end = c->end,
+		    .period = c->period,
+		    .order = node->count,
+		    .pitch = c->parameter < 0 ? c->pitch : -1,
+		    .velocity = c->velocity,
+		    .parameter = c->parameter,
+		    .stream = c->stream,
+		    .value = c->value};
+		++node->count;
+		view->repeating |= c->period > 0;
 	}
 	return 0;
 }
@@ -145,8 +125,8 @@ static void index_events(ScoreEvent *events, size_t lo, size_t hi) {
 	size_t mid = lo + (hi - lo) / 2;
 	ScoreEvent *event = events + mid;
 	event->max_end = fmax(event->end, event->start + 0.08);
-	event->summary = (ScoreSummary){event->pitch >= 0, event->pitch, event->pitch};
-	event->min_note_end = event->pitch >= 0 ? event->end : INFINITY;
+	event->summary = (ScoreSummary){event->pitch >= 0 && event->start >= 0, event->pitch, event->pitch};
+	event->min_note_end = event->summary.count ? event->end : INFINITY;
 	index_events(events, lo, mid);
 	index_events(events, mid + 1, hi);
 	if (lo < mid) {
@@ -170,18 +150,14 @@ int score_view_index(ScoreView *view) {
 		free(node->controls);
 		node->by_order = node->controls = NULL;
 		memset(node->offsets, 0, sizeof(node->offsets));
-		size_t count = 0;
-		for (size_t j = 0; j < node->count; ++j)
-			if (node->events[j].pitch >= -1)
-				node->events[count++] = node->events[j];
-		node->count = count;
+		size_t count = node->count;
 		if (!count)
 			continue;
 		qsort(node->events, count, sizeof(ScoreEvent), compare);
-		node->by_order = malloc(node->raw_count * sizeof(size_t));
+		node->by_order = malloc(node->count * sizeof(size_t));
 		if (!node->by_order)
 			return -1;
-		for (size_t j = 0; j < node->raw_count; ++j)
+		for (size_t j = 0; j < node->count; ++j)
 			node->by_order[j] = SIZE_MAX;
 		for (size_t j = 0; j < count; ++j)
 			node->by_order[node->events[j].order] = j;
@@ -205,20 +181,21 @@ int score_view_index(ScoreView *view) {
 	return 0;
 }
 
-static int visit_events(const ScoreEvent *events, size_t lo, size_t hi, double from, double to, int notes,
-    int (*visit)(const ScoreEvent *, void *), void *context) {
-	if (lo == hi || events[lo].start >= to)
+static int visit_events(const ScoreEvent *events, size_t lo, size_t hi, double from, double to, double minimum,
+    int notes, int (*visit)(const ScoreEvent *, void *), void *context) {
+	if (lo == hi || events[lo].start >= to || events[hi - 1].start < minimum)
 		return 1;
 	size_t mid = lo + (hi - lo) / 2;
 	const ScoreEvent *event = events + mid;
 	if (event->max_end <= from || (notes && !event->summary.count))
 		return 1;
-	if (!visit_events(events, lo, mid, from, to, notes, visit, context))
+	if (!visit_events(events, lo, mid, from, to, minimum, notes, visit, context))
 		return 0;
 	double end = notes ? event->end : fmax(event->end, event->start + 0.08);
-	if (event->start < to && end > from && (!notes || event->pitch >= 0) && !visit(event, context))
+	if (event->start >= minimum && event->start < to && end > from && (!notes || event->pitch >= 0) &&
+	    !visit(event, context))
 		return 0;
-	return visit_events(events, mid + 1, hi, from, to, notes, visit, context);
+	return visit_events(events, mid + 1, hi, from, to, minimum, notes, visit, context);
 }
 
 // First representable cycle whose endpoint is >= time (inclusive), or > time.
@@ -248,12 +225,12 @@ void score_view_visit(const ScoreView *view, int node, double from, double to, i
     int (*visit)(const ScoreEvent *, void *), void *context) {
 	if (node < 0 || node >= view->nnodes || !isfinite(from) || !isfinite(to) || from >= to)
 		return;
+	if (view->end > 0)
+		to = fmin(to, view->end);
+	if (from >= to)
+		return;
 	if (view->repeating) {
 		const ScoreNode *n = view->nodes + node;
-		if (view->end > 0)
-			to = fmin(to, view->end);
-		if (from >= to)
-			return;
 		for (size_t i = 0; i < n->count; ++i) {
 			const ScoreEvent *e = n->events + i;
 			if (notes_only && e->pitch < 0)
@@ -276,7 +253,8 @@ void score_view_visit(const ScoreView *view, int node, double from, double to, i
 		}
 		return;
 	}
-	visit_events(view->nodes[node].events, 0, view->nodes[node].count, from, to, notes_only, visit, context);
+	visit_events(view->nodes[node].events, 0, view->nodes[node].count, from, to, notes_only ? 0 : view->active_from,
+	    notes_only, visit, context);
 }
 
 static ScoreSummary summarize(const ScoreEvent *events, size_t lo, size_t hi, double from, double to) {
@@ -290,7 +268,7 @@ static ScoreSummary summarize(const ScoreEvent *events, size_t lo, size_t hi, do
 	if (event->min_note_end > from && events[hi - 1].start < to)
 		return event->summary;
 	out = summarize(events, lo, mid, from, to);
-	if (event->pitch >= 0 && event->start < to && event->end > from)
+	if (event->pitch >= 0 && event->start >= 0 && event->start < to && event->end > from)
 		merge(&out, (ScoreSummary){1, event->pitch, event->pitch});
 	merge(&out, summarize(events, mid + 1, hi, from, to));
 	return out;
@@ -300,13 +278,13 @@ ScoreSummary score_view_summary(const ScoreView *view, int node, double from, do
 	if (node < 0 || node >= view->nnodes || !isfinite(from) || !isfinite(to) || from >= to)
 		return (ScoreSummary){0};
 	const ScoreNode *n = view->nodes + node;
-	if (!view->repeating)
-		return summarize(n->events, 0, n->count, from, to);
 	if (view->end > 0)
 		to = fmin(to, view->end);
 	ScoreSummary result = {0};
 	if (from >= to)
 		return result;
+	if (!view->repeating)
+		return summarize(n->events, 0, n->count, from, to);
 	for (size_t i = 0; i < n->count; ++i) {
 		const ScoreEvent *e = n->events + i;
 		if (e->pitch < 0)
@@ -324,8 +302,7 @@ const ScoreEvent *score_view_find(const ScoreView *view, int node, uint64_t orde
 	if (node < 0 || node >= view->nnodes)
 		return NULL;
 	const ScoreNode *n = view->nodes + node;
-	return n->by_order && order < n->raw_count && n->by_order[order] != SIZE_MAX ? n->events + n->by_order[order]
-	                                                                             : NULL;
+	return n->by_order && order < n->count && n->by_order[order] != SIZE_MAX ? n->events + n->by_order[order] : NULL;
 }
 
 void score_view_remap(ScoreView *view, const int *mapping) {
@@ -348,7 +325,6 @@ void score_view_remap(ScoreView *view, const int *mapping) {
 	}
 }
 
-void score_view_activate(ScoreView *view, const Session *session) {
-	const Sequence *sequence = atomic_load(&session->sequence);
-	view->active_from = sequence && sequence->at ? ((double)sequence->at - .5) / session->sample_rate : 0;
+void score_view_activate(ScoreView *view, uint64_t at) {
+	view->active_from = at ? ((double)at - .5) / view->sample_rate : 0;
 }

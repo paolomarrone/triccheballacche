@@ -1,7 +1,8 @@
-#include "engine.h"
+#include "plugin.h"
 #include <math.h>
+#include <stdlib.h>
 
-int engine_config_valid(const PluginConfig *c) {
+int plugin_config_valid(const PluginConfig *c) {
 	if (c->input < 0 || c->input > 2 || c->output < 1 || c->output > 2 || c->inputs < c->input ||
 	    c->inputs > MAX_INPUTS || c->input_offset < 0 || c->input_offset > MAX_INPUTS ||
 	    c->input_offset + c->input > c->inputs || c->midi < -1 || c->nparams < 0 || c->nparams > MAX_PARAMS)
@@ -12,8 +13,8 @@ int engine_config_valid(const PluginConfig *c) {
 	return 1;
 }
 
-int open_engine(Engine *e, const char *path, const PluginConfig *c, unsigned sample_rate) {
-	if (e->dsp || !sample_rate || sample_rate > 384000 || !engine_config_valid(c))
+int open_plugin(Plugin *e, const char *path, const PluginConfig *c, unsigned sample_rate) {
+	if (e->dsp || !sample_rate || sample_rate > 384000 || !plugin_config_valid(c))
 		return -1;
 	DSP *dsp = open_dsp(e->modules, path, c, sample_rate, BLOCK);
 	if (!dsp)
@@ -23,27 +24,18 @@ int open_engine(Engine *e, const char *path, const PluginConfig *c, unsigned sam
 	return 0;
 }
 
-void close_engine(Engine *e) {
+void close_plugin(Plugin *e) {
 	close_dsp(e->dsp);
-	*e = (Engine){0};
+	*e = (Plugin){0};
 }
 
-// Split at events and adapt interleaved stereo to the plugin's planar buffers.
-void render(Engine *e, float *out, const float *in, size_t frames) {
+// Adapt interleaved audio to the plugin's planar buffers.
+void render_plugin(Plugin *e, float *out, const float *in, size_t frames) {
 	static const float silence[BLOCK];
 	float input[2][BLOCK], output[2][BLOCK];
 	const PluginConfig *c = &e->config;
 	while (frames) {
-		while (e->next < e->count && e->events[e->next].time <= e->time) {
-			const Event *v = &e->events[e->next++];
-			if (v->parameter >= 0)
-				set_dsp(e->dsp, v->parameter, v->value);
-			else if (c->midi >= 0)
-				midi_dsp(e->dsp, c->midi, v->midi);
-		}
 		size_t n = frames < BLOCK ? frames : BLOCK;
-		if (e->next < e->count && e->events[e->next].time - e->time < n)
-			n = e->events[e->next].time - e->time;
 		const float *x[MAX_INPUTS] = {0}; // Optional disconnected buses receive NULL.
 		if (c->input)
 			x[c->input_offset] = in ? in : silence;
@@ -66,10 +58,29 @@ void render(Engine *e, float *out, const float *in, size_t frames) {
 				out[2 * i] = y[0][i];
 				out[2 * i + 1] = y[1][i];
 			}
-		e->time += n;
 		frames -= n;
 		out += n * c->output;
 		if (in)
 			in += n * c->input;
 	}
+}
+
+void plugin_info_free(PluginInfo *info) {
+	free(info->name);
+	free(info->product);
+	free(info->ui);
+	*info = (PluginInfo){0};
+}
+
+int plugin_parameter(const PluginConfig *config, const PluginInfo *info, size_t index, float *value) {
+	if (index >= (size_t)config->nparams || (config->outputs & (UINT64_C(1) << index)) || !isfinite(*value))
+		return -1;
+	float low = info->minimum[index], high = info->maximum[index];
+	if (info->integers & (UINT64_C(1) << index)) {
+		*value = roundf(*value);
+		low = ceilf(low);
+		high = floorf(high);
+	}
+	*value = fminf(high, fmaxf(low, *value));
+	return 0;
 }
