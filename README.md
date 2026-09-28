@@ -23,7 +23,7 @@ make prog               # Render Il polpo a sette gomiti.
 The host needs a C compiler, make, git, curl and patch. It fetches Janet 1.42.1,
 miniaudio 0.11.25 (unless `../miniaudio.h` exists), Spork's JSON module and pinned
 Brickworks headers into `.deps/`. Janet and JSON are linked statically; no Janet,
-Spork or jpm installation is needed. [janet.patch](janet.patch) fixes collection of
+Spork or jpm installation is needed. [janet.patch](patches/janet.patch) fixes collection of
 top-level dynamic bindings in both runtimes, keeping error diagnostics valid after GC.
 On Termux: `pkg install clang make git curl patch libandroid-spawn`.
 
@@ -568,7 +568,8 @@ Use English for prose, comments and UI text; keep musical names.
 Local C uses tabs displayed at four columns, Janet two spaces, and JavaScript
 four spaces. `.editorconfig` and `.clang-format` define formatting;
 `make format-check` uses clang-format 21 and excludes upstream/generated files.
-The build patches a copy of miniaudio for worklet stack cleanup;
-`web/audio.js` handles Emscripten's already-closed AudioContext case.
+Dependency fixes live in [patches/](patches/). The build applies the Janet and
+miniaudio patches to generated copies, leaving downloads untouched;
+[emscripten.js](patches/emscripten.js) handles already-closed AudioContexts.
 Sources and dependencies retain their respective licenses.
 See the [test guide](test/README.md) for commands, prerequisites and coverage.

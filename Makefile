@@ -55,10 +55,10 @@ $(JANET)/build/c/janet.c: $(JANET)/Makefile
 
 # Janet 1.42.1 does not mark top-level dynamic bindings during collection.
 # Use the same corrected runtime for native and Wasm; leave the download untouched.
-build/generated/janet.c: $(JANET)/build/c/janet.c janet.patch Makefile
+build/generated/janet.c: $(JANET)/build/c/janet.c patches/janet.patch Makefile
 	mkdir -p $(dir $@)
 	cp $< $@.tmp
-	patch --silent $@.tmp janet.patch
+	patch --silent $@.tmp patches/janet.patch
 	mv $@.tmp $@
 
 $(SPORK)/src/json.c:
@@ -263,17 +263,17 @@ build/web/offline.mjs: $(WEB_OBJECTS) Makefile
 
 # Miniaudio 0.11.25 loses its worklet stack pointer and uses the unaligned deallocator.
 # Patch only the generated web copy; keep the downloaded/native header intact.
-build/generated/web/miniaudio.h: $(MINIAUDIO) web/miniaudio.patch
+build/generated/web/miniaudio.h: $(MINIAUDIO) patches/miniaudio.patch
 	mkdir -p $(dir $@)
 	cp $< $@.tmp
-	patch --silent $@.tmp web/miniaudio.patch
+	patch --silent $@.tmp patches/miniaudio.patch
 	mv $@.tmp $@
 
 build/obj/web-player/audio.o build/obj/web-player/player.o build/obj/web-player/web/player_api.o: build/generated/web/miniaudio.h
-build/web/player.mjs: $(PLAYER_OBJECTS) web/runtime.js web/audio.js Makefile
+build/web/player.mjs: $(PLAYER_OBJECTS) web/runtime.js patches/emscripten.js Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(CFLAGS) $(LDFLAGS) $(PLAYER_FLAGS) $(PLAYER_OBJECTS) $(WEB_LINK) -sAUDIO_WORKLET -sASYNCIFY \
-	    --post-js web/runtime.js --js-library web/audio.js -sENVIRONMENT=web,worker,worklet \
+	    --post-js web/runtime.js --js-library patches/emscripten.js -sENVIRONMENT=web,worker,worklet \
 	    -sEXPORTED_FUNCTIONS=$(PLAYER_EXPORTS) -sEXPORTED_RUNTIME_METHODS='[$(WEB_METHODS),"emscriptenGetAudioObject"]' -o $@
 
 -include $(wildcard build/obj/*/*.d build/obj/*/*/*.d)
