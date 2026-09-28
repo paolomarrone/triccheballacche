@@ -5,6 +5,8 @@ export function timeline(request, select, selectTrack, seek, error) {
     const get = id => document.getElementById(id);
     const panel = get("timeline"), roll = get("roll"), canvas = get("notes"), context = canvas.getContext("2d");
     const headers = get("track-headers"), tracks = get("track-list"), follow = get("follow"), detail = get("note-info");
+    const space = get("score-view"), spatialCanvas = get("score-canvas"), message = get("score-message");
+    const tabs = [get("tab-tracks"), get("tab-score")];
     let score, data, from = 0, scale = 0.02, time = 0, playing = false;
     let width = 0, height = 0, row = 60, label = 220, version = 0, pending = false, scheduled = false;
     let hits = [], drag, selected, rowHeight = 60, trackIndex = 0;
@@ -12,6 +14,76 @@ export function timeline(request, select, selectTrack, seek, error) {
     const changing = new Set();
     const ruler = 24;
     const envelopes = automation(request, changed);
+    let spatial, opening, spatialMode = false, disposed = false;
+    const heights = ["", null];
+
+    function spatialError(cause) {
+        message.textContent = `Score view unavailable: ${cause.message || cause}. Tracks remains available.`;
+        message.hidden = false;
+    }
+
+    async function showSpace(value) {
+        if (value !== spatialMode) {
+            heights[Number(spatialMode)] = panel.style.flexBasis;
+            panel.style.flexBasis = heights[Number(value)] ?? `${Math.max(110, panel.parentElement.clientHeight * .6)}px`;
+        }
+        spatialMode = value;
+        space.hidden = get("score-tools").hidden = !value;
+        canvas.style.visibility = value ? "hidden" : "";
+        canvas.setAttribute("aria-hidden", value);
+        canvas.tabIndex = value ? -1 : 0;
+        for (const [i, tab] of tabs.entries()) {
+            tab.setAttribute("aria-selected", i === Number(value));
+            tab.tabIndex = i === Number(value) ? 0 : -1;
+        }
+        get("automation-parameters").hidePopover();
+        spatial?.visible(value);
+        changed();
+        if (!value || spatial || opening) return;
+        message.hidden = false;
+        message.textContent = "Loading score view…";
+        opening = import("./score-space.js");
+        try {
+            const {scoreSpace} = await opening;
+            if (disposed) return;
+            spatial = scoreSpace(spatialCanvas, message, found => {
+                if (found.revision !== score?.revision) return;
+                if (found.note) choose({node: score.tracks[found.track][0], note: found.note});
+                else if (!found.count) chooseTrack(found.track);
+                else { follow.checked = false; zoom(.5, ((found.a + found.b) / 2 - from) / scale); }
+            }, spatialError);
+            message.textContent = "Run a score to see its notes";
+            spatial.flat(get("score-flat").getAttribute("aria-pressed") === "true");
+            spatial.visible(spatialMode);
+            draw();
+        } catch (cause) { spatialError(cause); }
+        finally { opening = undefined; }
+    }
+
+    tabs.forEach((tab, i) => {
+        tab.onclick = () => showSpace(Boolean(i));
+        tab.onkeydown = event => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === "Home" ? 0 : event.key === "End" ? 1 : 1 - i;
+            tabs[next].focus(); showSpace(Boolean(next));
+        };
+    });
+    get("score-flat").onclick = () => {
+        const flat = get("score-flat").getAttribute("aria-pressed") !== "true";
+        get("score-flat").setAttribute("aria-pressed", flat);
+        spatial?.flat(flat);
+    };
+    get("score-reset").onclick = () => spatial?.home();
+    space.addEventListener("wheel", event => {
+        if (!event.shiftKey && !event.altKey) return;
+        event.preventDefault(); event.stopImmediatePropagation();
+        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1;
+        follow.checked = false;
+        if (event.altKey) zoom(Math.exp(event.deltaY * unit * .005));
+        else move(from + (event.deltaX || event.deltaY) * unit * scale);
+    }, {capture: true, passive: false});
+    window.addEventListener("pagehide", () => { disposed = true; spatial?.dispose(); });
 
     function audible(index) {
         const node = score.nodes[score.tracks[index][1]];
@@ -51,7 +123,8 @@ export function timeline(request, select, selectTrack, seek, error) {
 
     function viewport() {
         return {from, to: from + Math.max(1, width - label) * scale,
-            first: Math.floor(roll.scrollTop / row), count: Math.min(8, Math.ceil((height - ruler + roll.scrollTop % row) / row)),
+            first: spatialMode ? 0 : Math.floor(roll.scrollTop / row),
+            count: spatialMode ? score?.tracks.length || 0 : Math.min(8, Math.ceil((height - ruler + roll.scrollTop % row) / row)),
             bins: Math.max(1, Math.min(512, Math.ceil((width - label) / 3)))};
     }
 
@@ -65,12 +138,20 @@ export function timeline(request, select, selectTrack, seek, error) {
     }
 
     async function load() {
-        if (!score || pending || width <= label || height <= ruler) return;
+        if (!score || pending || disposed || width <= label || height <= ruler) return;
         const generation = version, revision = score.revision, view = viewport();
         pending = true;
         try {
-            const result = await request("range", revision, String(view.from), String(view.to), view.first, view.count, view.bins);
-            if (revision === score?.revision && !result.stale && result.revision === revision) {
+            const result = {revision, from: view.from, to: view.to, first: view.first, lanes: []};
+            const end = Math.min(score.tracks.length, view.first + view.count);
+            for (let first = view.first; first < end; first += 8) {
+                const part = await request("range", revision, String(view.from), String(view.to), first, Math.min(8, view.first + view.count - first), view.bins);
+                if (part.stale || part.revision !== revision || score.revision !== revision) return;
+                result.lanes.push(...part.lanes);
+                // Keep the previous complete window when a newer viewport supersedes a batch.
+                if (generation !== version && first + 8 < end) return;
+            }
+            if (revision === score?.revision) {
                 // Retain one bounded window and project it at the current scroll/zoom while the next loads.
                 data = result;
                 panel.dataset.revision = revision;
@@ -119,6 +200,12 @@ export function timeline(request, select, selectTrack, seek, error) {
     function draw() {
         const css = getComputedStyle(panel), foreground = css.color;
         const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+        tracks.style.transform = `translateY(${-roll.scrollTop}px)`;
+        if (spatialMode) {
+            spatial?.update({score, data, view: viewport(), curves: envelopes.curves(viewport()),
+                time, playing, selected, audible, dark});
+            return;
+        }
         const grid = dark ? "#383b40" : "#e0e3e6", ink = dark ? "#adb3ba" : "#59616a";
         context.clearRect(0, 0, width, height);
         context.font = "12px system-ui";
@@ -197,7 +284,6 @@ export function timeline(request, select, selectTrack, seek, error) {
             context.fillStyle = dark ? "#ffd377" : "#995b00";
             context.fillRect(Math.round(label + (time - from) / scale), 0, 2, height);
         }
-        tracks.style.transform = `translateY(${-roll.scrollTop}px)`;
         canvas.dataset.from = from;
         canvas.dataset.scale = scale;
         canvas.dataset.notes = hits.length;
@@ -209,6 +295,7 @@ export function timeline(request, select, selectTrack, seek, error) {
         width = roll.clientWidth;
         height = roll.clientHeight;
         label = Math.min(230, Math.round(width * 0.3));
+        panel.style.setProperty("--track-label", `${label}px`);
         row = Math.max(44, Math.ceil((height - ruler) / 7), rowHeight);
         headers.style.width = `${label}px`;
         headers.style.height = `${Math.max(0, height - ruler)}px`;
@@ -271,17 +358,7 @@ export function timeline(request, select, selectTrack, seek, error) {
         const curve = envelopes.hit(x, y, from + (x - label) * scale);
         canvas.title = y < ruler && x >= label ? "Click to seek" : curve ? curve.text : found ? noteText(found.note) : score?.tracks[lane] ? chain(score.tracks[lane]) : "";
     };
-    canvas.onpointerup = async event => {
-        if (!drag) return;
-        const moved = drag.moved;
-        drag = undefined;
-        if (moved) return;
-        const [x, y] = point(event);
-        if (enabled && y >= 0 && y < ruler && x >= label) {
-            seek(Math.min(score.end || Infinity, from + (x - label) * scale));
-            return;
-        }
-        const curve = envelopes.hit(x, y, from + (x - label) * scale), found = hit(x, y);
+    async function choose(found, curve) {
         if (curve) {
             detail.textContent = curve.text;
             detail.title = "";
@@ -300,6 +377,26 @@ export function timeline(request, select, selectTrack, seek, error) {
             if (result.truncated) detail.title += "\nPartial origins";
             select(result.frames);
         } catch (cause) { error(cause); }
+    }
+
+    function chooseTrack(index) {
+        trackIndex = index;
+        for (const button of tracks.querySelectorAll(".track-select")) button.setAttribute("aria-pressed", Number(button.dataset.track) === index);
+        selectTrack(index);
+    }
+
+    canvas.onpointerup = event => {
+        if (!drag) return;
+        const moved = drag.moved;
+        drag = undefined;
+        if (moved) return;
+        const [x, y] = point(event);
+        if (enabled && y >= 0 && y < ruler && x >= label) {
+            seek(Math.min(score.end || Infinity, from + (x - label) * scale));
+            return;
+        }
+        const curve = envelopes.hit(x, y, from + (x - label) * scale), found = hit(x, y);
+        choose(found, curve);
     };
     canvas.onpointercancel = () => { drag = undefined; };
     canvas.ondblclick = event => { if (point(event)[0] >= label && point(event)[1] >= ruler) { follow.checked = false; zoom(0.5, point(event)[0] - label); } };
@@ -311,6 +408,7 @@ export function timeline(request, select, selectTrack, seek, error) {
             else { follow.checked = false; move(from + (event.key === "ArrowLeft" ? -1 : 1) * (viewport().to - from) / 2); }
         }
     };
+    spatialCanvas.onkeydown = canvas.onkeydown;
     const split = get("split"), main = panel.parentElement;
     const size = value => { panel.style.flexBasis = `${Math.max(110, Math.min(main.clientHeight - 100, value))}px`; };
     split.onpointerdown = event => { split.setPointerCapture(event.pointerId); };
@@ -348,11 +446,7 @@ export function timeline(request, select, selectTrack, seek, error) {
                 button.dataset.track = index;
                 button.setAttribute("aria-pressed", index === trackIndex);
                 button.append(title, effects);
-                button.onclick = () => {
-                    trackIndex = index;
-                    for (const child of tracks.querySelectorAll(".track-select")) child.setAttribute("aria-pressed", child === button);
-                    selectTrack(index);
-                };
+                button.onclick = () => chooseTrack(index);
                 const heading = document.createElement("div");
                 heading.className = "track-heading";
                 heading.append(button, envelopes.control(index));

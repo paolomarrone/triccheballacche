@@ -5,9 +5,10 @@ import {tmpdir} from "node:os";
 import {once} from "node:events";
 
 // One isolated browser and DevTools connection, always closed even when a check fails.
-export async function withBrowser(run) {
+export async function withBrowser(run, {graphics = false} = {}) {
     const profile = await mkdtemp(tmpdir() + "/triccheballacche-");
-    const browser = spawn(process.env.CHROMIUM || "chromium", ["--headless", "--no-sandbox", "--disable-gpu",
+    const gpu = graphics ? (process.platform === "linux" ? ["--use-gl=angle", "--use-angle=gl", "--ignore-gpu-blocklist"] : []) : ["--disable-gpu"];
+    const browser = spawn(process.env.CHROMIUM || "chromium", ["--headless", "--no-sandbox", ...gpu,
         "--remote-debugging-port=0", "--user-data-dir=" + profile, "about:blank"], {stdio: ["ignore", "ignore", "pipe"]});
     let socket, sequence = 0;
     const pending = new Map(), diagnostics = [];

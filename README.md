@@ -151,12 +151,25 @@ and delay/reverb history is cleared. It never renders the intervening audio,
 including for unbounded scores. Timing follows
 rendered audio, without compensating for device latency or plugin release tails.
 
+The **Tracks** and **Score** tabs share the time window, playback, source selection,
+automation choices and mute/solo state. Score projects time, MIDI pitch and tracks
+into three dimensions, using the same bounded queries even for unbounded pieces.
+Drag to orbit, right-drag to pan the camera, and wheel to zoom. Shift+wheel pans
+time; Alt+wheel or `+`/`-` zooms time. **Flatten** provides a top view; **↺** resets
+the camera. Click a note for its source or a track number for its plugins. Each tab
+remembers its panel height; drag the divider to resize it.
+Note flashes follow scheduled events, with a minimum pulse for short notes;
+they do not measure audio levels or effect tails. Automation height uses each
+parameter's range, independently of pitch. Three.js is served locally and loaded
+only when opening Score. This tab requires WebGL 2; Tracks remains available
+without it. Both backends use the same renderer.
+
 **Show automation**, next to Follow, shows or hides all automation curves without
 affecting playback or parameter selections. Each automated track has a checklist
 below its name: choose any combination of parameters from its instruments,
 effects or mixers, or **All**. One parameter is selected initially. Each curve
 has a matching color in the checklist; selections survive Stop/Play and live revisions.
-Hover for the value and time, click for its source. Curves show scheduled step
+In Tracks, hover for the value and time, click for its source. Curves show scheduled step
 changes, including the held value at the left edge, using the parameter's range
 and logarithmic mapping where declared. Wide views summarize scheduled values
 in min/max bands without expanding loops. This is a read-only score view;

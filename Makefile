@@ -331,6 +331,10 @@ test-editor-ui: gui test-web
 	node test/editor-ui.mjs
 	node test/automation.mjs
 
+.PHONY: test-score-space
+test-score-space: gui build/web/player.mjs $(NATIVE_FIXTURES) $(WEB_FIXTURES) | build/test
+	node test/score-space.mjs
+
 clean:
 	rm -rf build
 

@@ -8,6 +8,13 @@ const valueText = (p, value) => {
     return label || format.format(value) + (p.unit ? ` ${units[p.unit] || p.unit}` : "");
 };
 
+export function automationRatio({minimum: min, maximum: max, map}, value) {
+    value = Math.max(Math.min(min, max), Math.min(Math.max(min, max), value));
+    const ratio = map === "logarithmic" && min * max > 0 && min !== max ?
+        Math.log(value / min) / Math.log(max / min) : (value - min) / (max - min || 1);
+    return Math.max(0, Math.min(1, ratio));
+}
+
 // Selection and one bounded window of immutable score automation, independent of DSP/UI readings.
 export function automation(request, changed) {
     const toggle = document.getElementById("show-automation"), menu = document.getElementById("automation-parameters");
@@ -70,7 +77,17 @@ export function automation(request, changed) {
         });
     }
 
+    function visibleCurves(view) {
+        if (!visible) return [];
+        return data.flatMap(({index, key, result}) => {
+            if (index < view.first || index >= view.first + view.count || result.to <= view.from || result.from >= view.to) return [];
+            const parameter = choices[index].find(p => p.key === key && selected[index].has(key));
+            return parameter && (result.bins || result.points?.length) ? [{index, parameter, result}] : [];
+        });
+    }
+
     return {
+        curves: visibleCurves,
         score(value, preserve = false) {
             menu.hidePopover();
             score = value;
@@ -132,19 +149,11 @@ export function automation(request, changed) {
             context.save();
             context.beginPath(); context.rect(label, ruler, width - label, context.canvas.clientHeight - ruler); context.clip();
             context.lineWidth = 1.25;
-            for (const {index, key, result} of data) {
-                if (index < view.first || index >= view.first + view.count || result.to <= view.from || result.from >= view.to) continue;
-                const p = choices[index].find(p => p.key === key && selected[index].has(key));
-                if (!p || !result.bins && !result.points?.length) continue;
+            for (const {index, parameter: p, result} of visibleCurves(view)) {
                 context.strokeStyle = `hsl(${p.hue} 65% ${dark ? 70 : 38}%)`;
                 context.fillStyle = context.strokeStyle;
                 const top = ruler + index * row - scroll;
-                const {minimum: min, maximum: max, map} = p.p;
-                const y = value => {
-                    const ratio = map === "logarithmic" && min * max > 0 && min !== max ?
-                        Math.log(value / min) / Math.log(max / min) : (value - min) / (max - min || 1);
-                    return top + row - 8 - Math.max(0, Math.min(1, ratio)) * (row - 16);
-                };
+                const y = value => top + row - 8 - automationRatio(p.p, value) * (row - 16);
                 const x = t => Math.max(label, Math.min(width, label + (t - view.from) / scale));
                 ++curves;
                 context.beginPath();
