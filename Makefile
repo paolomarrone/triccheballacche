@@ -8,7 +8,7 @@ endif
 ifeq ($(shell uname -o 2>/dev/null),Android)
 LDLIBS += -landroid-spawn
 endif
-MINIAUDIO ?= $(firstword $(wildcard ../miniaudio.h) .deps/miniaudio.h)
+MINIAUDIO ?= .deps/miniaudio.h
 JANET_VERSION = 1.42.1
 JANET ?= .deps/janet-$(JANET_VERSION)
 JANET_INCLUDES = -I$(JANET)/src/include -I$(JANET)/src/conf
@@ -83,13 +83,13 @@ build/obj/native/janet.o: build/generated/janet.c Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -MMD -MP -c $< -o $@
 
-build/obj/native/test/%.o: CFLAGS += -UNDEBUG
+build/obj/native/test/%.o: override CFLAGS += -UNDEBUG
 $(addprefix build/obj/native/,score_janet.o script.o trace.o posix/files.o posix/prepare.o posix/ui_x11.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
 build/obj/native/script.o: build/generated/perone.inc
 build/obj/native/posix/files.o: build/generated/library.inc
 build/obj/native/score_janet.o: build/generated/daw.inc
 $(addprefix build/obj/native/,audio.o player.o posix/cli.o posix/export.o posix/gui.o tools/perone-host.o test/player.o): $(MINIAUDIO)
-$(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): CPPFLAGS += -I$(WEBUI)/include
+$(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): override CPPFLAGS += -I$(WEBUI)/include
 $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): $(WEBUI)/include/webui.h
 
 $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
@@ -246,7 +246,7 @@ build/obj/web-player/%.o: %.c Makefile | $(JANET)/Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) -MMD -MP -c $< -o $@
 
-$(PLAYER_OBJECTS): WEB_FLAGS += $(PLAYER_FLAGS) -Ibuild/generated/web
+$(PLAYER_OBJECTS): override WEB_FLAGS += $(PLAYER_FLAGS) -Ibuild/generated/web
 build/obj/web-offline/score_janet.o build/obj/web-player/score_janet.o: build/generated/daw.inc
 build/obj/web-offline/script.o build/obj/web-player/script.o: build/generated/perone.inc
 
@@ -292,6 +292,13 @@ $(TEST_EFFECT)/wasm32/fixture.wasm: test/perone/plugin.c perone.h Makefile
 	$(EMCC) $(WEB_FIXTURE_FLAGS) -DPERONE_TEST_EFFECT $< -o $@
 
 .PHONY: test-web test-browser test-polpo-web test-trace test-editor-web test-editor-ui test-library test-live
+.PHONY: test-build test-build-web
+test-build: $(MINIAUDIO) | build/test
+	node test/build.mjs "$(MAKE)" "$(CC)" "$(MINIAUDIO)"
+
+test-build-web: $(MINIAUDIO) $(JANET)/Makefile | build/test
+	node test/build.mjs "$(MAKE)" "$(CC)" "$(MINIAUDIO)" "$(EMCC)"
+
 test-web: build/web/offline.mjs build/web/player.mjs cli build/test/view_json $(NATIVE_FIXTURES) $(WEB_FIXTURES)
 	node test/catalog.mjs
 	node test/request.mjs
@@ -326,3 +333,35 @@ test-editor-ui: gui test-web
 
 clean:
 	rm -rf build
+
+# Recheck configuration on each invocation; unchanged files keep their timestamps.
+# Capture global flags here so per-target additions cannot leak through prerequisites.
+build/config/native.compile: private CONFIG := $(CC) | $(CPPFLAGS) | $(CFLAGS) | $(SCRIPT_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(WEBUI) | $(BW_SOURCE)
+build/config/native.link: private CONFIG := $(CC) | $(CFLAGS) | $(LDFLAGS) | $(LDLIBS) | $(TARGET_OS)
+build/config/web-offline.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(SPORK) | $(BW_SOURCE)
+build/config/web-player.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(PLAYER_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(BW_SOURCE)
+build/config/web-offline.link: private CONFIG := $(EMCC) | $(CFLAGS) | $(LDFLAGS) | $(WEB_LINK) | $(WEB_EXPORTS) | $(WEB_METHODS)
+build/config/web-player.link: private CONFIG := $(EMCC) | $(CFLAGS) | $(LDFLAGS) | $(WEB_LINK) | $(PLAYER_FLAGS) | $(PLAYER_EXPORTS) | $(WEB_METHODS)
+build/config/web-fixtures: private CONFIG := $(EMCC) | $(WEB_FIXTURE_FLAGS)
+build/config/web-audio: private CONFIG := $(MINIAUDIO)
+build/config/janet: private CONFIG := $(JANET)
+CONFIG_FILES = $(addprefix build/config/,native.compile native.link web-offline.compile web-offline.link web-player.compile web-player.link web-fixtures web-audio janet)
+quote = '$(subst ','"'"',$(1))'
+.PHONY: FORCE
+FORCE:
+$(CONFIG_FILES): FORCE
+	@mkdir -p $(dir $@)
+	@printf '%s\n' $(call quote,$(CONFIG)) > $@.tmp
+	@cmp -s $@.tmp $@ || mv $@.tmp $@
+	@rm -f $@.tmp
+
+NATIVE_OBJECTS = $(addprefix build/obj/native/,$(patsubst %.c,%.o,$(wildcard *.c posix/*.c tools/*.c test/*.c)) json.o janet.o vendor/webui.o vendor/civetweb.o vendor/wkwebview.o)
+$(NATIVE_OBJECTS) $(filter %$(PERONE_SUFFIX),$(NATIVE_FIXTURES)) $(MIXER_FIXTURE): build/config/native.compile
+$(NATIVE_PROGRAMS) $(NATIVE_TESTS): build/config/native.link
+$(WEB_OBJECTS): build/config/web-offline.compile
+$(PLAYER_OBJECTS): build/config/web-player.compile
+build/web/offline.mjs: build/config/web-offline.link
+build/web/player.mjs: build/config/web-player.link
+$(WEB_FIXTURES): build/config/web-fixtures
+build/generated/web/miniaudio.h: build/config/web-audio
+build/generated/janet.c: build/config/janet

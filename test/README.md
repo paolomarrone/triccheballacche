@@ -9,6 +9,8 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | Command | Coverage and additional requirements |
 | --- | --- |
 | `make test` | Native scheduler, Perone lifecycle, score API, patterns, routing, export, player and projection. No audio device required. |
+| `make test-build` | Incremental host builds, compiler/flag changes, linking, assertions, failure recovery and dependency overrides in an isolated directory; Node.js and `patch`. |
+| `make test-build-web` | The same build checks across native and both Wasm variants; also requires Emscripten. |
 | `make -C plugins/piano test` | Embedded piano, bank conversion, stereo, velocity, sustain, voice stealing and block-size independence; requires the downloaded Florestan bank and Tibia. |
 | `make -C plugins/piano test-web PERONE_PLATFORM=wasm32` | Piano native/Wasm PCM parity and fixed playback memory through the Perone loader; also requires Emscripten and Node.js. |
 | `make test-plugins` | Six local prebuilt plugins, metadata, pitch bend and block-size independence. |
@@ -88,6 +90,11 @@ Catalog checks compare the editor with the published files, including optional
 plugins. Support modules remain importable without appearing as scores.
 `catalog.mjs` checks that publishing skips native-only bundles and retains score
 imports, relative UI assets and auxiliary Wasm modules.
+
+Build checks use the real Makefile and compilers with isolated artifacts. They verify
+unchanged builds, target-order independence, compile versus link invalidation,
+native/Wasm separation, assertions with `-DNDEBUG`, recovery after compiler failure,
+and regeneration from older headers at new paths. They leave working binaries intact.
 
 ## Source tracking
 

@@ -574,7 +574,16 @@ queries and serialization stay outside the audio thread.
 
 Native programs share objects under `build/obj/native/`. Wasm playback and offline
 rendering use separate object directories under `build/obj/`; all three builds
-track header dependencies. `make clean` removes `build/`, preserving `renders/`,
+track headers and compiler configuration. Changing `CC`, `EMCC`, `CFLAGS` or
+`CPPFLAGS` rebuilds affected objects; changing only `LDFLAGS` or native `LDLIBS`
+relinks. Configuration files under `build/config/` retain their timestamps on an
+unchanged build. Use one make invocation for concurrent targets (`make -j`);
+independent makes must not write the same build directory simultaneously.
+Miniaudio defaults to the pinned download in `.deps/miniaudio.h`; a local copy
+requires an explicit `MINIAUDIO=/path/to/miniaudio.h` override. `JANET`, `SPORK`
+and `WEBUI` likewise accept explicit paths. Changed source paths regenerate patched
+copies even when the replacement is older.
+`make clean` removes `build/`, preserving `renders/`,
 `.deps/` and independently built plugins.
 Use English for prose, comments and UI text; keep musical names.
 Local C uses tabs displayed at four columns, Janet two spaces, and JavaScript
