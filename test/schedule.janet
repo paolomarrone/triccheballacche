@@ -13,21 +13,23 @@
   (rejects (fn [] (daw/schedule 0 bad empty))))
 (each bad [-1 3601 nil "0" math/inf (/ 0 0)]
   (rejects (fn [] (daw/schedule bad 120 empty))))
-(each bad [nil {} {:length math/inf :events []} {:length -1 :events []}
-           {:length 1 :events nil} {:length 1 :events [[0 1]]}
-           {:length 1 :events [[0 1 [:param synth :gain 0.5]]]}
-           {:length 1 :events [[0 0 [:note synth 60 100]]]}
-           {:length 1 :events [[0 1e-8 [:note synth 60 100]]]}
-           {:length 1 :events [[0 1 [:note synth 60]]]}
-           {:length 1 :events [[0 1 [:note synth 60.5 100]]]}
-           {:length 1 :events [[0 1 [:note synth 60 0]]]}
-           {:length 1 :events [[0 0 [:param synth :gain 2]]]}
-           {:length 1 :events [[0 0 [:param synth :meter 0]]]}
-           {:length 1 :events [[0 0 [:unknown synth :gain 0]]]}
-           {:length 1 :events [[1 0 [:note synth 60 100]]]}
-           {:length 1 :events [[0 math/inf [:note synth 60 100]]]}
-           {:length 1 :events [[-1 0 [:note synth 60 100]]]}]
+(each bad [nil {} {:length math/inf :streams []} {:length -1 :streams []}
+           {:length 1 :streams nil} {:length 1 :events []}]
   (rejects (fn [] (daw/schedule 0 120 bad))))
+(each items [nil [[0 1]]
+             [[0 1 [:param synth :gain 0.5]]]
+             [[0 0 [:note synth 60 100]]]
+             [[0 1e-8 [:note synth 60 100]]]
+             [[0 1 [:note synth 60]]]
+             [[0 1 [:note synth 60.5 100]]]
+             [[0 1 [:note synth 60 0]]]
+             [[0 0 [:param synth :gain 2]]]
+             [[0 0 [:param synth :meter 0]]]
+             [[0 0 [:unknown synth :gain 0]]]
+             [[1 0 [:note synth 60 100]]]
+             [[0 math/inf [:note synth 60 100]]]
+             [[-1 0 [:note synth 60 100]]]]
+  (rejects (fn [] (daw/schedule 0 120 {:length 1 :streams [{:offset 0 :events items}]}))))
 (rejects (fn [] (daw/schedule 3599 60 (p/events 2 []))))
 (rejects (fn [] (daw/schedule 3599 60 (p/events 1 [[0 2 [:note synth 60 100]]]))))
 

@@ -87,7 +87,7 @@
 (defn hit [items t lane pitch velocity]
   (array/push items [t (+ t 0.001) [:note (drums lane) pitch velocity]]))
 (defn sweep [items t beats node key f]
-  (each [a _ value] ((p/curve beats (* beats 32) f) :events)
+  (each [a _ value] (p/flatten (p/curve beats (* beats 32) f))
     (control items (+ t a) node key value)))
 (defn duck [items t]
   # Each kick makes space in the accompaniment; the lead and drum tails keep moving.
@@ -179,12 +179,12 @@
     (when sing
       (def tune (if (or boot (< (% bar 4) 2)) hook answer))
       (def from (* (% bar 2) 4))
-      (each [a b pitch] (tune :events)
+      (each [a b pitch] (p/flatten tune)
         (when (<= from a (- (+ from 4) 0.0001))
           (note items (+ t (- a from)) (* (- b a) (if hot 0.64 0.8)) lead pitch
             (if boot 72 (if hot 91 86))))))
     (when (and dub (= bar 0))
-      (each [a b pitch] (hook :events)
+      (each [a b pitch] (p/flatten hook)
         (note items (* a 2) (* (- b a) 1.4) lead (- pitch 12) 81)))
     (when splice
       (for step 0 16

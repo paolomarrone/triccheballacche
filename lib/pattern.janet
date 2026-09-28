@@ -2,20 +2,50 @@
 
 (defn- finite? [x] (and (number? x) (= (- x x) 0)))
 
+(defn streams
+  "Validate a pattern and return its sources without expanding repetitions."
+  [pattern]
+  (assert (and (dictionary? pattern) (<= 1 (length pattern) 2)
+               (or (nil? (pattern :length))
+                   (and (finite? (pattern :length)) (>= (pattern :length) 0)))
+               (indexed? (pattern :streams))) "expected a pattern")
+  (each key (keys pattern)
+    (assert (or (= key :length) (= key :streams)) "unknown pattern field"))
+  (each source (pattern :streams)
+    (assert (and (dictionary? source) (<= 2 (length source) 3) (finite? (source :offset))
+                 (or (nil? (source :period))
+                     (and (nil? (pattern :length)) (finite? (source :period)) (> (source :period) 0)))
+                 (indexed? (source :events))) "invalid event source")
+    (each key (keys source)
+      (assert (or (= key :offset) (= key :period) (= key :events)) "unknown source field"))
+    (each item (source :events)
+      (assert (and (indexed? item) (= (length item) 3)) "expected [start end value]")
+      (def [a b _] item)
+      (assert (and (finite? a) (finite? b) (<= a b)
+                   (finite? (+ (source :offset) a)) (finite? (+ (source :offset) b)))
+        "expected finite start <= end")))
+  (pattern :streams))
+
+(defn- composed [duration sources]
+  (def pattern (freeze {:length duration :streams sources}))
+  (streams pattern)
+  pattern)
+
 (defn events
   "Build an immutable pattern from length and [start end value] events, preserving insertion order."
   [duration items]
   (assert (and (finite? duration) (>= duration 0)) "length must be finite and nonnegative")
   (assert (indexed? items) "expected an event sequence")
-  (each item items
-    (assert (and (indexed? item) (= (length item) 3)) "expected [start end value]")
-    (def [a b _] item)
-    (assert (and (finite? a) (finite? b) (<= a b)) "expected finite start <= end"))
-  (freeze {:length duration :events items}))
+  (composed duration (if (empty? items) [] [{:offset 0 :period nil :events items}])))
 
-(defn- checked [pattern]
-  (assert (and (dictionary? pattern) (= (length pattern) 2)) "expected a pattern")
-  (events (pattern :length) (pattern :events)))
+(defn flatten
+  "Return a finite phrase's [start end value] events at absolute beat offsets, in source order."
+  [pattern]
+  (def sources (streams pattern))
+  (assert (pattern :length) "expected a finite phrase")
+  (freeze
+    (seq [source :in sources [a b value] :in (source :events)]
+      [(+ (source :offset) a) (+ (source :offset) b) value])))
 
 (defn steps
   "Build equal intervals of step beats. nil is a rest, including at the end."
@@ -36,36 +66,6 @@
       (def x (/ i steps))
       (def t (* duration x))
       [t t (shape x)])))
-
-# A stream has a finite template and, optionally, repeats it from its offset onwards.
-# Existing finite values keep their representation and eager transformation semantics.
-(defn streams
-  "Return event sources with an offset and optional period, without expanding repetitions."
-  [pattern]
-  (assert (and (dictionary? pattern) (<= 1 (length pattern) 2)) "expected a pattern")
-  (if (pattern :streams)
-    (do
-      (assert (and (or (nil? (pattern :length))
-                       (and (finite? (pattern :length)) (>= (pattern :length) 0)))
-                   (indexed? (pattern :streams))) "invalid streamed pattern")
-      (each source (pattern :streams)
-        (assert (and (dictionary? source) (<= 2 (length source) 3) (finite? (source :offset))
-                     (or (nil? (source :period))
-                         (and (finite? (source :period)) (> (source :period) 0)))) "invalid event source")
-        (events 0 (source :events)))
-      (pattern :streams))
-    [{:offset 0 :period nil :events ((checked pattern) :events)}]))
-
-# Keep finite phrases flat; repeating compositions retain their independent sources.
-(defn- composed [duration sources]
-  (if (and duration (not (find |($ :period) sources)))
-    (events duration
-      (seq [source :in sources [a b value] :in (source :events)]
-        [(+ (source :offset) a) (+ (source :offset) b) value]))
-    (do
-      (def p (freeze {:length duration :streams sources}))
-      (streams p)
-      p)))
 
 (defn serial
   "Concatenate declared lengths, retaining pickups and overhangs. Only the last pattern may be unbounded."
@@ -112,10 +112,14 @@
 (defn reverse
   "Reflect a finite phrase around its declared length. Reverse before looping."
   [pattern]
-  (def p (checked pattern))
-  (def duration (p :length))
-  (events duration
-    (seq [[a b value] :in (p :events)] [(- duration b) (- duration a) value])))
+  (def sources (streams pattern))
+  (def duration (pattern :length))
+  (assert duration "expected a finite phrase")
+  (composed duration
+    (seq [source :in sources]
+      {:offset (- (source :offset))
+       :period nil
+       :events (seq [[a b value] :in (source :events)] [(- duration b) (- duration a) value])})))
 
 (defn query
   "Return whole events overlapping [from,to), with stable [source,event,cycle] identities.
@@ -154,6 +158,8 @@
 (defn loop :shadow
   "Repeat a finite positive-length phrase forever, preserving pickups and overhangs."
   [pattern]
-  (def p (checked pattern))
-  (assert (> (p :length) 0) "loop requires a finite positive-length pattern")
-  (composed nil [{:offset 0 :period (p :length) :events (p :events)}]))
+  (def items (flatten pattern))
+  (assert (> (pattern :length) 0) "loop requires a finite positive-length pattern")
+  # A phrase repeats as a whole: its endpoint precedes the next cycle's start,
+  # even when the phrase was assembled from several sources.
+  (composed nil [{:offset 0 :period (pattern :length) :events items}]))

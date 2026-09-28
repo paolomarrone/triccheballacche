@@ -76,7 +76,7 @@
         (def trace
           (case name
             'events ((originals 'events) (result :length)
-                      (seq [[i [a b value]] :pairs (result :events)]
+                      (seq [[i [a b value]] :pairs (args 1)]
                         (def slot (get-in appended [(args 1) i]))
                         (def saved (and slot (= (slot 0) ((args 1) i))))
                         (when saved (++ pushed-events))
@@ -107,44 +107,38 @@
     (def binding (env name))
     (put env name (table/setproto @{:value (wrap (binding :value))} binding)))
 
+  # Both entry points emit sources in the same order; the report records their
+  # absolute template times. The audio score owns repetition and sample rounding.
+  (defn scheduled [f args pattern start bpm]
+    (def source (origin))
+    (def sources (streams pattern))
+    (def traces (streams (provenance pattern source)))
+    (def orders @{})
+    (each stream sources
+      (each [_ _ command] (stream :events)
+        (def node (command 1))
+        (unless (orders node) (put orders node (native/event-count node)))))
+    (def result (f ;args))
+    (def unit (/ 60 bpm))
+    (eachp [si stream] sources
+      (eachp [ei [a b command]] (stream :events)
+        (def node (command 1))
+        (def order (orders node))
+        (array/push emitted
+          [(+ start (* unit (+ (stream :offset) a)))
+           (+ start (* unit (+ (stream :offset) b)))
+           ((((traces si) :events) ei) 2) (command 0) node order])
+        (put orders node (+ order 1))))
+    result)
+
   (replace 'daw/schedule
     (fn [schedule]
       (fn [start bpm pattern]
-        (def source (origin))
-        (def trace (provenance pattern source))
-        (def orders @{})
-        (each [_ _ command] (pattern :events)
-          (def node (command 1))
-          (unless (orders node) (put orders node (native/event-count node))))
-        (def result (schedule start bpm pattern))
-        (eachp [i [a b command]] (pattern :events)
-          (array/push emitted
-            [(+ start (* a (/ 60 bpm))) (+ start (* b (/ 60 bpm)))
-             (((trace :events) i) 2) (command 0) (command 1) (orders (command 1))])
-          (update orders (command 1) + 1))
-        result)))
-
+        (scheduled schedule [start bpm pattern] pattern start bpm))))
   (replace 'daw/score
     (fn [score]
       (fn [pattern &opt options]
-        (def source (origin))
-        (def trace (provenance pattern source))
-        (def sources (streams pattern))
-        (def traces (streams trace))
-        (def orders @{})
-        (each stream sources
-          (each [_ _ command] (stream :events)
-            (def node (command 1))
-            (unless (orders node) (put orders node (native/event-count node)))))
-        (def result (score pattern options))
-        (eachp [si stream] sources
-          (eachp [ei [a b command]] (stream :events)
-            (def node (command 1))
-            (def order (or (orders node) 0))
-            (array/push emitted
-              [a b ((((traces si) :events) ei) 2) (command 0) node order])
-            (put orders node (+ order 1))))
-        result)))
+        (scheduled score [pattern options] pattern 0 (get-in env ['daw/bpm :ref 0])))))
 
   # schedule was compiled before these replacements, so scheduled notes are not recorded twice.
   (replace 'daw/note

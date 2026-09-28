@@ -79,6 +79,20 @@ for (const path of ["test/schedule.janet", "test/playback.janet"]) {
     assert.deepEqual(renderScore(host, entry, 48000), plain);
 }
 
+// Score annotations use template seconds, including source offsets and the score tempo.
+const looping = await traceScore(host, "test/trace-loop.janet", `
+(import ../lib/pattern :as p)
+(def tone (daw/plugin "build/test/fixture.perone"))
+(daw/output (daw/track tone))
+(daw/tempo 240)
+(daw/score (p/serial [(p/events 3 [])
+  (p/parallel [(p/loop (p/events 4 [[0 1 [:note tone 60 100]]]))
+               (p/events 0 [[1 1 [:param tone :gain 0.5]]])])]) {:duration 2})
+`);
+renderScore(host, looping, 48000);
+assert.deepEqual(readTrace(host).events.map(event => [event[0], event[1], event[3], event[5]]),
+    [[.75, 1, "note", 0], [1, 1, "param", 1]]);
+
 // Failure, including a second installation, must not leave a report or poison ordinary playback.
 for (const failure of ['(error "trace failure")', '(trace/install (curenv) (dyn :current-file))']) {
     diagnostics.length = 0;

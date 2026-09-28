@@ -236,14 +236,18 @@ its MIDI velocity does not. Track gain remains independent and automatable.
 ## Patterns and musical time
 
 `lib/pattern.janet` provides immutable musical data without calling `daw/*`.
-A finite phrase retains its simple representation:
+Finite and unbounded patterns share one representation:
 
 ```janet
-{:length 4 :events [[0 0.75 60] [1 1.5 64] [3 3.5 67]]}
+{:length 4
+ :streams [{:offset 0 :period nil :events [[0 0.75 60] [1 1.5 64] [3 3.5 67]]}]}
 ```
 
 Times are relative quarter-note beats. `:length` is the nominal phrase length,
 not the last event's end: pickups, overhangs and zero-length phrases are allowed.
+Each source places an event template at `:offset`, optionally repeating with
+`:period`. Unbounded patterns have a nil length; finite phrases have no repeating
+sources. Composition preserves source order and offsets without expanding events.
 An event `[t t value]` is a point. Values are generic Janet data; constructors
 copy and freeze containers, subject to Janet's limits for opaque values.
 
@@ -258,6 +262,8 @@ copy and freeze containers, subject to Janet's limits for opaque values.
 | `p/stretch factor pattern` | Scale times and length by a positive factor. |
 | `p/reverse pattern` | Reflect a finite phrase around its length; reverse before looping. |
 | `p/loop pattern` | Repeat a positive-length finite phrase indefinitely. |
+| `p/streams pattern` | Validate and inspect the sources without expanding repetitions. |
+| `p/flatten pattern` | Return a finite phrase's events at absolute beat offsets, including pickups, overhangs and endpoint points. |
 | `p/query pattern from to &opt limit` | Whole events overlapping the half-open beat interval, with stable `:id`, `:start`, `:end`, `:value`; default limit 65536. |
 
 Serial and parallel preserve overhangs and list order; an empty list gives a
@@ -512,7 +518,9 @@ moves a new score and cursor into that same session; DSPs and held notes survive
 The audio callback publishes the revision at its boundary, and the control thread
 frees retired data. `ScoreView` owns its query index independently of the session.
 Browser workers transfer prepared data using a private same-build snapshot,
-without sharing Janet objects or plugin pointers. The editor owns a module cache,
+containing the score and source annotations. The receiver reconstructs projection
+data and indices; derived metadata and event copies are not serialized.
+Workers share no Janet objects or plugin pointers. The editor owns a module cache,
 the session owns DSPs, and the player owns the audio device. Stop retains all three.
 Play resumes the existing state. Seeking restores score parameters and held notes,
 resets DSPs and event cursors, and discards pending host messages and edits.

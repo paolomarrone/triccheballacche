@@ -3,7 +3,7 @@
 #include <string.h>
 
 #define SNAPSHOT_LIMIT (256u * 1024u * 1024u)
-#define SNAPSHOT_MAGIC UINT32_C(0x54424334)
+#define SNAPSHOT_MAGIC UINT32_C(0x54424335)
 
 typedef struct {
 	unsigned char *data;
@@ -71,7 +71,7 @@ static void string(Transfer *t, char **value) {
 
 #define FIELD(t, field) bytes(t, &(field), sizeof(field))
 
-static void transfer(Transfer *t, Score *s, Output *output, ScoreView *view) {
+static void transfer_score(Transfer *t, Score *s, Output *output) {
 	uint32_t magic = SNAPSHOT_MAGIC;
 	FIELD(t, magic);
 	if (magic != SNAPSHOT_MAGIC) {
@@ -127,39 +127,12 @@ static void transfer(Transfer *t, Score *s, Output *output, ScoreView *view) {
 		q->cues = cues;
 		q->capacity = q->count;
 	}
-	FIELD(t, view->nnodes);
-	FIELD(t, view->ntracks);
-	FIELD(t, view->output);
-	FIELD(t, view->end);
+}
+
+// Only provenance crosses with the score. Graph metadata, events and query indices
+// are reconstructed by the receiver using the same projection builder as native.
+static void annotations(Transfer *t, ScoreView *view) {
 	FIELD(t, view->active_from);
-	FIELD(t, view->repeating);
-	FIELD(t, view->sample_rate);
-	if (view->nnodes != s->nnodes || view->ntracks < 0 || view->ntracks > MAX_TRACKS + 1) {
-		view->nnodes = 0;
-		t->failed = 1;
-		return;
-	}
-	bytes(t, view->tracks, view->ntracks * sizeof(Track));
-	for (int i = 0; i < view->nnodes && !t->failed; ++i) {
-		ScoreNode *n = view->nodes + i;
-		FIELD(t, n->inputs);
-		FIELD(t, n->ninputs);
-		FIELD(t, n->upstream);
-		FIELD(t, n->downstream);
-		FIELD(t, n->defaults);
-		FIELD(t, n->minimum);
-		FIELD(t, n->maximum);
-		FIELD(t, n->integers);
-		FIELD(t, n->offsets);
-		string(t, &n->label);
-		string(t, &n->name);
-		string(t, &n->bundle);
-		string(t, &n->product);
-		FIELD(t, n->count);
-		n->events = array(t, n->events, n->count, sizeof(ScoreEvent));
-		n->by_order = array(t, n->by_order, n->count, sizeof(size_t));
-		n->controls = array(t, n->controls, n->offsets[MAX_PARAMS], sizeof(size_t));
-	}
 	FIELD(t, view->norigins);
 	FIELD(t, view->nreferences);
 	if (view->norigins > SNAPSHOT_LIMIT / sizeof(ScoreOrigin)) {
@@ -193,6 +166,20 @@ static void transfer(Transfer *t, Score *s, Output *output, ScoreView *view) {
 		}
 	}
 	view->references = array(t, view->references, view->nreferences, sizeof(size_t));
+	for (size_t i = 0; i < view->nreferences && !t->failed; ++i)
+		if (view->references[i] >= view->norigins)
+			t->failed = 1;
+	for (int i = 0; i < view->nnodes && !t->failed; ++i) {
+		ScoreNode *n = view->nodes + i;
+		for (size_t j = 0; j < n->count && !t->failed; ++j) {
+			// New projections start in emission order; existing ones are indexed by time.
+			ScoreEvent *e = n->events + (t->reading ? j : n->by_order[j]);
+			FIELD(t, e->first_origin);
+			FIELD(t, e->norigins);
+			if (e->first_origin > view->nreferences || e->norigins > view->nreferences - e->first_origin)
+				t->failed = 1;
+		}
+	}
 }
 
 void *score_pack(const Score *s, const Output *output, const ScoreView *view, size_t *length) {
@@ -200,7 +187,13 @@ void *score_pack(const Score *s, const Output *output, const ScoreView *view, si
 	Score description = *s;
 	ScoreView projection = *view;
 	Output config = *output;
-	transfer(&t, &description, &config, &projection);
+	if (!s->sealed || view->nnodes != s->nnodes)
+		return NULL;
+	for (int i = 0; i < s->nnodes; ++i)
+		if (view->nodes[i].count != s->nodes[i].event_count || (view->nodes[i].count && !view->nodes[i].by_order))
+			return NULL;
+	transfer_score(&t, &description, &config);
+	annotations(&t, &projection);
 	if (t.failed) {
 		free(t.data);
 		return NULL;
@@ -213,9 +206,12 @@ int score_unpack(Score *s, Output *output, ScoreView *view, const void *data, si
 	Transfer t = {.data = (unsigned char *)data, .length = length, .reading = 1};
 	if (s->nnodes || view->nnodes || length > SNAPSHOT_LIMIT)
 		return -1;
-	transfer(&t, s, output, view);
-	if (t.failed || t.position != length)
+	transfer_score(&t, s, output);
+	if (t.failed)
 		return -1;
 	s->has_output = 1;
-	return score_end(s, s->frames);
+	if (score_end(s, s->frames) || score_view_init(view, s))
+		return -1;
+	annotations(&t, view);
+	return t.failed || t.position != length ? -1 : score_view_index(view);
 }

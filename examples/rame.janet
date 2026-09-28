@@ -17,7 +17,7 @@
   (array/push items [beat beat [:param node parameter value]]))
 
 (defn sweep [items node parameter beat duration from to]
-  (each [t _ value] ((p/curve duration (* 32 duration) |(music/lerp from to $)) :events)
+  (each [t _ value] (p/flatten (p/curve duration (* 32 duration) |(music/lerp from to $)))
     (control items node (+ beat t) parameter value)))
 
 (defn note [items node beat duration pitch volume]
@@ -91,7 +91,7 @@
 (defn thump [items beat volume]
   (note items kick beat 0.36 32 volume)
   # Coarse tuning is in octaves. Each kick falls two octaves in 80 ms.
-  (each [t _ value] ((p/curve (* 0.08 (/ bpm 60)) 24 |(* 2 (math/pow (- 1 $) 3))) :events)
+  (each [t _ value] (p/flatten (p/curve (* 0.08 (/ bpm 60)) 24 |(* 2 (math/pow (- 1 $) 3))))
     (control items kick (+ beat t) :vco1_coarse value)))
 
 (def roots [38 34 41 36]) # D minor 9, Bb major 7, F major 9, C add 9.
@@ -118,7 +118,7 @@
     (def final? (and (= kind :reprise) (>= bar (/ bars 2))))
     (each pitch pitches (note items pad beat 3.5 pitch 68))
     (when arps?
-      (each [offset _ degree] ((p/steps 0.5 [0 2 1 3 2 1 3 2]) :events)
+      (each [offset _ degree] (p/flatten (p/steps 0.5 [0 2 1 3 2 1 3 2]))
         (def t (+ beat offset))
         (def offbeat (= (% (- t beat) 1) 0.5))
         (note items arp (+ t (if offbeat 0.045 0)) (if break? 0.4 0.22)
@@ -193,7 +193,7 @@
   (def duration (- (form :length) intro-rest))
   (def items @[])
   (sweep items arp :pulse_width intro-rest duration 24 66)
-  (each [t _ value] ((p/curve duration (* 16 duration) |(* 65 (math/sin (* 22 math/pi $)))) :events)
+  (each [t _ value] (p/flatten (p/curve duration (* 16 duration) |(* 65 (math/sin (* 22 math/pi $)))))
     (control items arp-pan (+ intro-rest t) :pan value))
   (p/parallel [form (p/events (form :length) items)]))
 
@@ -208,7 +208,7 @@
 (sweep items master :gain 0 0.125 0 1)
 (def unit (/ bpm 60))
 (def length (+ finish (* 6 unit)))
-(each [t _ value] ((p/curve (* 1.99 unit) 160 |(* (- 1 $) (- 1 $))) :events)
+(each [t _ value] (p/flatten (p/curve (* 1.99 unit) 160 |(* (- 1 $) (- 1 $))))
   (control items master (+ (- length (* 2 unit)) t) :gain value))
 (def end (daw/schedule 0 bpm (p/parallel [form (p/events length items)])))
 (daw/end end {:format :pcm16 :normalize 0.94})

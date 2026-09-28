@@ -108,7 +108,7 @@
       [55 1.5] [55 0.5] [57 1] [58 1] [57 2] [50 2]]]))
 (defn pitch-at [voice beat]
   (def t (% beat 24))
-  (def event (find (fn [[a b _]] (and (<= a t) (< t b))) ((parts voice) :events)))
+  (def event (find (fn [[a b _]] (and (<= a t) (< t b))) (p/flatten (parts voice))))
   (when event (event 2)))
 (def teeth [0 12 0 7 12 0 19 7 0 12 7 24 0 7 12])
 
@@ -132,7 +132,7 @@
 
   (eachp [v voice] manuals
     (for repeat 0 (math/ceil (/ beats 24))
-      (each [a b pitch] ((parts v) :events)
+      (each [a b pitch] (p/flatten (parts v))
         (def cadence (= kind :amen))
         (def t (if cadence (* 4 (- a 22)) (+ a (* repeat 24))))
         (when (<= 0 t (- beats 0.001))

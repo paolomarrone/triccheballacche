@@ -105,7 +105,7 @@
     (when (or (not quiet) (= kind :sleep))
       (note items t 0.65 sub (- chord-root 12) 76)
       (unless quiet (note items (+ t 2.75) 0.42 sub (- chord-root 12) 62))))
-  (each [a b pitch] (tune :events)
+  (each [a b pitch] (p/flatten tune)
     (for repeat 0 (math/ceil (/ beats (tune :length)))
       (def t (+ a (* repeat (tune :length))))
       (when (< t beats)
@@ -187,7 +187,7 @@
 (def duration (+ (song :length) 3))
 (def fade
   (p/events duration
-    (seq [[a b gain] :in ((p/curve 2.9 180 |(math/pow (- 1 $) 2)) :events)]
+    (seq [[a b gain] :in (p/flatten (p/curve 2.9 180 |(math/pow (- 1 $) 2)))]
       [(+ (song :length) a) (+ (song :length) b) [:param master :gain gain]])))
 (daw/schedule 0 60 (p/parallel [song fade]))
 (daw/param master (- duration (/ 1 48000)) :gain 0)

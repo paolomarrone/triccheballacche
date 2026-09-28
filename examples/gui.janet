@@ -14,7 +14,7 @@
 (defn phrase [root]
   (def notes (p/steps 0.5 (map |(+ root $) [0 7 12 3 10 7 15 12])))
   (p/events (notes :length)
-    (map (fn [[a b pitch]] [a (- b 0.08) [:note synth pitch 95]]) (notes :events))))
+    (map (fn [[a b pitch]] [a (- b 0.08) [:note synth pitch 95]]) (p/flatten notes))))
 
 (def song (p/serial (seq [i :range [0 32]] (phrase ([36 36 39 34] (% i 4))))))
 # 32 control points per second at 120 BPM, with different periods for each movement.

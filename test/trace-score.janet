@@ -26,7 +26,7 @@
 (daw/note synth 2 0.2 72) # direct note
 (daw/param synth 2.1 :gain 0.3) # direct parameter
 # A literal pattern has no captured construction; scheduling is the honest fallback.
-(daw/schedule 2.3 60 {:length 0.2 :events [[0 0.2 [:note synth 74 100]]]}) # fallback
+(daw/schedule 2.3 60 {:length 0.2 :streams [{:offset 0 :events [[0 0.2 [:note synth 74 100]]]}]}) # fallback
 (defn append-note [items t pitch]
   (array/push items [t (+ t 0.04) [:note synth pitch 100]])) # event producer
 (defn phrase []

@@ -8,5 +8,5 @@
 # Each note holds for 0.4 beats; the phrase retains its seven eighth-note slots.
 (daw/schedule 0 154
   (p/events (phrase :length)
-    (seq [[a _ pitch] :in (phrase :events)] [a (+ a 0.4) [:note bass pitch 100]])))
+    (seq [[a _ pitch] :in (p/flatten phrase)] [a (+ a 0.4) [:note bass pitch 100]])))
 (daw/end 2)

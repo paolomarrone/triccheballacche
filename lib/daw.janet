@@ -1,4 +1,5 @@
 # Public score API: Janet reads product metadata and passes owned descriptions to C.
+(import ./lib/pattern :as daw-pattern)
 
 (def daw/nodes @{})
 (def daw/products @{})
@@ -78,17 +79,13 @@
   [start bpm pattern]
   (assert (and (number? start) (<= 0 start 3600)) "start must be between 0 and 3600 seconds")
   (assert (and (number? bpm) (= (- bpm bpm) 0) (> bpm 0)) "BPM must be finite and positive")
-  (assert (and (dictionary? pattern) (= (length pattern) 2)
-               (number? (pattern :length)) (>= (pattern :length) 0)
-               (indexed? (pattern :events))) "expected a pattern")
+  (def items (daw-pattern/flatten pattern))
   (def unit (/ 60 bpm))
   (def end (+ start (* unit (pattern :length))))
   (assert (<= start end 3600) "pattern end must be within 3600 seconds")
-  (each item (pattern :events)
-    (assert (and (indexed? item) (= (length item) 3)) "expected [start end value]")
+  (each item items
     (def [a b command] item)
-    (assert (and (number? a) (number? b) (<= a b)
-                 (indexed? command) (= (length command) 4)) "invalid scheduled event")
+    (assert (and (indexed? command) (= (length command) 4)) "invalid scheduled event")
     (def time (+ start (* unit a)))
     (def until (+ start (* unit b)))
     (assert (<= 0 time until 3600) "event must be within 0..3600 seconds")
@@ -117,9 +114,7 @@
   (assert (dictionary? options) "expected score options")
   (each key (keys options)
     (assert (find |(= key $) [:duration :quantum]) "unknown score option"))
-  (assert (and (dictionary? pattern)
-               (or (indexed? (pattern :streams)) (indexed? (pattern :events)))) "expected a pattern")
-  (def sources (or (pattern :streams) [{:offset 0 :period nil :events (pattern :events)}]))
+  (def sources (daw-pattern/streams pattern))
   (def unit (/ 60 daw/bpm))
   (native/sequence daw/bpm (or (options :quantum) 4))
   (eachp [si source] sources

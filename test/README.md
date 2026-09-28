@@ -59,7 +59,8 @@ sample-accurate crossfades, block invariance, rewind and graph rejection.
 Mixer tests cover mute/solo precedence, multiple solos, 5 ms fades, automation
 and DSP advancement while inaudible, restart persistence and the last track slot.
 
-`view-json.mjs` compares native and Wasm projection replies, including density,
+`view-json.mjs` compares native, directly prepared Wasm and reconstructed worker
+projection replies, including density,
 overlapping notes, automation, imported origins, stale revisions and invalid queries. It frees
 the audio score before querying to verify independent projection ownership.
 Automation tests check declared defaults, simultaneous writes, held values,
@@ -93,7 +94,8 @@ User callbacks still run once. Direct `daw/note` and `daw/param` calls are captu
 as well. Tracking remains separate from musical values and audio events.
 
 The report contains `:locations` (stacks of file/line/column positions) and
-`:events` (`[start end origins kind node order]`, in absolute seconds).
+`:events` (`[start end origins kind node order]`, in absolute template seconds).
+Repetition and sample rounding belong to the score; annotations identify template events.
 `trace-host.mjs` exports a complete report as a test oracle. Editors use the C
 projection index, requesting only visible notes and active origins after Janet
 has closed. The clock is `player_time`; highlights last for the programmed note
@@ -141,11 +143,15 @@ wasm32 counter boundary, block-size independence, DSP reuse, note-offs crossing
 revisions, same-pitch retriggers, rounded loop boundaries and worker snapshot round trips.
 Preparation must work without creating DSPs; failed activation retains the caller's
 score, and successful activation transfers ownership. Concurrent revision publication
-and retirement must preserve metadata and existing DSPs. Truncated snapshots must
-fail without leaking partially decoded descriptions. Projection tests check negative
+and retirement must preserve metadata and existing DSPs. Snapshots carry musical
+data and source annotations; the receiver rebuilds graph metadata, events and
+query indices. Truncated snapshots must fail without leaking partially decoded
+descriptions. Projection tests check negative
 pickups, export crops and source tracking after activation for finite and looping scores.
 `test/pattern.janet` compares whole-window queries with arbitrary partitions,
 including pickups, overhangs, points, independent periods and bounded output.
+Finite and repeating patterns use the same sources; flattening resolves finite
+offsets, and looping a composed phrase preserves endpoint ordering across cycles.
 `test/live-editor.mjs` runs the same scenario against both editors: submit a new
 pattern without restarting playback or the inline UI, retain audio after errors,
 interrupt runaway Janet, cancel pending changes, and resume or seek the active revision.

@@ -4,10 +4,13 @@
 (defn rejects [f]
   (assert (try (do (f) false) ([_] true)) "expected a pattern error"))
 
+(defn same [a b]
+  (and (= (a :length) (b :length)) (deep= (p/flatten a) (p/flatten b))))
+
 (def empty (p/events 0 []))
 (def rest (p/events 2 []))
 (def motif (p/steps 0.5 [60 nil 64 nil]))
-(assert (deep= motif {:length 2 :events [[0 0.5 60] [1 1.5 64]]}))
+(assert (deep= motif {:length 2 :streams [{:offset 0 :period nil :events [[0 0.5 60] [1 1.5 64]]}]}))
 (assert (deep= (p/steps 1 [nil nil]) rest))
 (assert (deep= (p/steps 1 []) empty))
 (assert (deep= (p/steps 1 [false 0]) (p/events 2 [[0 1 false] [1 2 0]])))
@@ -17,33 +20,33 @@
 (def frozen (p/events 2 input))
 (put-in input [0 2 :chord 0] 99)
 (array/push input [1 2 72])
-(assert (= (get-in frozen [:events 0 2 :chord 0]) 60))
-(assert (= (length (frozen :events)) 1))
+(assert (= (get-in frozen [:streams 0 :events 0 2 :chord 0]) 60))
+(assert (= (length (p/flatten frozen)) 1))
 (rejects (fn [] (put frozen :length 3)))
-(rejects (fn [] (put-in frozen [:events 0 2 :chord 0] 99)))
+(rejects (fn [] (put-in frozen [:streams 0 :events 0 2 :chord 0] 99)))
 
 # Values may be chords, control packets or anything else; map keeps the rhythm.
 (def octave (p/map |(+ $ 12) motif))
 (assert (deep= octave (p/events 2 [[0 0.5 72] [1 1.5 76]])))
 (assert (deep= motif (p/steps 0.5 [60 nil 64 nil])))
 (assert (deep= (p/map identity frozen) frozen))
-(assert (= (length ((p/map (fn [_] nil) motif) :events)) 2)) # Only steps treats nil as a rest.
+(assert (= (length (p/flatten (p/map (fn [_] nil) motif))) 2)) # Only steps treats nil as a rest.
 
 (def controls (p/curve 2 4 |(* $ $)))
 (assert (deep= controls
   (p/events 2 [[0 0 0] [0.5 0.5 0.0625] [1 1 0.25] [1.5 1.5 0.5625] [2 2 1]])))
 (def combined (p/parallel [motif controls]))
-(assert (deep= (combined :events) (tuple ;(motif :events) ;(controls :events))))
-(assert (deep= (p/serial [motif rest octave])
+(assert (deep= (p/flatten combined) (tuple ;(p/flatten motif) ;(p/flatten controls))))
+(assert (same (p/serial [motif rest octave])
   (p/events 6 [[0 0.5 60] [1 1.5 64] [4 4.5 72] [5 5.5 76]])))
-(assert (deep= (p/parallel [motif rest (p/stretch 2 octave)])
+(assert (same (p/parallel [motif rest (p/stretch 2 octave)])
   (p/events 4 [[0 0.5 60] [1 1.5 64] [0 1 72] [2 3 76]])))
 
 # Points at the boundary survive; overhangs become pickups on reversal.
 (def crossing (p/events 2 [[-0.5 0.5 :pickup] [1.5 3 :tail] [0 0 :first] [2 2 :last]]))
 (assert (deep= (p/reverse crossing)
   (p/events 2 [[1.5 2.5 :pickup] [-1 0.5 :tail] [2 2 :first] [0 0 :last]])))
-(assert (deep= (p/serial [rest crossing])
+(assert (same (p/serial [rest crossing])
   (p/events 4 [[1.5 2.5 :pickup] [3.5 5 :tail] [2 2 :first] [4 4 :last]])))
 (assert (deep= (p/stretch 0.5 crossing)
   (p/events 1 [[-0.25 0.25 :pickup] [0.75 1.5 :tail] [0 0 :first] [1 1 :last]])))
@@ -64,13 +67,13 @@
                (p/parallel [(p/map |[:value $] motif) (p/map |[:value $] controls)])))
 (def points (p/events 0 [[0 0 :a] [0 0 :b]]))
 (assert (deep= (p/reverse points) points))
-(assert (deep= (p/serial [points points]) (p/events 0 [[0 0 :a] [0 0 :b] [0 0 :a] [0 0 :b]])))
+(assert (same (p/serial [points points]) (p/events 0 [[0 0 :a] [0 0 :b] [0 0 :a] [0 0 :b]])))
 
 # Durations are continuous numbers; thirds and fifths have no special time grid.
 (def uneven (p/parallel [(p/steps (/ 1 3) [1 2 3]) (p/steps (/ 1 5) [4 5 6 7 8])]))
 (assert (= (uneven :length) 1))
-(eachp [i event] (uneven :events)
-  (def back (((p/reverse (p/reverse uneven)) :events) i))
+(eachp [i event] (p/flatten uneven)
+  (def back ((p/flatten (p/reverse (p/reverse uneven))) i))
   (assert (< (math/abs (- (event 0) (back 0))) 1e-14))
   (assert (< (math/abs (- (event 1) (back 1))) 1e-14)))
 
@@ -86,7 +89,10 @@
 (each bad [nil {} [1 2] [[0 1]] [[0 1 60 :extra]] [[1 0 60]]
            [[0 math/inf 60]] [[(/ 0 0) 1 60]]]
   (rejects (fn [] (p/events 1 bad))))
-(each bad [nil {} {:length 1 :events [[1 0 60]]} {:length 1 :events [] :extra true}]
+(each bad [nil {} {:length 1 :events []} {:streams [] :extra true}
+           {:length 1 :streams [{:offset 0 :period 1 :events []}]}
+           {:length 1 :streams [{:offset 0 :events [[1 0 60]]}]}
+           {:length 1 :streams [{:offset 0 :events [] :extra true}]}]
   (rejects (fn [] (p/serial [bad])))
   (rejects (fn [] (p/parallel [bad])))
   (rejects (fn [] (p/map identity bad)))
@@ -99,6 +105,25 @@
 (rejects (fn [] (p/serial [(p/events 1e308 []) (p/events 1e308 [])])))
 (rejects (fn [] (p/curve 1 4 (fn [_] (error "shape")))))
 (rejects (fn [] (p/map (fn [_] (error "value")) motif)))
+(rejects (fn [] (p/streams {:streams [{:offset 0 :period 0 :events []}]})))
+(rejects (fn [] (p/streams {:streams [{:offset 1e308 :events [[1e308 1e308 nil]]}]})))
+
+# Composition keeps sources; finite inspection resolves offsets without losing
+# points at the end, pickups or overhangs. Mapping still runs once per template.
+(def nested (p/serial [rest (p/parallel [crossing (p/serial [motif octave])])]))
+(def nested-events (p/flatten nested))
+(assert (= (length nested-events) 8))
+(assert (deep= (tuple/slice nested-events 0 4)
+  [[1.5 2.5 :pickup] [3.5 5 :tail] [2 2 :first] [4 4 :last]]))
+(assert (same (p/reverse (p/reverse nested)) nested))
+(var mapped 0)
+(def nested-loop (p/loop (p/map (fn [value] (++ mapped) value) nested)))
+(assert (= mapped 8))
+(assert (deep= ((p/streams nested-loop) 0)
+  {:offset 0 :period 6 :events nested-events}))
+(p/query nested-loop 1000000 1000004)
+(assert (= mapped 8))
+(rejects (fn [] (p/flatten nested-loop)))
 (print "OK: immutable patterns, rests, nesting, transformations, boundaries and validation")
 
 # Window queries preserve whole events and identity across arbitrary partitions.

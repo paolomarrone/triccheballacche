@@ -152,7 +152,9 @@ static void test_cycle_boundary(void) {
 	Output output;
 	const char *code = "(import ../lib/pattern :as p) "
 	                   "(def tone (daw/plugin :tone \"build/test/fixture.perone\")) (daw/output (daw/track tone)) "
-	                   "(daw/score (p/loop (p/map |[:param tone :gain $] (p/curve 2 2 |(+ .2 (* .6 $))))))";
+	                   "(def start (p/events 2 [[0 0 [:param tone :gain .2]]])) "
+	                   "(def end (p/events 2 [[2 2 [:param tone :gain .8]]])) "
+	                   "(daw/score (p/loop (p/parallel [start end])))";
 	assert(!prepare_session(&s, &output, "test/boundary.janet", code, NULL, NULL));
 	advance(&s, 48000);
 	float audio[2];
@@ -341,8 +343,8 @@ static void test_loop_origins(void) {
 	const char *head = "(import ../lib/pattern :as p)\n"
 	                   "(def tone (daw/plugin :tone \"build/test/fixture.perone\"))\n"
 	                   "(daw/output (daw/track tone))\n";
-	const char *scores[] = {"(def a (p/loop {:length 2 :events [[0 1 [:note tone 60 100]]]}))\n"
-	                        "(def b (p/loop {:length 2 :events [[0 1 [:note tone 60 100]]]}))\n"
+	const char *scores[] = {"(def a (p/loop (p/events 2 [[0 1 [:note tone 60 100]]])))\n"
+	                        "(def b (p/loop (p/events 2 [[0 1 [:note tone 60 100]]])))\n"
 	                        "(daw/score (p/parallel [a b]))",
 	    "(daw/score {:streams [{:offset 0 :period 2 :events [[0 1 [:note tone 60 100]]]}]})"};
 	for (int i = 0; i < 2; ++i) {
@@ -411,10 +413,10 @@ static void test_finite_equivalence(void) {
 	const char *head = "(def tone (daw/plugin \"build/test/fixture.perone\" {:gain 0.25})) "
 	                   "(daw/output (daw/track tone)) ";
 	const char *tails[] = {"(daw/note tone 0 2 60) (daw/note tone 1 2 60) (daw/param tone 1 :gain 0.75) (daw/end 4)",
-	    "(daw/tempo 60) (daw/score {:length 4 :events [[0 2 [:note tone 60 100]] "
-	    "[1 3 [:note tone 60 100]] [1 1 [:param tone :gain 0.75]]]})",
-	    "(daw/note tone 0 2 60) (daw/tempo 60) (daw/score {:length 4 :events "
-	    "[[1 3 [:note tone 60 100]] [1 1 [:param tone :gain 0.75]]]})"};
+	    "(daw/tempo 60) (daw/score {:length 4 :streams [{:offset 0 :events [[0 2 [:note tone 60 100]] "
+	    "[1 3 [:note tone 60 100]] [1 1 [:param tone :gain 0.75]]]}]})",
+	    "(daw/note tone 0 2 60) (daw/tempo 60) (daw/score {:length 4 :streams [{:offset 0 :events "
+	    "[[1 3 [:note tone 60 100]] [1 1 [:param tone :gain 0.75]]]}]})"};
 	for (unsigned rate = 44100; rate <= 48000; rate += 3900) {
 		float *reference = calloc(8 * rate, sizeof(float));
 		assert(reference);
@@ -470,10 +472,11 @@ static void test_finite_projection(void) {
 	Score score = {.sample_rate = 48000};
 	ScoreView view;
 	Output output;
-	const char *code = "(def tone (daw/plugin \"build/test/fixture.perone\")) "
-	                   "(daw/output (daw/track tone)) (daw/tempo 60) "
-	                   "(daw/score {:length 4 :events [[-1 1 [:note tone 60 100]] [0 2 [:note tone 60 100]] "
-	                   "[3 4 [:note tone 60 100]]]} {:duration 1.5})";
+	const char *code =
+	    "(def tone (daw/plugin \"build/test/fixture.perone\")) "
+	    "(daw/output (daw/track tone)) (daw/tempo 60) "
+	    "(daw/score {:length 4 :streams [{:offset 0 :events [[-1 1 [:note tone 60 100]] [0 2 [:note tone 60 100]] "
+	    "[3 4 [:note tone 60 100]]]}]} {:duration 1.5})";
 	assert(!prepare_score(&score, &output, "test/cropped.janet", code, NULL, &view));
 	assert(!view.repeating && score_view_summary(&view, 0, 0, 1.5).count == 1);
 	assert(!score_view_summary(&view, 0, 1.5, 4).count);
