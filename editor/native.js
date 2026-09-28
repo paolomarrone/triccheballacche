@@ -14,8 +14,9 @@ export async function connect() {
 export async function command(op, ...args) {
     if (op === "message") args[2] = args[2].map(byte => byte.toString(16).padStart(2, "0")).join("");
     const reply = JSON.parse(await webui.call("command", op, ...args));
-    if (reply.view?.score) reply.view.score.controlRevision = reply.controlRevision;
-    return {...reply, ...reply.view, error: reply.error || reply.view?.error || ""};
+    const state = reply.state;
+    if (state?.view?.score) state.view.score.controlRevision = state.controlRevision;
+    return {...reply, ...state, ...state?.view, error: reply.error || state?.view?.error || ""};
 }
 
 export function uiUrl(node, revision, id) {

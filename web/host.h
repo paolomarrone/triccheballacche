@@ -1,6 +1,7 @@
 #ifndef WEB_HOST_H
 #define WEB_HOST_H
 #include "score_janet.h"
+#include "transport.h"
 
 typedef struct {
 	Score description;

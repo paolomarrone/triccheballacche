@@ -35,15 +35,18 @@ export async function attachPlayer(host, score) {
         host._web_score_free(score);
         throw Error("Close the current player before attaching another score");
     }
-    let player = 0, context, setup, error, closing, prepared, stopping = false, released = false;
+    let player = 0, transport = 0, context, setup, error, closing, prepared, stopping = false, released = false;
     const preparation = new Promise(resolve => { prepared = resolve; });
     const release = async () => {
         const errors = [];
         if (player) host._player_stop(player);
         if (context && context.state !== "closed") {
             try { await context.suspend(); } catch (error) { errors.push(error); }
-            if (context.state === "suspended" && setup) {
-                try { await workletReply(setup, "close", {send: true}); } catch (error) { errors.push(error); }
+            if (context.state === "suspended") {
+                if (transport) host._transport_stopped(transport);
+                if (setup) {
+                    try { await workletReply(setup, "close", {send: true}); } catch (error) { errors.push(error); }
+                }
             }
             try { await context.close(); } catch (error) { errors.push(error); }
             if (context.state !== "closed") {
@@ -52,6 +55,10 @@ export async function attachPlayer(host, score) {
             }
         }
         setup?.port.close();
+        if (transport) {
+            host._transport_stopped(transport);
+            host._transport_detach(transport);
+        }
         try { if (player) host._player_free(player); } catch (error) { errors.push(error); }
         try { if (score) host._web_score_free(score); } catch (error) { errors.push(error); }
         released = true;
@@ -83,10 +90,11 @@ export async function attachPlayer(host, score) {
         prepared();
         return {
             context, node,
-            cancel() { host._score_cancel(score); },
-            activateView(view) { host._score_view_activate_web(score, view); },
-            get live() { return !!host._score_live(score); },
-            get revision() { return host._score_revision(score); },
+            publish(state) {
+                if (!state || stopping || transport) throw Error("Invalid transport or player already published/closed");
+                if (host._transport_attach_web(state, score)) throw Error("Score projection missing");
+                transport = state;
+            },
             get duration() {
                 if (stopping) throw Error("Player closing or closed");
                 return host._score_duration(score);
@@ -95,9 +103,9 @@ export async function attachPlayer(host, score) {
                 if (stopping) throw Error("Player closing or closed");
                 return Number.isFinite(seconds) && !!host._score_can_seek(score, seconds);
             },
-            update(next, revision) {
-                if (stopping) throw Error("Player closing or closed");
-                const error = host._player_update_score(player, next, revision);
+            update(next) {
+                if (stopping || !transport) throw Error("Player is closed or not published");
+                const error = host._transport_update_web(transport, player, next);
                 if (error) throw Error(host.UTF8ToString(error));
             },
             listen(track, flags) {
@@ -129,11 +137,15 @@ export async function attachPlayer(host, score) {
                 if (stopping) throw Error("Player closing or closed");
                 if (host._player_start(player)) throw Error("Miniaudio playback failed");
                 await context.resume();
+                if (stopping) throw Error("Player closing or closed");
+                if (transport) host._transport_started(transport);
             },
             async stop() {
                 if (stopping) throw Error("Player closing or closed");
                 if (host._player_pause(player)) throw Error("Cannot stop audio device");
                 await context.suspend();
+                if (stopping) throw Error("Player closing or closed");
+                if (transport) host._transport_stopped(transport);
             },
             async seek(seconds) {
                 if (stopping) throw Error("Player closing or closed");
@@ -141,6 +153,7 @@ export async function attachPlayer(host, score) {
                 if (context.state !== "suspended") throw Error("Stop before seeking");
                 await workletReply(setup, "seek", {send: true, payload: {player, seconds}});
                 if (stopping) throw Error("Player closing or closed");
+                if (transport) host._transport_seeked(transport);
             },
             close
         };

@@ -8,8 +8,7 @@ const options = new URLSearchParams(location.search);
 const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();
 let library;
-let queued = 0, controlRevision = 0;
-let host, player, playing = false, view = 0, revision = 0, time = 0, failure = "", log = [];
+let host, player, transport = 0, failure = "", log = [];
 
 export async function connect() {
     if (!crossOriginIsolated) throw Error("COOP/COEP headers required: run node test/server.mjs.");
@@ -38,51 +37,36 @@ export async function connect() {
             path: file.path, text: file.path.endsWith(".json") ? host.FS.readFile(host.perone.path(file.path), {encoding: "utf8"}) : undefined
         }));
     library = {paths: [url.href], files: entries};
+    transport = host._transport_new();
+    if (!transport) throw Error("Out of memory");
 }
 
-function query(op, args = []) {
+function query(op = "", args = []) {
     const values = Array.from({length: 6}, (_, i) => Number(args[i] ?? 0));
-    const pointer = host.ccall("score_view_json", "number",
-        ["number", "number", "string", ...values.map(() => "number")], [view, revision, op, ...values]);
-    if (!pointer) throw Error("Out of memory for score projection");
-    try { return JSON.parse(host.UTF8ToString(pointer)); }
-    finally { host._free(pointer); }
-}
-
-function acceptRevision() {
-    if (queued && player.revision > revision) {
-        host._view_free(view);
-        view = queued;
-        player.activateView(view);
-        queued = 0;
-        revision = player.revision;
-    }
+    const pointer = host.ccall("transport_json_web", "number",
+        ["number", "string", "number", ...values.map(() => "number")], [transport, op, player?.time || 0, ...values]);
+    if (!pointer) throw Error("Out of memory for transport state");
+    try {
+        const state = JSON.parse(host.UTF8ToString(pointer));
+        if (state.view?.score) state.view.score.controlRevision = state.controlRevision;
+        return {...state, ...state.view};
+    } finally { host._free(pointer); }
 }
 
 async function stop() {
-    playing = false;
-    if (player) {
-        await player.stop();
-        time = player.time;
-        acceptRevision();
-        player.cancel();
-        host._view_free(queued);
-        queued = 0;
-    }
+    if (player) await player.stop();
 }
 
-async function run(path, source) {
-    if (queued) throw Error("Wait for the pending revision to become active");
-    const live = playing && player?.live;
-    const previousTime = time;
+async function run(path, source, state) {
+    if (state.queued) throw Error("Wait for the pending revision to become active");
+    const live = state.playing && state.live;
     failure = "";
     log = [];
     let nextScore = 0, replacing = false;
     try {
         nextScore = await prepareBackground(host, path, source, 48000);
         if (live) {
-            player.update(nextScore, revision + 1);
-            queued = host._score_take_view(nextScore);
+            player.update(nextScore);
             host._web_score_free(nextScore);
             nextScore = 0;
             return {};
@@ -100,14 +84,7 @@ async function run(path, source) {
         const prepared = await attachPlayer(host, owned);
         player = prepared;
         await prepared.start();
-        const next = prepared.takeView();
-        if (!next) throw Error("Score projection missing");
-        host._view_free(view);
-        view = next;
-        playing = true;
-        ++revision;
-        controlRevision = revision;
-        time = 0;
+        prepared.publish(transport);
         return query("score");
     } catch (error) {
         if (nextScore) host._web_score_free(nextScore);
@@ -115,11 +92,9 @@ async function run(path, source) {
         try {
             if (replacing) {
                 player = undefined;
-                playing = false;
                 await closePlayer(host);
             }
         } catch (cleanup) { throw new AggregateError([error, cleanup], `${error}\n${cleanup}`); }
-        finally { time = previousTime; }
         throw Error(diagnostics || String(error));
     }
 }
@@ -133,7 +108,8 @@ function checkedText(text) {
 // The shared controller serializes commands, including asynchronous player cleanup.
 export async function command(op, ...args) {
     if (op === "library") return library;
-    acceptRevision();
+    host._transport_collect(transport);
+    const state = query();
     let result = {}, error = "", path = ["range", "origin", "automation", "listen", "seek"].includes(op) ? "" : args[0] || entry;
     try {
         if (op === "files") {
@@ -146,11 +122,11 @@ export async function command(op, ...args) {
             await addFile(host, path, new TextEncoder().encode(result.text));
         } else if (op === "listen") {
             const [version, track, flags] = args;
-            if (!player || version !== revision) throw Error("Stale track view");
+            if (!player || version !== state.revision) throw Error("Stale track view");
             player.listen(track, flags);
         } else if (["watch", "controls", "parameter", "message"].includes(op)) {
             const [version, node, ...values] = args;
-            if (!player || version !== controlRevision) throw Error("Stale plugin view");
+            if (!player || version !== state.controlRevision) throw Error("Stale plugin view");
             if (op === "watch") {
                 if (!["off", "web"].includes(values[0])) throw Error("Invalid view type");
                 await player.control("watch", node, values[0] === "web");
@@ -169,34 +145,27 @@ export async function command(op, ...args) {
             link.href = url; link.download = path.split("/").at(-1);
             link.click();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } else if (op === "run") result = await run(path, checkedText(args[1]));
+        } else if (op === "run") result = await run(path, checkedText(args[1]), state);
         else if (op === "seek") {
             const seconds = Number(args[0]);
             if (!player) throw Error("Run a score before seeking");
             if (!player.canSeek(seconds)) throw Error("Position outside score");
-            const resume = playing;
+            const resume = state.playing;
             await stop();
             await player.seek(seconds);
-            player.activateView(view);
-            time = player.time;
             failure = "";
-            if (resume) { await player.start(); playing = true; }
+            if (resume) await player.start();
         } else if (op === "play") {
             if (!player) throw Error("Run a score before playing");
-            if (!playing) {
-                if (player.time >= player.duration) {
-                    await player.seek(0);
-                    player.activateView(view);
-                }
+            if (!state.playing) {
+                if (player.time >= player.duration) await player.seek(0);
                 await player.start();
-                playing = true;
-                time = player.time;
                 failure = "";
             }
         } else if (op === "stop") await stop();
         else if (op === "score") result = query("score");
         else if (op === "status") {
-            if (player && playing) {
+            if (player && state.playing) {
                 try {
                     const state = player.status;
                     if (state < 0) failure = "Playback error";
@@ -207,19 +176,18 @@ export async function command(op, ...args) {
                 }
             }
             error = failure;
-            result = query("status", [playing ? player.time : time, playing]);
+            result = query("status");
         } else throw Error("Unknown command: " + op);
     } catch (cause) { error = String(cause.message || cause); }
-    if (result.score) result.score.controlRevision = controlRevision;
-    return {...result, queued: !!queued, live: !!player?.live, path, revision, time: playing ? player.time : time, playing, prepared: Boolean(player), error: error || result.error || ""};
+    return {...query(), ...result, path, error: error || result.error || ""};
 }
 
 export async function close() {
     if (!host) return;
-    playing = false;
+    await closePlayer(host);
     player = undefined;
-    try { await closePlayer(host); }
-    finally { host._view_free(view); host._view_free(queued); queued = view = 0; }
+    if (transport) host._transport_free_web(transport);
+    transport = 0;
 }
 
 export function uiUrl(node) {

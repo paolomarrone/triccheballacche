@@ -4,7 +4,7 @@
 #include "assets.h"
 #include "util.h"
 #include "json_write.h"
-#include "score_view_json.h"
+#include "transport.h"
 #include "files.h"
 #include "prepare.h"
 #include "webui.h"
@@ -27,14 +27,11 @@ static volatile sig_atomic_t stopped;
 typedef struct {
 	Session session;
 	Modules modules;
-	ScoreView score, queued;
-	unsigned revision, control_revision;
+	Transport transport;
 	Player *player;
-	int playing;
 	Controls controls;
 	const char *entry;
 	char *error;
-	double time;
 } Editor;
 
 static void stop(int signal) {
@@ -64,16 +61,8 @@ static void request(webui_event_t *event) {
 }
 
 static void accept_revision(Editor *editor) {
-	unsigned revision = atomic_load(&editor->session.revision);
-	if (editor->queued.nnodes && revision > editor->revision) {
-		score_view_free(&editor->score);
-		editor->score = editor->queued;
-		editor->queued = (ScoreView){0};
-		editor->revision = revision;
-		score_view_activate(&editor->score, editor->session.active->at);
-		assets_set(&editor->score, editor->control_revision);
-		session_collect(&editor->session);
-	}
+	if (transport_collect(&editor->transport))
+		assets_set(&editor->transport.view, editor->transport.control_revision);
 }
 
 static const char *pause_editor(Editor *editor) {
@@ -85,12 +74,9 @@ static const char *pause_editor(Editor *editor) {
 			player_free(editor->player);
 			editor->player = NULL;
 		}
-		editor->time = (double)editor->session.time / editor->session.sample_rate;
 	}
-	editor->playing = 0;
 	accept_revision(editor);
-	session_cancel(&editor->session);
-	score_view_free(&editor->queued);
+	transport_stopped(&editor->transport);
 	return error;
 }
 
@@ -104,8 +90,7 @@ static const char *play_editor(Editor *editor) {
 		pause_editor(editor);
 		return error;
 	}
-	editor->playing = 1;
-	editor->time = (double)s->time / s->sample_rate;
+	transport_started(&editor->transport);
 	free(editor->error);
 	editor->error = NULL;
 	return NULL;
@@ -118,13 +103,12 @@ static const char *seek_editor(Editor *editor, double seconds) {
 	uint64_t frame = session_frame(s, seconds);
 	if (frame == UINT64_MAX)
 		return "Position outside score";
-	int playing = editor->playing;
+	int playing = editor->transport.playing;
 	const char *error = pause_editor(editor);
 	if (!error && (editor->player ? player_seek(editor->player, seconds) : session_seek(s, frame)))
 		error = s->error;
-	editor->time = (double)s->time / s->sample_rate;
 	if (!error) {
-		score_view_activate(&editor->score, s->active->at);
+		transport_seeked(&editor->transport);
 		free(editor->error);
 		editor->error = NULL;
 		if (playing)
@@ -138,6 +122,7 @@ static void finish(Editor *editor) {
 	player_free(editor->player);
 	editor->player = NULL;
 	controls_close(&editor->controls, &editor->session);
+	transport_detach(&editor->transport);
 	session_free(&editor->session);
 }
 
@@ -152,16 +137,12 @@ static void reply(
     webui_event_t *event, Editor *editor, const char *error, const char *text, const char *path, int score) {
 	const char *op = webui_get_string_at(event, 0);
 	const Score *active = session_score(&editor->session);
-	double time = editor->playing ? player_time(editor->player) : editor->time;
-	char *view = NULL;
-	int query = !strcmp(op, "range") || !strcmp(op, "origin") || !strcmp(op, "automation");
-	if (query)
-		view = score_view_json(&editor->score, editor->revision, op, decimal(event, 1), decimal(event, 2),
-		    decimal(event, 3), decimal(event, 4), decimal(event, 5), decimal(event, 6));
-	else if (score || !strcmp(op, "status"))
-		view = score_view_json(
-		    &editor->score, editor->revision, score ? "score" : "status", time, editor->playing, 0, 0, 0, 0);
-	if (!view && (query || score || !strcmp(op, "status")))
+	double time = editor->transport.playing ? player_time(editor->player) : editor->transport.time;
+	double args[6];
+	for (int i = 0; i < 6; ++i)
+		args[i] = decimal(event, i + 1);
+	char *state = transport_json(&editor->transport, score ? "score" : op, time, args);
+	if (!state)
 		error = "Out of memory";
 	Json json = {0};
 	json_print(&json, "{\"text\":");
@@ -173,9 +154,6 @@ static void reply(
 		if (editor->controls.native[i])
 			json_print(&json, "%s%d", count++ ? "," : "", i);
 	json_print(&json, "]");
-	json_print(&json, ",\"controlRevision\":%u", editor->control_revision);
-	json_print(&json, ",\"queued\":%s,\"live\":%s", editor->queued.nnodes ? "true" : "false",
-	    active && active->live ? "true" : "false");
 	if (score) {
 		json_print(&json, ",\"nativeAvailable\":[");
 		for (int i = 0, count = 0; i < editor->session.nnodes; ++i)
@@ -183,14 +161,12 @@ static void reply(
 				json_print(&json, "%s%d", count++ ? "," : "", i);
 		json_print(&json, "]");
 	}
-	json_print(&json, ",\"prepared\":%s,\"playing\":%s,\"time\":%.17g,\"revision\":%u,\"view\":%s,\"error\":",
-	    editor->session.audio ? "true" : "false", editor->playing ? "true" : "false", time, editor->revision,
-	    view ? view : "null");
+	json_print(&json, ",\"state\":%s,\"error\":", state ? state : "null");
 	json_string(&json, error);
 	json_print(&json, "}");
 	webui_return_string(event, json.failed ? "{\"error\":\"Out of memory\"}" : json.data);
 	free(json.data);
-	free(view);
+	free(state);
 }
 
 static void command(Editor *editor, webui_event_t *event) {
@@ -211,7 +187,7 @@ static void command(Editor *editor, webui_event_t *event) {
 	if (!strcmp(op, "listen")) {
 		double revision = decimal(event, 1), track = decimal(event, 2), flags = decimal(event, 3);
 		const char *error = NULL;
-		if (!editor->session.audio || revision != editor->revision)
+		if (!editor->session.audio || revision != editor->transport.revision)
 			error = "Stale track view";
 		else if (!isfinite(track) || track < 0 || track >= editor->session.ntracks || track != floor(track) ||
 		    !isfinite(flags) || flags < 0 || flags > (TRACK_MUTE | TRACK_SOLO) || flags != floor(flags) ||
@@ -226,7 +202,7 @@ static void command(Editor *editor, webui_event_t *event) {
 		return;
 	}
 	if (!strcmp(op, "watch") || !strcmp(op, "controls") || !strcmp(op, "parameter") || !strcmp(op, "message")) {
-		controls_command(&editor->controls, &editor->session, editor->control_revision, event);
+		controls_command(&editor->controls, &editor->session, editor->transport.control_revision, event);
 		return;
 	}
 	if (!strcmp(op, "score")) {
@@ -250,13 +226,11 @@ static void command(Editor *editor, webui_event_t *event) {
 	} else if (!strcmp(op, "save")) {
 		error = file_save(path, source);
 	} else if (!strcmp(op, "run")) {
-		const Score *active = session_score(&editor->session);
-		int live = editor->playing && active && active->live;
-		if (editor->queued.nnodes)
+		int live = editor->transport.playing && transport_live(&editor->transport);
+		if (editor->transport.queued.nnodes)
 			error = "Wait for the pending revision to become active";
 		free(editor->error);
 		editor->error = NULL;
-		double previous_time = editor->time;
 		Score *next = calloc(1, sizeof(*next));
 		Session prepared = {.modules = &editor->modules};
 		Output output;
@@ -269,14 +243,8 @@ static void command(Editor *editor, webui_event_t *event) {
 				error = diagnostics ? diagnostics : next->error ? next->error : "Preparation failed";
 		}
 		if (!error && live) {
-			int mapping[MAX_NODES];
-			if (player_update(editor->player, next, editor->revision + 1, mapping))
+			if (transport_update(&editor->transport, next, &score, player_position(editor->player)))
 				error = next->error;
-			else {
-				score_view_remap(&score, mapping);
-				editor->queued = score;
-				score = (ScoreView){0};
-			}
 		} else if (!error) {
 			error = pause_editor(editor);
 			if (!error && session_activate(&prepared, next))
@@ -284,6 +252,7 @@ static void command(Editor *editor, webui_event_t *event) {
 		}
 		if (!error && !live) {
 			controls_close(&editor->controls, &editor->session);
+			transport_detach(&editor->transport);
 			session_free(&editor->session);
 			editor->session = prepared;
 			prepared = (Session){0};
@@ -294,12 +263,8 @@ static void command(Editor *editor, webui_event_t *event) {
 			if (error)
 				finish(editor);
 			else {
-				score_view_free(&editor->score);
-				editor->score = score;
-				score = (ScoreView){0};
-				++editor->revision;
-				editor->control_revision = editor->revision;
-				assets_set(&editor->score, editor->control_revision);
+				transport_attach(&editor->transport, &editor->session, &score);
+				assets_set(&editor->transport.view, editor->transport.control_revision);
 				changed = 1;
 			}
 		}
@@ -308,12 +273,10 @@ static void command(Editor *editor, webui_event_t *event) {
 		free(next);
 		session_free(&prepared);
 		score_view_free(&score);
-		if (error)
-			editor->time = previous_time;
 	} else if (!strcmp(op, "play")) {
 		if (!editor->session.audio)
 			error = "Run a score before playing";
-		else if (!editor->playing) {
+		else if (!editor->transport.playing) {
 			if (editor->session.time == editor->session.frames)
 				error = seek_editor(editor, 0);
 			if (!error)
@@ -339,7 +302,7 @@ static void poll_player(Editor *editor) {
 
 	if (controls_poll(&editor->controls, &editor->session) < 0)
 		error = "Plugin UI control error";
-	if (!editor->playing) {
+	if (!editor->transport.playing) {
 		session_sync(&editor->session);
 		if (error) {
 			free(editor->error);
@@ -416,8 +379,7 @@ int main(int argc, char **argv) {
 	pthread_mutex_unlock(&mutex);
 	finish(&editor);
 	modules_free(&editor.modules);
-	score_view_free(&editor.score);
-	score_view_free(&editor.queued);
+	transport_free(&editor.transport);
 	free(editor.error);
 	webui_exit();
 	webui_clean();

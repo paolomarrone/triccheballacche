@@ -21,7 +21,7 @@ PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
 PLUGIN_SOURCES = plugin.c script.c trace.c
 SCORE_SOURCES = score_janet.c score.c score_view.c score_automation.c session.c sequence.c $(PLUGIN_SOURCES)
-VIEW_SOURCES = score_view_json.c json_write.c
+VIEW_SOURCES = score_view_json.c json_write.c transport.c
 PLUGIN_OBJECTS = $(addprefix build/obj/native/,plugin.o posix/loader.o script.o trace.o json.o janet.o)
 SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o score_automation.o session.o sequence.o) $(PLUGIN_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
@@ -132,6 +132,7 @@ build/test/daw build/test/player build/test/plugins build/test/view_json build/t
 build/test/daw build/test/player: build/obj/native/posix/export.o build/obj/native/audio.o
 build/test/score_view: build/obj/native/score_view.o build/obj/native/score_automation.o
 build/test/view_json: $(VIEW_OBJECTS)
+build/test/player: $(VIEW_OBJECTS)
 build/test/sequence: build/obj/native/snapshot.o
 
 TEST_BUNDLE = build/test/fixture.perone
@@ -220,11 +221,12 @@ WEB_OBJECTS = $(addprefix build/obj/web-offline/,$(WEB_SOURCES:.c=.o) janet.o js
 PLAYER_OBJECTS = $(addprefix build/obj/web-player/,$(WEB_SOURCES:.c=.o) player.o web/player_api.o audio.o janet.o json.o)
 WEB_LINK = -lm --no-entry -sMODULARIZE -sEXPORT_ES6 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=2097152
 WEB_METHODS = "FS","UTF8ToString","ccall","HEAPU8","HEAPU32","HEAPF32"
-VIEW_EXPORTS = "_score_prepare","_score_describe","_score_pack_web","_score_pack_length","_score_import","_score_revision","_score_live","_score_cancel","_web_score_activate","_malloc","_score_take_view","_view_free","_score_view_json","_score_view_activate_web","_free"
+TRANSPORT_EXPORTS = "_transport_new","_transport_free_web","_transport_attach_web","_transport_started","_transport_stopped","_transport_seeked","_transport_collect","_transport_detach","_transport_json_web"
+VIEW_EXPORTS = "_score_prepare","_score_describe","_score_pack_web","_score_pack_length","_score_import","_web_score_activate","_malloc","_score_take_view","_view_free","_score_view_json","_free",$(TRANSPORT_EXPORTS)
 SCORE_EXPORTS = "_score_new","_web_score_free","_score_listen","_score_duration","_score_can_seek"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sWASM_WORKERS -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
-PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_player_time","_score_player","_player_update_score","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node"]'
+PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_player_time","_score_player","_transport_update_web","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node"]'
 # Publish C Brickworks examples only; fxpp_* and synthpp_* are duplicate C++ variants.
 WEB_CONTENT ?= lib examples $(wildcard plugins/*/build/*.perone \
     $(BRICKWORKS_PERONE)/fx_*/build/*.perone $(BRICKWORKS_PERONE)/synth_*/build/*.perone \

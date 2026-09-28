@@ -80,12 +80,11 @@ int player_status(Player *p) {
 }
 
 double player_time(Player *p) {
-	return (double)atomic_load(&p->position) / p->session->sample_rate;
+	return (double)player_position(p) / p->session->sample_rate;
 }
 
-int player_update(Player *p, Score *description, unsigned revision, int *mapping) {
-	uint64_t earliest = atomic_load(&p->position) + p->session->sample_rate / 10;
-	return session_update(p->session, description, earliest, revision, mapping);
+uint64_t player_position(Player *p) {
+	return atomic_load(&p->position);
 }
 
 void player_stop(Player *p) {

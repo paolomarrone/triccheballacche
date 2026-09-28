@@ -111,7 +111,7 @@ export async function testPlayerLifecycle(host) {
         await player.close();
         clean(8);
 
-        // The editor transfers its view only after audio starts, then retains it across player teardown.
+        // Standalone callers can take a projection and retain it across player teardown.
         player = await preparePlayer(host, "test/schedule.janet", 48000,
             host.FS.readFile("test/schedule.janet", {encoding: "utf8"}));
         await player.start();
@@ -138,6 +138,43 @@ export async function testPlayerLifecycle(host) {
             await interruptedClose;
             clean(10);
         } finally { fault = null; }
+
+        // The shared transport owns its projection and borrows audio only until confirmed closure.
+        const transport = host._transport_new();
+        check(transport, "Cannot allocate transport");
+        try {
+            const state = () => {
+                const pointer = host.ccall("transport_json_web", "number",
+                    ["number", "string", ...Array(7).fill("number")], [transport, "score", 0, 0, 0, 0, 0, 0, 0]);
+                check(pointer, "Cannot query transport");
+                try { return JSON.parse(host.UTF8ToString(pointer)); }
+                finally { host._free(pointer); }
+            };
+            player = await preparePlayer(host, "test/schedule.janet", 48000,
+                host.FS.readFile("test/schedule.janet", {encoding: "utf8"}));
+            await player.start();
+            player.publish(transport);
+            check(!player.takeView(), "Published projection still owned by player");
+            check(state().playing && state().prepared && state().revision === 1, "Run was not published");
+            await player.stop();
+            check(!state().playing && state().prepared, "Stop lost the session");
+            await player.seek(.01);
+            check(state().time === .01, "Seek did not update transport");
+            await player.start();
+            const close = player.context.close.bind(player.context);
+            player.context.close = () => Promise.reject(Error("injected context close failure"));
+            await rejects(player.close(), /resources retained/);
+            check(state().prepared && !state().playing, "Failed closure did not retain a stopped session");
+            player.context.close = close;
+            await player.close();
+            clean(11);
+            const final = state();
+            check(!final.prepared && !final.playing && final.revision === 1 && final.view.score.tracks.length > 0,
+                "Closure did not detach audio and preserve the visible score");
+        } finally {
+            await closePlayer(host);
+            host._transport_free_web(transport);
+        }
     } finally {
         fault = null;
         try { await closePlayer(host); } finally {

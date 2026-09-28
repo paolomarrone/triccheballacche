@@ -1,6 +1,7 @@
 #include "player.h"
 #include "host.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 Player *score_player(WebScore *score) {
 	Player *p = player_new(&score->session);
@@ -9,12 +10,13 @@ Player *score_player(WebScore *score) {
 	return p;
 }
 
-const char *player_update_score(Player *player, WebScore *next, unsigned revision) {
-	int mapping[MAX_NODES];
-	if (player_update(player, &next->description, revision, mapping))
+const char *transport_update_web(Transport *t, Player *player, WebScore *next) {
+	if (!next->view)
+		return "Score projection missing";
+	if (transport_update(t, &next->description, next->view, player_position(player)))
 		return next->description.error;
-	if (next->view)
-		score_view_remap(next->view, mapping);
+	free(next->view);
+	next->view = NULL;
 	return NULL;
 }
 

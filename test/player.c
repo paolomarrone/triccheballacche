@@ -1,5 +1,6 @@
 #include "player.h"
 #include "posix/module.h"
+#include "transport.h"
 #include <assert.h>
 #include <math.h>
 #include <signal.h>
@@ -251,20 +252,84 @@ static void test_live_clock(void) {
 	for (size_t i = 0; i < sizeof(rates) / sizeof(*rates); ++i) {
 		Session s = {.sample_rate = rates[i]};
 		Score next = {.sample_rate = rates[i]};
+		Score initial = {.sample_rate = rates[i]};
+		ScoreView view, next_view;
+		Transport transport = {0};
 		Output output;
-		assert(!load_score(&s, &output, "test/sequence.janet"));
-		assert(!prepare_score(&next, &output, "test/sequence.janet", NULL, NULL, NULL));
+		assert(!prepare_score(&initial, &output, "test/sequence.janet", NULL, NULL, &view));
+		assert(!session_activate(&s, &initial));
+		assert(!prepare_score(&next, &output, "test/sequence.janet", NULL, NULL, &next_view));
 		Player *p = player_new(&s);
 		assert(p);
+		transport_attach(&transport, &s, &view);
+		assert(!view.nnodes && transport.revision == 1 && transport.control_revision == 1);
+		DSP *dsp = s.nodes[0].dsp[0].dsp;
 		uint64_t position = rates[i] * 165 / 100;
 		atomic_store(&p->position, position);
-		assert(!player_update(p, &next, 1, NULL));
+		double bpm = next.sequence.bpm;
+		next.sequence.bpm += 1;
+		assert(transport_update(&transport, &next, &next_view, player_position(p)));
+		assert(next.nnodes && next_view.nnodes && !transport.queued.nnodes && transport.playing);
+		next.sequence.bpm = bpm;
+		assert(!transport_update(&transport, &next, &next_view, player_position(p)));
+		assert(!next.nnodes && !next_view.nnodes && transport.queued.nnodes);
 		assert(s.pending->at == sequence_boundary(&session_score(&s)->sequence, rates[i], position + rates[i] / 10));
+		assert(!transport_collect(&transport) && transport.revision == 1);
+		assert(!player_pause(p));
+		transport_stopped(&transport);
+		assert(!s.pending && !transport.queued.nnodes && transport.revision == 1);
+		assert(!transport.playing && s.nodes[0].dsp[0].dsp == dsp);
+
+		// Stop on either side of an audio boundary must keep the matching projection.
+		for (int collect = 0; collect < 2; ++collect) {
+			assert(!player_start(p));
+			transport_started(&transport);
+			next.sample_rate = rates[i];
+			assert(!prepare_score(&next, &output, "test/sequence.janet", NULL, NULL, &next_view));
+			assert(!transport_update(&transport, &next, &next_view, player_position(p)));
+			uint64_t boundary = s.pending->at;
+			while (s.time <= boundary)
+				pump(s.time + 4096 <= boundary ? 4096 : boundary - s.time + 1);
+			assert(transport.revision == (unsigned)collect + 1 && transport.queued.nnodes);
+			if (collect)
+				assert(transport_collect(&transport));
+			assert(!player_pause(p));
+			transport_stopped(&transport);
+			assert(transport.revision == (unsigned)collect + 2 && transport.control_revision == 1);
+			assert(!transport.queued.nnodes && !s.retired && !s.pending && s.nodes[0].dsp[0].dsp == dsp);
+			assert(transport.view.active_from < (double)boundary / rates[i] &&
+			    transport.view.active_from > (double)(boundary - 1) / rates[i]);
+			assert(transport.time == player_time(p));
+		}
+		assert(!player_seek(p, .25));
+		transport_seeked(&transport);
+		assert(transport.time == .25 && transport.view.active_from == 0);
+		char *state = transport_json(&transport, "status", 123, NULL);
+		assert(state && strstr(state, "\"time\":0.25") && strstr(state, "\"playing\":false"));
+		free(state);
 		player_free(p);
+		transport_detach(&transport);
 		session_free(&s);
+		assert(!transport.session && !transport.playing && transport.view.nnodes);
+		state = transport_json(&transport, "score", 0, NULL);
+		assert(state && strstr(state, "\"prepared\":false") && strstr(state, "\"revision\":3"));
+		free(state);
+		// A fresh session advances both revisions, even though its audio counter starts at zero.
+		initial.sample_rate = rates[i];
+		assert(!prepare_score(&initial, &output, "test/sequence.janet", NULL, NULL, &view));
+		assert(!session_activate(&s, &initial));
+		transport_attach(&transport, &s, &view);
+		assert(transport.revision == 4 && transport.control_revision == 4 && transport.time == 0);
+		transport_stopped(&transport);
+		transport_detach(&transport);
+		session_free(&s);
+		transport_free(&transport);
 		score_free(&next);
+		score_free(&initial);
+		score_view_free(&next_view);
 	}
-	puts("OK: live revisions use the player's sample clock at 44.1 and 96 kHz");
+	puts(
+	    "OK: shared transport, sample clock, failed revisions, boundary adoption, cancellation, seek and session replacement");
 }
 
 static void test_transport(void) {

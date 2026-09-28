@@ -116,18 +116,26 @@ WebScore *score_import(const void *data, size_t length) {
 int web_score_activate(WebScore *s) {
 	return session_activate(&s->session, &s->description);
 }
-int score_live(WebScore *s) {
-	const Score *description = session_score(&s->session);
-	return description ? description->live : s->description.live;
-}
-unsigned score_revision(WebScore *s) {
-	return atomic_load(&s->session.revision);
-}
-void score_cancel(WebScore *s) {
-	session_cancel(&s->session);
+Transport *transport_new(void) {
+	return calloc(1, sizeof(Transport));
 }
 
-void score_view_activate_web(WebScore *score, ScoreView *view) {
-	score_view_activate(view, score->session.active->at);
-	session_collect(&score->session);
+void transport_free_web(Transport *t) {
+	transport_free(t);
+	free(t);
+}
+
+int transport_attach_web(Transport *t, WebScore *score) {
+	if (!score->view || !score->view->nnodes)
+		return -1;
+	transport_attach(t, &score->session, score->view);
+	free(score->view);
+	score->view = NULL;
+	return 0;
+}
+
+char *transport_json_web(
+    Transport *t, const char *op, double time, double a, double b, double c, double d, double e, double f) {
+	const double args[] = {a, b, c, d, e, f};
+	return transport_json(t, op, time, args);
 }

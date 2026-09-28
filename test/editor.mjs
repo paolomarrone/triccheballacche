@@ -40,7 +40,7 @@ try {
             window.statusHasTrace = false;
             webui.call = async (...args) => {
                 const response = await call(...args), raw = JSON.parse(response);
-                const result = {...raw, ...raw.view, error: raw.error || raw.view?.error || ""};
+                const result = {...raw, ...raw.state, ...raw.state?.view, error: raw.error || raw.state?.view?.error || ""};
                 if (args[1] === "run" && window.openEnd && result.score) result.score.end = null;
                 if (args[1] === "run") reports.push(result);
                 if (args[1] === "range" && result.lanes) {

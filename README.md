@@ -517,6 +517,10 @@ Activation moves a prepared score into a session only on success. A live revisio
 moves a new score and cursor into that same session; DSPs and held notes survive.
 The audio callback publishes the revision at its boundary, and the control thread
 frees retired data. `ScoreView` owns its query index independently of the session.
+`transport.c` owns the editor's active and queued projections, revision numbers
+and playback state. Both editors use it to adopt revisions and acknowledge Stop,
+Play and Seek after their platform has completed the audio operation. It borrows
+the session; device creation, shutdown, files and plugin windows stay in the adapters.
 Browser workers transfer prepared data using a private same-build snapshot,
 containing the score and source annotations. The receiver reconstructs projection
 data and indices; derived metadata and event copies are not serialized.

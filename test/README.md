@@ -54,6 +54,10 @@ positions, seeking during playback, invalid positions and finite endpoints.
 Loader tests check canonical module reuse and cache/instance lifetime ordering.
 Diagnostic tests force garbage collection before errors and evaluation timeout,
 then prepare another score to check recovery in both editors.
+The shared transport tests exercise Stop before and after revision activation,
+failed updates, ownership transfer, stable DSP control revisions, projection lifetime
+after detachment, seek and revision numbering across fresh sessions. Device operations
+remain platform-specific; both editor integrations exercise the same C state transitions.
 Routing tests cover shared DSP state, nested buses, branch-specific solo,
 sample-accurate crossfades, block invariance, rewind and graph rejection.
 Mixer tests cover mute/solo precedence, multiple solos, 5 ms fades, automation
