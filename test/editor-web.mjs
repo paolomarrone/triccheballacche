@@ -22,7 +22,7 @@ try {
         const source = await evaluate('document.querySelector("#code").value');
         await click("#run");
         await wait('!document.querySelector("#stop").disabled');
-        await wait('Number(document.querySelector("#notes").dataset.notes) > 0');
+        await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
         const revision = await evaluate('document.querySelector("#timeline").dataset.revision');
         await wait(`(async () => {
             const {frames = []} = await (await import('../web/editor.js')).command('status');
@@ -42,20 +42,20 @@ try {
         await click("#stop");
         await wait('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
-        const size = await evaluate('[document.querySelector("#notes").width,document.querySelector("#notes").height]');
+        const size = await evaluate('[document.querySelector("#score-canvas").width,document.querySelector("#score-canvas").height]');
         await evaluate(`(() => {
-            const c = document.querySelector("#notes");
+            const c = document.querySelector("#score-canvas");
             c.dispatchEvent(new WheelEvent("wheel", {bubbles: true, shiftKey: true, deltaY: 1e9 / Number(c.dataset.scale)}));
         })()`);
-        await wait('document.querySelector("#notes").dataset.notes === "0"');
-        assert.deepEqual(await evaluate('[document.querySelector("#notes").width,document.querySelector("#notes").height]'), size);
-        await evaluate('document.querySelector("#notes").dispatchEvent(new KeyboardEvent("keydown", {key: "Home"}))');
-        await wait('Number(document.querySelector("#notes").dataset.notes) > 0');
+        await wait('document.querySelector("#score-canvas").dataset.notes === "0"');
+        assert.deepEqual(await evaluate('[document.querySelector("#score-canvas").width,document.querySelector("#score-canvas").height]'), size);
+        await evaluate('document.querySelector("#score-canvas").dispatchEvent(new KeyboardEvent("keydown", {key: "Home"}))');
+        await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
         await set("#code", "(error \"wasm error 音\")");
         await click("#run");
         await wait('document.querySelector("#errors").textContent.includes("wasm error 音")');
         assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
-        assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'));
+        assert(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes) > 0'));
         await set("#code", source); // Restore the exact unsaved score.
         await click("#run");
         await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${revision}`);
@@ -83,7 +83,7 @@ try {
         assert.deepEqual(diagnostics, []);
         await call("Page.navigate", {url: "about:blank"});
         console.log(`OK: shared editor in pure Wasm, ${entry}, bounded timeline, source tracking, drafts, stop, diagnostics, recovery and downloads`);
-    });
+    }, {graphics: true});
 } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));

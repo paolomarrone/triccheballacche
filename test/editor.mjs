@@ -74,7 +74,7 @@ try {
         const report = await evaluate('reports.at(-1).score');
         assert.equal(report.tracks.length, 1);
         assert(await evaluate(`origins.some(frame => frame[0] === ${JSON.stringify(directory + '/helper.janet')} && frame[1] === 3)`));
-        await wait('Number(document.querySelector("#notes").dataset.notes) === 2');
+        await wait('Number(document.querySelector("#score-canvas").dataset.notes) === 2');
         const notes = await evaluate('ranges.at(-1).lanes[0].notes');
         assert.deepEqual(notes.map(note => note.slice(1)), [[0, 2, 60, 100], [0.25, 2.5, 64, 80]]);
         await set("#code", "# new draft\n" + changed);
@@ -119,11 +119,11 @@ try {
         await click("#stop");
         await wait('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
-        assert.equal(await evaluate('Number(document.querySelector("#notes").dataset.notes)'), 2, "Stop retains the prepared projection");
+        assert.equal(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes)'), 2, "Stop retains the prepared projection");
         const notePoint = await evaluate(`(() => {
-            const canvas = document.querySelector('#notes'), rect = canvas.getBoundingClientRect();
+            const canvas = document.querySelector('#score-canvas'), rect = canvas.getBoundingClientRect();
             const row = document.querySelector("#track-list .track").getBoundingClientRect().height;
-            return [rect.left + Math.min(230, Math.round(canvas.clientWidth * 0.3)) + 18,
+            return [rect.left + 18,
                 rect.top + 24 + row - 8 - 8.5 * (row - 16) / 13];
         })()`);
         const clickNote = async () => {
@@ -155,7 +155,7 @@ try {
         await wait('document.querySelector("#errors").textContent.includes("unknown-binding")');
         assert.equal(await evaluate('reports.at(-1).score'), undefined);
         assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), report.revision);
-        assert.equal(await evaluate('Number(document.querySelector("#notes").dataset.notes)'), 2);
+        assert.equal(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes)'), 2);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert((await evaluate('document.querySelector("#errors").textContent')).includes(path));
         assert.equal(await evaluate('document.querySelector("#stop").disabled'), true);
@@ -196,7 +196,7 @@ try {
         await evaluate("window.openEnd = true");
         await set("#code", dense);
         await click("#run");
-        await wait('document.querySelector("#notes").dataset.dense === "true"');
+        await wait('document.querySelector("#score-canvas").dataset.dense === "true"');
         const denseReport = await evaluate('reports.at(-1).score');
         assert.equal(denseReport.end, null, "Exercise navigation and follow with an unknown end");
         assert.equal(denseReport.tracks.length, 11);
@@ -207,70 +207,70 @@ try {
         assert(denseRange.lanes[0].density.length <= 512);
         assert(denseRange.lanes.length <= 8);
         assert(JSON.stringify(denseRange).length < 30000, "Response cost follows the viewport budget");
-        for (let i = 0; i < 3; ++i) await evaluate('document.querySelector("#notes").dispatchEvent(new KeyboardEvent("keydown", {key: "+"}))');
-        await wait('document.querySelector("#notes").dataset.dense === "false" && Number(document.querySelector("#notes").dataset.notes) > 0');
-        await wait('Number(document.querySelector("#notes").dataset.from) > 0');
+        for (let i = 0; i < 3; ++i) await evaluate('document.querySelector("#score-canvas").dispatchEvent(new KeyboardEvent("keydown", {key: "+"}))');
+        await wait('document.querySelector("#score-canvas").dataset.dense === "false" && Number(document.querySelector("#score-canvas").dataset.notes) > 0');
+        await wait('Number(document.querySelector("#score-canvas").dataset.from) > 0');
         await click("#stop");
         const changeStart = async value => {
             await evaluate(`(() => {
-                const canvas = document.querySelector("#notes"), rect = canvas.getBoundingClientRect();
+                const canvas = document.querySelector("#score-canvas"), rect = canvas.getBoundingClientRect();
                 canvas.dispatchEvent(new WheelEvent("wheel", {bubbles: true, cancelable: true, shiftKey: true,
                     clientX: rect.left + 300, deltaY: (${value} - Number(canvas.dataset.from)) / Number(canvas.dataset.scale)}));
             })()`);
         };
         await changeStart(0);
-        await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
-        assert.deepEqual(await evaluate('Array.from(document.querySelector("#timeline-tools").querySelectorAll("button,input[type=number]")).filter(c => c.getBoundingClientRect().width > 0).map(c => c.id)'), ["tab-tracks", "tab-score", "show-automation"]);
-        const beforeZoom = await evaluate('[Number(document.querySelector("#notes").dataset.scale), document.querySelector("#track-list .track").clientHeight]');
+        await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#score-canvas").dataset.notes) > 0');
+        assert.deepEqual(await evaluate('Array.from(document.querySelector("#timeline-tools").querySelectorAll("button,input[type=number]")).filter(c => c.getBoundingClientRect().width > 0).map(c => c.id)'), ["show-automation", "score-3d"]);
+        const beforeZoom = await evaluate('[Number(document.querySelector("#score-canvas").dataset.scale), document.querySelector("#track-list .track").clientHeight]');
         await evaluate(`(() => {
-            const c = document.querySelector("#notes"), r = c.getBoundingClientRect();
+            const c = document.querySelector("#score-canvas"), r = c.getBoundingClientRect();
             c.dispatchEvent(new WheelEvent("wheel", {bubbles: true, cancelable: true, ctrlKey: true, deltaY: -100, clientX: r.left + 300, clientY: r.top + 40}));
         })()`);
-        const afterZoom = await evaluate('[Number(document.querySelector("#notes").dataset.scale), ...Array.from(document.querySelectorAll("#track-list .track"), b => b.clientHeight)]');
+        const afterZoom = await evaluate('[Number(document.querySelector("#score-canvas").dataset.scale), ...Array.from(document.querySelectorAll("#track-list .track"), b => b.clientHeight)]');
         assert.equal(afterZoom[0], beforeZoom[0], "Ctrl+wheel preserves the time scale");
         assert(afterZoom.slice(1).every(h => h > beforeZoom[1] && h === afterZoom[1]), "Ctrl+wheel expands every track equally");
         await evaluate(`(() => {
-            const c = document.querySelector("#notes"), r = c.getBoundingClientRect();
+            const c = document.querySelector("#score-canvas"), r = c.getBoundingClientRect();
             c.dispatchEvent(new WheelEvent("wheel", {bubbles: true, cancelable: true, deltaY: -30, clientX: r.left + 250, clientY: r.top + 40}));
         })()`);
-        assert(await evaluate(`Number(document.querySelector("#notes").dataset.scale) < ${beforeZoom[0]}`), "Plain wheel zooms in time");
+        await wait(`Number(document.querySelector("#score-canvas").dataset.scale) < ${beforeZoom[0]}`);
         assert.equal(await evaluate('document.querySelector("#track-list .track").clientHeight'), afterZoom[1]);
         await changeStart(0);
-        await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#score-canvas").dataset.notes) > 0');
         await evaluate('window.holdRange = true; window.rangeHeld = false');
-        const dragPoint = await evaluate('(() => { const r = document.querySelector("#notes").getBoundingClientRect(); return {x:r.right-10,y:r.top+60}; })()');
-        const distance = await evaluate('(document.querySelector("#notes").clientWidth - document.querySelector("#track-headers").clientWidth) * .85');
+        const dragPoint = await evaluate('(() => { const r = document.querySelector("#score-canvas").getBoundingClientRect(); return {x:r.right-10,y:r.top+60}; })()');
+        const distance = await evaluate('document.querySelector("#score-canvas").clientWidth * .85');
         await call("Input.dispatchMouseEvent", {type: "mousePressed", ...dragPoint, button: "left", clickCount: 1});
         await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - 10, y: dragPoint.y, buttons: 1});
         assert.equal(await evaluate('window.rangeHeld'), false, "Small pans use prefetched notes");
         await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - distance, y: dragPoint.y, buttons: 1});
         await wait('window.rangeHeld');
-        assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'), "Dragging retains notes while a range reply is pending");
+        assert(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes) > 0'), "Dragging retains notes while a range reply is pending");
         await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - distance - 10, y: dragPoint.y, buttons: 1});
-        assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'), "Repeated movement must not blank the cached window");
+        assert(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes) > 0'), "Repeated movement must not blank the cached window");
         await call("Input.dispatchMouseEvent", {type: "mouseReleased", x: dragPoint.x - distance - 10, y: dragPoint.y, button: "left", clickCount: 1});
         await evaluate('window.holdRange = false');
-        await wait('ranges.at(-1).to > Number(document.querySelector("#notes").dataset.from)');
-        const canvasSize = await evaluate('[document.querySelector("#notes").width, document.querySelector("#notes").height]');
+        await wait('ranges.at(-1).to > Number(document.querySelector("#score-canvas").dataset.from)');
+        const canvasSize = await evaluate('[document.querySelector("#score-canvas").width, document.querySelector("#score-canvas").height]');
         await changeStart(1e9);
-        await wait('ranges.at(-1).from <= 1e9 && ranges.at(-1).to > 1e9 && document.querySelector("#notes").dataset.notes === "0"');
-        assert.deepEqual(await evaluate('[document.querySelector("#notes").width, document.querySelector("#notes").height]'), canvasSize, "Large times must not allocate a song-sized canvas");
+        await wait('ranges.at(-1).from <= 1e9 && ranges.at(-1).to > 1e9 && document.querySelector("#score-canvas").dataset.notes === "0"');
+        assert.deepEqual(await evaluate('[document.querySelector("#score-canvas").width, document.querySelector("#score-canvas").height]'), canvasSize, "Large times must not allocate a song-sized canvas");
         await evaluate('window.holdRange = true; window.rangeHeld = false');
         await changeStart(100);
         await wait('window.rangeHeld');
         await changeStart(0);
         await evaluate('window.holdRange = false');
-        await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
+        await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#score-canvas").dataset.notes) > 0');
         await evaluate('document.querySelector("#roll").scrollTop = 100000');
         await wait('ranges.at(-1).first > 0');
-        assert.equal(await evaluate('document.querySelector("#notes").dataset.notes'), "0");
+        await wait('document.querySelector("#score-canvas").dataset.notes === "0"');
         await evaluate('document.querySelector("#roll").scrollTop = 0');
-        await wait('ranges.at(-1).first === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
-        const timeView = await evaluate('[document.querySelector("#notes").dataset.from, document.querySelector("#notes").dataset.scale, document.querySelector("#follow").checked]');
+        await wait('ranges.at(-1).first === 0 && Number(document.querySelector("#score-canvas").dataset.notes) > 0');
+        const timeView = await evaluate('[document.querySelector("#score-canvas").dataset.from, document.querySelector("#score-canvas").dataset.scale, document.querySelector("#follow").checked]');
         const trackPoint = await evaluate('(() => { const r = document.querySelector("#track-headers").getBoundingClientRect(); return {x:r.left+30, y:r.top+20}; })()');
         await call("Input.dispatchMouseEvent", {type: "mouseWheel", ...trackPoint, deltaX: 0, deltaY: 100});
         await wait('document.querySelector("#roll").scrollTop > 0 && ranges.at(-1).first > 0');
-        assert.deepEqual(await evaluate('[document.querySelector("#notes").dataset.from, document.querySelector("#notes").dataset.scale, document.querySelector("#follow").checked]'), timeView,
+        assert.deepEqual(await evaluate('[document.querySelector("#score-canvas").dataset.from, document.querySelector("#score-canvas").dataset.scale, document.querySelector("#follow").checked]'), timeView,
             "Wheel over track names scrolls vertically without changing time zoom or Follow");
         await call("Input.dispatchMouseEvent", {type: "mouseWheel", ...trackPoint, deltaX: 0, deltaY: -100});
         await wait('document.querySelector("#roll").scrollTop === 0 && ranges.at(-1).first === 0');
@@ -293,7 +293,7 @@ try {
         assert.deepEqual(diagnostics, []);
         // Closing the frontend while playing must stop and release the native session.
         await call("Page.navigate", {url: "about:blank"});
-    });
+    }, {graphics: true});
     const [code, signal] = await app.exited;
     assert.equal(signal, null, app.log);
     assert.equal(code, 0, app.log);

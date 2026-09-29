@@ -262,7 +262,7 @@ try {
             await evaluate(`(() => { const code = document.querySelector('#code'); code.value = ${JSON.stringify(saved)}; code.dispatchEvent(new Event('input')); })()`);
             await call("Page.navigate", {url: "about:blank"});
             console.log(`OK: ${mode} DSP, shared custom/generic UI, relative JS/CSS/UI Wasm, automation, edits, messages, selection, stop and restart`);
-        });
+        }, {graphics: true});
         await app?.close();
         app = undefined;
     }

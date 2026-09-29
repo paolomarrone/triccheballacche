@@ -25,7 +25,7 @@ require production bundles to be built separately; see [plugin builds](../plugin
 | `make test-live` | Infinite playback, quantized revisions, seek and Stop/Play in both editors, UI continuity, errors and evaluation timeout; editor/browser prerequisites. |
 | `make test-editor-web` | Polpo in the shared browser editor; Node.js, Chromium and Polpo's Wasm plugins. |
 | `make test-editor-ui` | Custom plugin UIs and timeline automation with native and Wasm DSPs; editor/browser prerequisites, no external plugin checkout. |
-| `make test-score-space` | Shared 3D score with native and Wasm backends: playback, source picking, automation/mute continuity, distant loops, live revisions, errors and WebGL recovery. Requires Chromium with WebGL 2 and the editor prerequisites; uses local fixtures. |
+| `make test-score-space` | Shared 2D/3D score with native and Wasm backends: playback, source picking, automation/mute continuity, distant loops, live revisions, errors and WebGL recovery. Requires Chromium with WebGL 2 and the editor prerequisites; uses local fixtures. |
 | `make test-library` | Shared Settings, published catalog, examples dropdown, Sempiterno playback, file picker, uploads and unsaved edits; the same production bundles built for native and Wasm, plus editor/browser prerequisites. |
 | `make test-ui` | Original Tibia C/C++ and A-SID UIs, mouse gestures and DSP feedback; X11 display and prebuilt DSP/UI bundles. |
 | `make format-check` | Local C formatting with clang-format 21; excludes upstream headers and generated code. |
@@ -91,10 +91,11 @@ Catalog checks compare the editor with the published files, including optional
 plugins. Support modules remain importable without appearing as scores.
 `catalog.mjs` checks that publishing skips native-only bundles and retains score
 imports, relative UI assets and auxiliary Wasm modules.
-`score-space.mjs` also verifies that Tracks does not load Three.js and that the
-editor remains usable when WebGL is unavailable. Its graphics-enabled Chromium
-session uses ANGLE/OpenGL on Linux; `CHROMIUM` can point to a wrapper for another
-driver setup. Normal editor checks keep GPU rendering disabled.
+`score-space.mjs` also verifies the single score canvas, 2D/3D switching, track
+alignment and scaling, context recovery, and editing/playback when WebGL is
+unavailable. Editor checks require WebGL 2; their Chromium sessions use
+ANGLE/OpenGL on Linux. `CHROMIUM` can point to a wrapper for another driver setup.
+Audio-only browser checks keep GPU rendering disabled.
 
 Build checks use the real Makefile and compilers with isolated artifacts. They verify
 unchanged builds, target-order independence, compile versus link invalidation,

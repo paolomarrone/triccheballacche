@@ -18,7 +18,7 @@ export function scoreSpace(canvas, message, fail) {
     controls.maxDistance = 800;
     const ray = new THREE.Raycaster(), pointer = new THREE.Vector2(), transform = new THREE.Object3D(), tint = new THREE.Color();
     let world = new THREE.Group(), content = new THREE.Group(), head, rulerBand;
-    let meshes = [], targets = [], ticks = [], state, previous, visible = false, flat = false;
+    let meshes = [], targets = [], ticks = [], state, previous, stopped = false, flat = false;
     let frame = 0, lost = false, reset = true, origin = 0, trackCount;
     const sides = [new THREE.Plane(new THREE.Vector3(1, 0, 0), length / 2),
         new THREE.Plane(new THREE.Vector3(-1, 0, 0), length / 2)];
@@ -203,7 +203,7 @@ export function scoreSpace(canvas, message, fail) {
 
     function paint() {
         frame = 0;
-        if (!visible || lost || !state) return;
+        if (stopped || lost || !state) return;
         const width = canvas.clientWidth, height = canvas.clientHeight;
         if (!width || !height) return;
         const ratio = Math.min(devicePixelRatio, 2);
@@ -259,6 +259,7 @@ export function scoreSpace(canvas, message, fail) {
             if (flat) { head.position.y = plan.top; head.scale.y = height * pixel; }
         }
         message.hidden = !!score;
+        if (!score) message.textContent = "Run a score to see its notes";
         canvas.dataset.notes = count;
         canvas.dataset.projection = flat ? "2d" : "3d";
         canvas.dataset.active = active;
@@ -268,6 +269,7 @@ export function scoreSpace(canvas, message, fail) {
         canvas.dataset.revision = score?.revision || 0;
         canvas.dataset.from = view.from;
         canvas.dataset.to = view.to;
+        canvas.dataset.scale = view.span / width;
         canvas.dataset.bufferFrom = data?.from ?? view.from;
         canvas.dataset.bufferTo = data?.to ?? view.to;
         canvas.dataset.time = time;
@@ -276,14 +278,14 @@ export function scoreSpace(canvas, message, fail) {
     }
 
     function schedule() {
-        if (visible && !lost && !frame) frame = requestAnimationFrame(() => {
+        if (!stopped && !lost && !frame) frame = requestAnimationFrame(() => {
             try { paint(); }
-            catch (cause) { frame = 0; visible = false; controls.enabled = false; fail(cause); }
+            catch (cause) { frame = 0; stopped = true; controls.enabled = false; fail(cause); }
         });
     }
 
     function hit(event) {
-        if (!visible || lost || !state) return;
+        if (stopped || lost || !state) return;
         const rect = canvas.getBoundingClientRect();
         pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
         ray.setFromCamera(pointer, flat ? plan : camera);
@@ -296,10 +298,10 @@ export function scoreSpace(canvas, message, fail) {
     }
     canvas.addEventListener("webglcontextlost", event => {
         event.preventDefault(); lost = true; controls.enabled = false;
-        message.hidden = false; message.textContent = "Graphics context lost. Tracks remains available.";
+        message.hidden = false; message.textContent = "Graphics context lost. Waiting for recovery…";
     });
     canvas.addEventListener("webglcontextrestored", () => {
-        lost = false; controls.enabled = visible && !flat; previous = undefined;
+        lost = false; controls.enabled = !stopped && !flat; previous = undefined;
         message.textContent = "Run a score to see its notes"; schedule();
     });
     controls.addEventListener("change", schedule);
@@ -308,19 +310,14 @@ export function scoreSpace(canvas, message, fail) {
         update(value) {
             if (flat !== value.flat) previous = undefined;
             state = value; flat = value.flat;
-            controls.enabled = visible && !flat && !lost;
+            controls.enabled = !stopped && !flat && !lost;
             schedule();
-        },
-        visible(value) {
-            visible = value; controls.enabled = value && !flat && !lost;
-            if (!value) { cancelAnimationFrame(frame); frame = 0; }
-            else schedule();
         },
         hit,
         help,
         home,
         dispose() {
-            visible = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); clear(); renderer.dispose();
+            stopped = true; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); clear(); renderer.dispose();
         }
     };
 }

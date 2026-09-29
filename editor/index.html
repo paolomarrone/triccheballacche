@@ -34,23 +34,17 @@
         <div id="split" role="separator" aria-label="Timeline height" aria-orientation="horizontal" tabindex="0"></div>
         <section id="timeline" aria-label="Score projection">
             <div id="timeline-tools">
-                <div role="tablist" aria-label="Score view">
-                    <button id="tab-tracks" role="tab" aria-selected="true" aria-controls="notes">Tracks</button>
-                    <button id="tab-score" role="tab" aria-selected="false" aria-controls="score-view" tabindex="-1">Score</button>
-                </div>
                 <label><input id="follow" type="checkbox" checked> Follow</label>
                 <button id="show-automation" aria-pressed="true" title="Show or hide automation curves">Show automation</button>
-                <span id="score-tools" hidden>
-                    <button id="score-flat" aria-pressed="false" title="Show the score in 2D">2D</button>
-                    <button id="score-reset" title="Reset camera" aria-label="Reset camera">↺</button>
-                </span>
+                <button id="score-3d" aria-pressed="false" title="Show the score in 3D" disabled>3D</button>
+                <button id="score-reset" title="Reset camera" aria-label="Reset camera" hidden disabled>↺</button>
                 <output id="note-info"></output>
             </div>
             <div id="timeline-body">
-                <div id="roll"><canvas id="notes" role="tabpanel" aria-labelledby="tab-tracks" tabindex="0" aria-label="Score notes"></canvas><div id="track-headers"><div id="track-list"></div></div><div id="lanes-space" aria-hidden="true"></div></div>
-                <div id="score-view" role="tabpanel" aria-labelledby="tab-score" hidden>
-                    <canvas id="score-canvas" tabindex="0" aria-label="Spatial score"></canvas>
-                    <p id="score-message" role="status">Run a score to see its notes</p>
+                <div id="roll"><div id="track-headers"><div id="track-list"></div></div><div id="lanes-space" aria-hidden="true"></div></div>
+                <div id="score-view">
+                    <canvas id="score-canvas" tabindex="0" aria-label="Score notes"></canvas>
+                    <p id="score-message" role="status">Loading score view…</p>
                 </div>
             </div>
         </section>

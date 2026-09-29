@@ -32,17 +32,17 @@ try {
             await call("Emulation.setDeviceMetricsOverride", {width: 1300, height: 950, deviceScaleFactor: 1, mobile: false});
             await call("Page.navigate", {url});
             await wait('document.querySelector("#run")?.disabled === false');
-            assert(!await evaluate('performance.getEntriesByType("resource").some(r => r.name.includes("three.module"))'), "Tracks does not load Three.js");
-            await click("#tab-score");
-            await wait('document.querySelector("#score-canvas").dataset.projection === "3d"');
-            await click("#score-flat");
+            await wait('document.querySelector("#score-canvas").dataset.projection === "2d"');
+            assert.equal(await evaluate('document.querySelectorAll("#timeline canvas").length'), 1);
             await click("#score-canvas");
             assert.deepEqual(diagnostics, [], "An empty 2D score remains interactive before Run");
-            await click("#score-flat");
-            await click("#tab-tracks");
+            await click("#score-3d");
+            await evaluate(`(() => {
+                const split = document.querySelector('#split');
+                for (let i = 0; i < 16; ++i) split.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowUp'}));
+            })()`);
+            assert(await evaluate('document.querySelector("#timeline").clientHeight > 500'), "The divider expands the score panel");
             await click("#run");
-            await wait('Number(document.querySelector("#notes").dataset.notes) > 0');
-            await click("#tab-score");
             await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
             await wait('Number(document.querySelector("#score-canvas").dataset.automation) === 10');
             await wait('Number(document.querySelector("#score-canvas").dataset.active) > 0');
@@ -50,8 +50,8 @@ try {
             const projection = await evaluate('({...document.querySelector("#score-canvas").dataset})');
             assert(Number(projection.notes) > 10, "Include all source tracks, beyond a single eight-lane response");
             assert.equal(await evaluate('document.querySelector("#score-message").hidden'), true);
-            await click("#score-flat");
-            assert.equal(await evaluate('document.querySelector("#score-flat").getAttribute("aria-pressed")'), "true");
+            await click("#score-3d");
+            assert.equal(await evaluate('document.querySelector("#score-3d").getAttribute("aria-pressed")'), "false");
             const painted = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
             const hoverNote = async (track, late = false) => {
                 await painted();
@@ -136,7 +136,7 @@ try {
                 await call("Input.dispatchMouseEvent", {type, ...rulerPoint, button: "left", clickCount: 1});
             await wait('Math.abs(Number(document.querySelector("#score-canvas").dataset.time) - 2) < .05');
             await click("#follow");
-            await click("#score-flat");
+            await click("#score-3d");
             await click("#score-reset");
             await painted();
             await wait('document.querySelector("#score-canvas").dataset.automation === "10"');
@@ -156,12 +156,11 @@ try {
             await wait('document.querySelector("#track-list .track-listen button").getAttribute("aria-pressed") === "true"');
             await click("#show-automation");
             await wait('document.querySelector("#score-canvas").dataset.automation === "0"');
-            await click("#tab-tracks");
-            await wait('document.querySelector("#notes").dataset.automation === "0"');
+            await click("#score-3d");
+            await wait('document.querySelector("#score-canvas").dataset.projection === "2d" && document.querySelector("#score-canvas").dataset.automation === "0"');
             assert.equal(await evaluate('document.querySelector("#track-list .track-listen button").getAttribute("aria-pressed")'), "true");
             assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), projection.revision);
             await click("#show-automation");
-            await click("#tab-score");
             await wait('document.querySelector("#score-canvas").dataset.automation === "10"');
             const seek = async seconds => {
                 await wait('!document.querySelector("#time").disabled');
@@ -238,12 +237,10 @@ try {
             await click("#run");
             await wait(`Number(document.querySelector('#score-canvas').dataset.revision) > ${projection.revision}`);
             assert.equal(await evaluate('document.querySelector("#track-list .track-listen button").getAttribute("aria-pressed")'), "true", "Live revisions retain audition state");
-            await click("#tab-tracks");
-            const hiddenTime = await evaluate('document.querySelector("#score-canvas").dataset.time');
-            await wait(`Number(document.querySelector('#time').value) > ${Number(hiddenTime) + .2}`);
-            assert.equal(await evaluate('document.querySelector("#score-canvas").dataset.time'), hiddenTime, "Hidden score does not keep rendering");
-            await click("#tab-score");
-            await wait(`Number(document.querySelector('#score-canvas').dataset.time) > ${hiddenTime}`);
+            const panelHeight = await evaluate('document.querySelector("#timeline").clientHeight');
+            await click("#score-3d");
+            await wait('document.querySelector("#score-canvas").dataset.projection === "3d"');
+            assert.equal(await evaluate('document.querySelector("#timeline").clientHeight'), panelHeight, "Changing projection preserves panel height");
             await click("#stop");
             const revision = await evaluate('document.querySelector("#score-canvas").dataset.revision');
             await set("#code", '(error "invalid spatial draft")');
@@ -253,7 +250,7 @@ try {
             assert(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes) > 0'), "Failed evaluation retains the last projection");
             await call("Emulation.setEmulatedMedia", {features: [{name: "prefers-color-scheme", value: "dark"}]});
             await writeFile(`build/test/score-space-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
-            // An unavailable WebGL context must not take down the editor or Tracks.
+            // Losing graphics must not interrupt playback or prevent context recovery.
             const extension = await evaluate(`(() => {
                 const gl = document.querySelector('#score-canvas').getContext('webgl2');
                 window.loseContext = gl.getExtension('WEBGL_lose_context');
@@ -262,14 +259,14 @@ try {
             })()`);
             assert(extension);
             await wait('document.querySelector("#score-message").textContent.includes("context lost") && !document.querySelector("#score-message").hidden');
-            await click("#tab-tracks");
-            await wait('Number(document.querySelector("#notes").dataset.notes) > 0');
+            await click("#play");
+            const lostTime = await evaluate('Number(document.querySelector("#time").value)');
+            await wait(`Number(document.querySelector('#time').value) > ${lostTime + .2}`);
+            await click("#stop");
             await evaluate('loseContext.restoreContext()');
-            await click("#tab-score");
             await wait('document.querySelector("#score-message").hidden');
-            await click("#tab-tracks");
-            await key("ArrowRight");
-            assert.equal(await evaluate('document.querySelector("#tab-score").getAttribute("aria-selected")'), "true");
+            await click("#score-3d");
+            await wait('document.querySelector("#score-canvas").dataset.projection === "2d"');
             await set("#code", `(def s (daw/plugin "build/test/fixture.perone" {:gain 0.001}))
 (daw/output (daw/track s))
 (for i 0 1300
@@ -294,16 +291,16 @@ try {
             };`});
         await call("Page.navigate", {url: `http://127.0.0.1:${server.address().port}/editor/index.html?score=${entry}&project=../${directory}/project.json`});
         await wait('document.querySelector("#run")?.disabled === false');
-        await click("#tab-score");
         await wait('document.querySelector("#score-message").textContent.includes("unavailable")');
-        await click("#tab-tracks");
         await click("#run");
-        await wait('Number(document.querySelector("#notes").dataset.notes) > 0');
+        await wait('Number(document.querySelector("#time").value) > .2');
+        assert(await evaluate('document.querySelector("#score-3d").disabled'));
+        assert(!await evaluate('document.querySelector("#score-message").hidden'));
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
         await click("#stop");
         assert.deepEqual(diagnostics, []);
         await call("Page.navigate", {url: "about:blank"});
-        console.log("OK: editor remains usable without WebGL");
+        console.log("OK: editing and playback remain usable without WebGL");
     });
 } finally {
     if (app) await app.close();

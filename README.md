@@ -151,30 +151,25 @@ and delay/reverb history is cleared. It never renders the intervening audio,
 including for unbounded scores. Timing follows
 rendered audio, without compensating for device latency or plugin release tails.
 
-The **Tracks** and **Score** tabs share the time window, playback, source selection,
-automation choices and mute/solo state. Score projects time, MIDI pitch and tracks
-into three dimensions, using the same bounded queries even for unbounded pieces.
-In 3D, drag to orbit, right-drag to pan the camera, and wheel to zoom. Shift+wheel
-pans time; Alt+wheel or `+`/`-` zooms time. **↺** resets the camera. **2D** switches
-to an orthographic view: flat notes, time running left to right, and pitch within
-each track, aligned with its name. Wheel zooms time around the pointer;
-Ctrl/Command+wheel expands or shrinks all tracks. Drag pans both axes; wheel over
-track names or use the scrollbar to scroll vertically. Click the ruler to seek.
-Switching back to 3D preserves the camera angle. Click a note for its source or
-a track name/number for its plugins. Each tab remembers its panel height; drag
-the divider to resize it. The separate Tracks tab remains available.
+The score opens in 2D: time runs left to right, with MIDI pitch inside each track,
+aligned with its name. **3D** projects time, pitch and tracks into three dimensions
+using the same renderer, bounded queries and playback state. In 3D, drag to orbit,
+right-drag to pan the camera, and wheel to zoom. Shift+wheel pans time;
+Alt+wheel or `+`/`-` zooms time. **↺** resets the camera. Switching modes preserves
+the time window, automation choices, mute/solo state and camera angle. Drag the
+divider to resize the panel. Click a track name/number for its plugins.
 Note flashes follow scheduled events, with a minimum pulse for short notes;
 they do not measure audio levels or effect tails. Automation height uses each
-parameter's range, independently of pitch. Three.js is served locally and loaded
-only when opening Score. This tab requires WebGL 2; Tracks remains available
-without it. Both backends use the same renderer.
+parameter's range, independently of pitch. Both backends use locally served
+Three.js and require WebGL 2 for the score view. Editing and playback remain
+available if graphics initialization fails.
 
 **Show automation**, next to Follow, shows or hides all automation curves without
 affecting playback or parameter selections. Each automated track has a checklist
 below its name: choose any combination of parameters from its instruments,
 effects or mixers, or **All**. One parameter is selected initially. Each curve
 has a matching color in the checklist; selections survive Stop/Play and live revisions.
-In Tracks and Score's 2D mode, hover for the value and time, click for its source.
+In 2D, hover for the value and time, click for its source.
 Curves show scheduled step changes, including the held value at the left edge, using the parameter's range
 and logarithmic mapping where declared. Wide views summarize scheduled values
 in min/max bands without expanding loops. This is a read-only score view;

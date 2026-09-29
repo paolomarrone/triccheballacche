@@ -31,7 +31,7 @@ try {
             await wait('document.querySelector("#run")?.disabled === false');
             await click("#views");
             await click("#run");
-            await wait('Number(document.querySelector("#notes").dataset.notes) > 0');
+            await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
             await wait('document.querySelector(".plugin-body > div")?.shadowRoot?.querySelector("input")');
             await evaluate('window.savedUI = document.querySelector(".plugin-body > div")');
             const revision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
@@ -77,11 +77,10 @@ try {
             assert(await evaluate('window.savedUI === document.querySelector(".plugin-body > div")'), "Seek retains the UI instance");
             await click("#rewind");
             await wait('Number(document.querySelector("#time").value) === 0');
-            await wait('Number(document.querySelector("#notes").dataset.from) === 0');
+            await wait('Number(document.querySelector("#score-canvas").dataset.from) === 0');
             const ruler = await evaluate(`(() => {
-                const c = document.querySelector('#notes'), r = c.getBoundingClientRect();
-                const label = Math.min(230, Math.round(r.width * .3));
-                return {x: r.x + label + 1 / Number(c.dataset.scale), y: r.y + 12};
+                const c = document.querySelector('#score-canvas'), r = c.getBoundingClientRect();
+                return {x: r.x + 1 / Number(c.dataset.scale), y: r.y + 12};
             })()`);
             for (const type of ["mousePressed", "mouseReleased"])
                 await call("Input.dispatchMouseEvent", {type, ...ruler, button: "left", clickCount: 1});
@@ -110,7 +109,7 @@ try {
             await click("#stop");
             assert.deepEqual(diagnostics, []);
             console.log(`OK: ${mode} live revisions, seek, ruler, finite endpoints, Stop/Play, UI continuity, errors and timeout`);
-        });
+        }, {graphics: true});
         await app?.close();
         app = undefined;
     }

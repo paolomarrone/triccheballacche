@@ -3,75 +3,34 @@ import {automation} from "./automation.js";
 
 export function timeline(request, select, selectTrack, seek, error) {
     const get = id => document.getElementById(id);
-    const panel = get("timeline"), roll = get("roll"), canvas = get("notes"), context = canvas.getContext("2d");
+    const panel = get("timeline"), roll = get("roll");
     const headers = get("track-headers"), tracks = get("track-list"), follow = get("follow"), detail = get("note-info");
-    const space = get("score-view"), spatialCanvas = get("score-canvas"), message = get("score-message");
-    const tabs = [get("tab-tracks"), get("tab-score")];
+    const space = get("score-view"), canvas = get("score-canvas"), message = get("score-message");
     let score, data, from = 0, scale = 0.02, time = 0, playing = false;
     let width = 0, height = 0, row = 60, label = 220, version = 0, pending = false, scheduled = false;
     let loaded, latency = 0, position = 0, stamp = 0, animation = 0;
-    let hits = [], drag, selected, trackIndex = 0;
+    let drag, selected, trackIndex = 0;
     let listening = [], outputs = [], enabled = false;
     const changing = new Set();
     const ruler = 24;
     const envelopes = automation(request, changed);
-    let spatial, opening, spatialMode = false, flat = false, disposed = false;
-    const heights = ["", null];
+    let renderer, flat = true, disposed = false;
 
-    function spatialError(cause) {
-        message.textContent = `Score view unavailable: ${cause.message || cause}. Tracks remains available.`;
+    function renderError(cause) {
+        message.textContent = `Score view unavailable: ${cause.message || cause}`;
         message.hidden = false;
+        get("score-3d").disabled = get("score-reset").disabled = true;
     }
 
-    async function showSpace(value) {
-        if (value !== spatialMode) {
-            heights[Number(spatialMode)] = panel.style.flexBasis;
-            panel.style.flexBasis = heights[Number(value)] ?? `${Math.max(110, panel.parentElement.clientHeight * .6)}px`;
-        }
-        spatialMode = value;
-        space.hidden = get("score-tools").hidden = !value;
-        canvas.style.visibility = value ? "hidden" : "";
-        canvas.setAttribute("aria-hidden", value);
-        canvas.tabIndex = value ? -1 : 0;
-        for (const [i, tab] of tabs.entries()) {
-            tab.setAttribute("aria-selected", i === Number(value));
-            tab.tabIndex = i === Number(value) ? 0 : -1;
-        }
-        get("automation-parameters").hidePopover();
-        spatial?.visible(value);
-        changed();
-        if (!value || spatial || opening) return;
-        message.hidden = false;
-        message.textContent = "Loading score view…";
-        opening = import("./score-space.js");
-        try {
-            const {scoreSpace} = await opening;
-            if (disposed) return;
-            spatial = scoreSpace(spatialCanvas, message, spatialError);
-            message.textContent = "Run a score to see its notes";
-            spatial.visible(spatialMode);
-            draw();
-        } catch (cause) { spatialError(cause); }
-        finally { opening = undefined; }
-    }
-
-    tabs.forEach((tab, i) => {
-        tab.onclick = () => showSpace(Boolean(i));
-        tab.onkeydown = event => {
-            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-            event.preventDefault();
-            const next = event.key === "Home" ? 0 : event.key === "End" ? 1 : 1 - i;
-            tabs[next].focus(); showSpace(Boolean(next));
-        };
-    });
-    get("score-flat").onclick = () => {
+    get("score-3d").onclick = () => {
         flat = !flat;
-        get("score-flat").setAttribute("aria-pressed", flat);
+        get("score-3d").setAttribute("aria-pressed", !flat);
         get("score-reset").hidden = flat;
+        get("automation-parameters").hidePopover();
         drag = undefined;
         changed();
     };
-    get("score-reset").onclick = () => spatial?.home();
+    get("score-reset").onclick = () => renderer?.home();
     space.addEventListener("wheel", event => {
         if (flat) {
             event.stopImmediatePropagation();
@@ -85,7 +44,7 @@ export function timeline(request, select, selectTrack, seek, error) {
         if (event.altKey) zoom(Math.exp(event.deltaY * unit * .005));
         else move(from + (event.deltaX || event.deltaY) * unit * scale);
     }, {capture: true, passive: false});
-    window.addEventListener("pagehide", () => { disposed = true; cancelAnimationFrame(animation); spatial?.dispose(); });
+    window.addEventListener("pagehide", () => { disposed = true; cancelAnimationFrame(animation); renderer?.dispose(); });
 
     function audible(index) {
         const node = score.nodes[score.tracks[index][1]];
@@ -125,7 +84,7 @@ export function timeline(request, select, selectTrack, seek, error) {
 
     function viewport() {
         const span = Math.max(1, width - label) * scale;
-        const all = spatialMode && !flat;
+        const all = !flat;
         return {from, to: from + span, span,
             first: all ? 0 : Math.floor(roll.scrollTop / row),
             count: all ? score?.tracks.length || 0 : Math.ceil((height - ruler + roll.scrollTop % row) / row),
@@ -220,98 +179,11 @@ export function timeline(request, select, selectTrack, seek, error) {
     }
 
     function draw() {
-        const css = getComputedStyle(panel), foreground = css.color;
-        const dark = matchMedia("(prefers-color-scheme: dark)").matches;
         tracks.style.transform = `translateY(${-roll.scrollTop}px)`;
-        if (spatialMode) {
-            spatial?.update({score, data, view: viewport(), curves: envelopes.curves(viewport()),
-                time, playing, selected, audible, dark, flat, pitchRange,
-                layout: {row, ruler, scroll: roll.scrollTop, width: width - label}});
-            return;
-        }
-        const grid = dark ? "#383b40" : "#e0e3e6", ink = dark ? "#adb3ba" : "#59616a";
-        context.clearRect(0, 0, width, height);
-        context.font = "12px system-ui";
-        context.textBaseline = "middle";
-        hits = [];
-        if (!score) {
-            context.fillStyle = ink;
-            context.fillText("Run a score to see its notes", 12, Math.min(height / 2, 45));
-            return;
-        }
-        const view = viewport(), rawStep = scale * 85, power = 10 ** Math.floor(Math.log10(rawStep));
-        const step = [1, 2, 5, 10].find(n => n * power >= rawStep) * power;
-        context.save();
-        context.beginPath(); context.rect(label, 0, width - label, height); context.clip();
-        const firstTick = Math.ceil(from / step);
-        for (let i = 0; i < Math.ceil((width - label) / 85) + 1; ++i) {
-            const tick = (firstTick + i) * step;
-            const x = label + (tick - from) / scale;
-            context.fillStyle = grid; context.fillRect(Math.round(x), ruler, 1, height - ruler);
-            context.fillStyle = ink;
-            context.fillText(`${Number(tick.toFixed(Math.max(0, -Math.floor(Math.log10(step)))))} s`, x + 4, ruler / 2);
-        }
-        context.restore();
-        for (let i = view.first; i < Math.min(score.tracks.length, view.first + view.count); ++i) {
-            const y = ruler + i * row - roll.scrollTop, track = score.tracks[i];
-            const lane = data?.lanes[i - data.first], [low, high] = pitchRange(track);
-            const pitchY = pitch => y + row - 8 - (pitch - low) * (row - 16) / (high - low + 1);
-            const noteHeight = Math.max(2, Math.min(9, (row - 16) / (high - low + 1)));
-            context.save();
-            context.beginPath(); context.rect(0, Math.max(ruler, y), width, Math.min(row, height - y)); context.clip();
-            context.fillStyle = grid; context.fillRect(0, y + row - 1, width, 1);
-            context.beginPath(); context.rect(label, ruler, width - label, height - ruler); context.clip();
-            const color = `hsl(${(i * 57 + 190) % 360} 58% ${dark ? 63 : 43}%)`;
-            const opacity = track[0] < 0 || audible(i) ? 1 : 0.25;
-            if (lane?.notes) for (const note of lane.notes) {
-                const [order, a, b, pitch, velocity] = note;
-                if (b <= from || a >= view.to) continue;
-                const x = Math.max(label, label + (a - from) / scale), right = Math.min(width, label + (b - from) / scale);
-                const top = pitchY(pitch) - noteHeight;
-                context.fillStyle = color;
-                context.globalAlpha = opacity * (0.4 + 0.6 * velocity / 127);
-                context.fillRect(x, top, Math.max(1, right - x), noteHeight);
-                context.globalAlpha = 1;
-                if (selected?.node === track[0] && selected?.order === order && selected?.start === a) {
-                    context.strokeStyle = foreground;
-                    context.strokeRect(x - 1, top - 1, Math.max(1, right - x) + 2, noteHeight + 2);
-                }
-                hits.push({x, y: top - 2, w: Math.max(3, right - x), h: noteHeight + 4, node: track[0], note});
-            }
-            if (lane?.density) {
-                const binSeconds = (data.to - data.from) / lane.density.length;
-                const binWidth = binSeconds / scale;
-                lane.density.forEach(([count, min, max], bin) => {
-                    if (!count) return;
-                    context.fillStyle = color;
-                    context.globalAlpha = opacity * Math.min(0.9, 0.2 + Math.log2(count + 1) / 12);
-                    context.fillRect(label + (data.from + bin * binSeconds - from) / scale, pitchY(max) - noteHeight, Math.max(1, binWidth),
-                        Math.max(noteHeight, pitchY(min) - pitchY(max) + noteHeight));
-                });
-                context.globalAlpha = 1;
-                context.fillStyle = foreground;
-                context.fillText(`${lane.count} notes · density · double-click to zoom in`, label + 8, y + 12);
-            }
-            context.restore();
-        }
-        const automation = envelopes.draw(context, view, {label, scale, row, scroll: roll.scrollTop, ruler, width, dark});
-        canvas.dataset.automation = automation.curves;
-        canvas.dataset.automationDense = automation.dense;
-        context.fillStyle = grid; context.fillRect(label - 1, 0, 1, height); context.fillRect(0, ruler - 1, width, 1);
-        if (Number.isFinite(score.end) && score.end >= from && score.end < view.to) {
-            context.strokeStyle = ink; context.setLineDash([3, 4]);
-            const x = label + (score.end - from) / scale;
-            context.beginPath(); context.moveTo(x, ruler); context.lineTo(x, height); context.stroke(); context.setLineDash([]);
-        }
-        if (time >= from && time < view.to) {
-            context.fillStyle = dark ? "#ffd377" : "#995b00";
-            context.fillRect(Math.round(label + (time - from) / scale), 0, 2, height);
-        }
-        canvas.dataset.from = from;
-        canvas.dataset.scale = scale;
-        canvas.dataset.notes = hits.length;
-        canvas.dataset.dense = Boolean(data?.lanes.some(lane => lane.density));
-        canvas.setAttribute("aria-label", `Notes from ${from.toFixed(2)} to ${view.to.toFixed(2)} seconds. Tracks ${score.tracks.length ? view.first + 1 : 0}–${Math.min(score.tracks.length, view.first + view.count)}.`);
+        const view = viewport(), dark = matchMedia("(prefers-color-scheme: dark)").matches;
+        renderer?.update({score, data, view, curves: envelopes.curves(view),
+            time, playing, selected, audible, dark, flat, pitchRange,
+            layout: {row, ruler, scroll: roll.scrollTop, width: width - label}});
     }
 
     function resize() {
@@ -325,10 +197,6 @@ export function timeline(request, select, selectTrack, seek, error) {
         headers.style.marginBottom = `${-Math.max(0, height - ruler)}px`;
         tracks.style.setProperty("--track-height", `${row}px`);
         tracks.classList.toggle("compact", row < 54);
-        const ratio = devicePixelRatio;
-        canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
-        canvas.style.width = `${width}px`; canvas.style.height = `${height}px`; canvas.style.marginBottom = `${-height}px`;
-        context.setTransform(ratio, 0, 0, ratio, 0, 0);
         get("lanes-space").style.height = `${Math.max(height, ruler + (score?.tracks.length || 0) * row)}px`;
         changed();
     }
@@ -380,32 +248,29 @@ export function timeline(request, select, selectTrack, seek, error) {
     }
     roll.addEventListener("wheel", wheel, {passive: false});
     const point = event => { const rect = roll.getBoundingClientRect(); return [event.clientX - rect.left, event.clientY - rect.top]; };
-    const hit = (x, y) => hits.findLast(h => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h);
-    const planar = event => event.currentTarget === canvas || flat;
     const curveAt = (x, y) => x >= label && x <= width && y >= ruler && y < height ?
         envelopes.hit(viewport(), {row, ruler, scroll: roll.scrollTop}, y, from + (x - label) * scale) : null;
-    const noteAt = (event, x, y) => event.currentTarget === spatialCanvas ? spatial?.hit(event) : hit(x, y);
-    canvas.onpointerdown = spatialCanvas.onpointerdown = event => {
+    canvas.onpointerdown = event => {
         if (event.button || point(event)[0] < label) return;
         drag = {x: event.clientX, y: event.clientY, from, scroll: roll.scrollTop, moved: false};
-        if (planar(event)) event.currentTarget.setPointerCapture(event.pointerId);
+        if (flat) event.currentTarget.setPointerCapture(event.pointerId);
     };
-    canvas.onpointermove = spatialCanvas.onpointermove = event => {
+    canvas.onpointermove = event => {
         const [x, y] = point(event);
         if (drag && (drag.moved || Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 3)) {
             drag.moved = true;
-            if (planar(event)) {
+            if (flat) {
                 follow.checked = false;
                 roll.scrollTop = drag.scroll + drag.y - event.clientY;
                 move(drag.from + (drag.x - event.clientX) * scale);
             }
         }
-        const found = noteAt(event, x, y), lane = Math.floor((y - ruler + roll.scrollTop) / row);
-        const curve = planar(event) && curveAt(x, y);
-        event.currentTarget.title = planar(event) && y < ruler && x >= label ? "Click to seek" : curve ? curve.text :
-            found?.note ? (found.track === undefined ? "" : `Track ${found.track + 1} · `) + noteText(found.note) :
+        const found = renderer?.hit(event), lane = Math.floor((y - ruler + roll.scrollTop) / row);
+        const curve = flat && curveAt(x, y);
+        event.currentTarget.title = flat && y < ruler && x >= label ? "Click to seek" : curve ? curve.text :
+            found?.note ? `Track ${found.track + 1} · ` + noteText(found.note) :
             found?.count ? `${found.count} notes · zoom in for individual notes` :
-            !planar(event) ? found ? `Track ${found.track + 1} · click to open plugins` : spatial?.help || "" :
+            !flat ? found ? `Track ${found.track + 1} · click to open plugins` : renderer?.help || "" :
             score?.tracks[lane] ? chain(score.tracks[lane]) : "";
     };
     async function choose(found, curve) {
@@ -435,27 +300,27 @@ export function timeline(request, select, selectTrack, seek, error) {
         selectTrack(index);
     }
 
-    canvas.onpointerup = spatialCanvas.onpointerup = event => {
+    canvas.onpointerup = event => {
         if (!drag) return;
         const moved = drag.moved;
         drag = undefined;
         if (moved) return;
         const [x, y] = point(event);
-        if (planar(event) && enabled && y >= 0 && y < ruler && x >= label) {
+        if (flat && enabled && y >= 0 && y < ruler && x >= label) {
             seek(Math.min(score.end || Infinity, from + (x - label) * scale));
             return;
         }
-        const curve = planar(event) && curveAt(x, y), found = noteAt(event, x, y);
-        if (curve || event.currentTarget === canvas) choose(found, curve);
+        const curve = flat && curveAt(x, y), found = renderer?.hit(event);
+        if (curve) choose(null, curve);
         else if (found && found.revision === score?.revision) {
             if (found.note) choose({node: score.tracks[found.track][0], note: found.note});
             else if (!found.count) chooseTrack(found.track);
             else { follow.checked = false; zoom(.5, ((found.a + found.b) / 2 - from) / scale); }
         }
     };
-    canvas.onpointercancel = spatialCanvas.onpointercancel = () => { drag = undefined; };
-    canvas.ondblclick = spatialCanvas.ondblclick = event => {
-        if (planar(event) && point(event)[0] >= label && point(event)[1] >= ruler) { follow.checked = false; zoom(0.5, point(event)[0] - label); }
+    canvas.onpointercancel = () => { drag = undefined; };
+    canvas.ondblclick = event => {
+        if (flat && point(event)[0] >= label && point(event)[1] >= ruler) { follow.checked = false; zoom(0.5, point(event)[0] - label); }
     };
     canvas.onkeydown = event => {
         if (["ArrowLeft", "ArrowRight", "Home", "+", "-"].includes(event.key)) {
@@ -465,7 +330,6 @@ export function timeline(request, select, selectTrack, seek, error) {
             else { follow.checked = false; move(from + (event.key === "ArrowLeft" ? -1 : 1) * (viewport().to - from) / 2); }
         }
     };
-    spatialCanvas.onkeydown = canvas.onkeydown;
     const split = get("split"), main = panel.parentElement;
     const size = value => { panel.style.flexBasis = `${Math.max(110, Math.min(main.clientHeight - 100, value))}px`; };
     split.onpointerdown = event => { split.setPointerCapture(event.pointerId); };
@@ -477,6 +341,13 @@ export function timeline(request, select, selectTrack, seek, error) {
     };
     new ResizeObserver(resize).observe(roll);
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+
+    import("./score-space.js").then(({scoreSpace}) => {
+        if (disposed) return;
+        renderer = scoreSpace(canvas, message, renderError);
+        get("score-3d").disabled = get("score-reset").disabled = false;
+        draw();
+    }).catch(renderError);
 
     return {
         status(prepared, busy) {

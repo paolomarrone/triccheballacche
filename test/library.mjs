@@ -133,7 +133,7 @@ try {
             await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${revision}`);
             await wait('parseFloat(document.querySelector("#time").value) > 0');
             assert(await evaluate('document.querySelector("#errors").hidden'));
-            assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'));
+            assert(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes) > 0'));
             await evaluate('(() => { const t = document.querySelector("#time"); t.focus(); t.value = "60"; })()');
             await key("Enter", "Enter");
             await wait('Number(document.querySelector("#time").value) > 60');
@@ -142,7 +142,7 @@ try {
             assert.deepEqual(diagnostics, []);
             await call("Page.navigate", {url: "about:blank"});
             console.log(`OK: ${mode} Settings, catalog, examples, Sempiterno playback, discard guard, file picker, paths/imports, uploads and modal shortcuts`);
-        });
+        }, {graphics: true});
     }
 } finally {
     try { await native?.close(); }

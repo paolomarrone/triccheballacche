@@ -1,6 +1,6 @@
 # Three.js 0.180.0
 
-Unmodified upstream ES modules, loaded on demand by the Score tab. Served locally
+Unmodified upstream ES modules for the 2D/3D score view. Served locally
 by both editors; no CDN connection or JavaScript build step is needed at runtime.
 
 - `three.module.min.js`, `three.core.min.js`: `three@0.180.0/build/`

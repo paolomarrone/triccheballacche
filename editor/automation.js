@@ -142,47 +142,6 @@ export function automation(request, changed) {
             data = results.filter(({index, key, result}) =>
                 visible && !result.stale && result.revision === score.revision && selected[index].has(key));
         },
-        draw(context, view, {label, scale, row, scroll, ruler, width, dark}) {
-            let curves = 0, dense = false;
-            if (!visible) return {curves, dense};
-            context.save();
-            context.beginPath(); context.rect(label, ruler, width - label, context.canvas.clientHeight - ruler); context.clip();
-            context.lineWidth = 1.25;
-            for (const {index, parameter: p, result} of visibleCurves(view)) {
-                context.strokeStyle = `hsl(${p.hue} 65% ${dark ? 70 : 38}%)`;
-                context.fillStyle = context.strokeStyle;
-                const top = ruler + index * row - scroll;
-                const y = value => top + row - 8 - automationRatio(p.p, value) * (row - 16);
-                const x = t => Math.max(label, Math.min(width, label + (t - view.from) / scale));
-                ++curves;
-                context.beginPath();
-                if (result.bins) {
-                    dense = true;
-                    const step = (result.to - result.from) / result.bins.length;
-                    let previous = result.initial;
-                    result.bins.forEach(([low, high, last], i) => {
-                        const a = result.from + i * step, b = a + step;
-                        if (b > view.from && a < view.to) {
-                            context.globalAlpha = .17;
-                            context.fillRect(x(a), y(high), Math.max(1, x(b) - x(a)), Math.max(1, y(low) - y(high)));
-                            context.moveTo(x(a), y(previous)); context.lineTo(x(b), y(last));
-                        }
-                        previous = last;
-                    });
-                } else {
-                    result.points.forEach(([a, value], i) => {
-                        const b = result.points[i + 1]?.[0] ?? result.to;
-                        if (b <= view.from || a >= view.to) return;
-                        context.moveTo(x(a), y(value)); context.lineTo(x(b), y(value));
-                        if (result.points[i + 1] && b < view.to) context.lineTo(x(b), y(result.points[i + 1][1]));
-                    });
-                }
-                context.globalAlpha = .85;
-                context.stroke();
-            }
-            context.restore();
-            return {curves, dense};
-        },
         hit(view, {row, ruler, scroll}, y, time) {
             const lane = Math.floor((y - ruler + scroll) / row);
             for (const {index, parameter: p, result} of visibleCurves(view).reverse()) {
