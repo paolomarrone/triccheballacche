@@ -70,7 +70,7 @@ for (const inputs of [
         tracks: inputs.map((_, i) => [i * 2, i * 2 + 1]), output: inputs.length * 2 - 1
     };
     const graph = graphLayout(score), rows = graphRows(score, graph.nodes);
-    for (const width of [140, 380]) for (const height of [44, 60]) {
+    for (const width of [140, 240, 300, 340, 380, 600, 900]) for (const height of [44, 60]) {
         const layout = routeRows(rows, graph, width, height);
         assert.deepEqual(routeRows(rows, graph, width, height), layout, "Compact routing is deterministic");
         for (const edge of layout.edges) {
@@ -80,7 +80,11 @@ for (const inputs of [
         }
         const segments = layout.edges.flatMap(e => e.points.slice(1).map((p, i) => [e.points[i], p]));
         for (const node of layout.nodes.values()) {
-            assert.equal(node.x, inputs[node.id / 2].length ? 26 : 8, "Processing lanes have an 18px indent; instruments stay aligned");
+            assert(node.width <= 84, "Blocks remain compact even in a wide pane");
+            if (!inputs[node.id / 2].length) assert.equal(node.x, 8, "Instruments stay aligned at every width");
+            else if (width === 140) assert.equal(node.x, 26, "Compact processing lanes retain their 18px indent");
+            else assert(node.x >= 26, "Space lets processing lanes move further right");
+            assert(node.x + node.width < width - 62, "Blocks stay clear of the track controls");
             for (const [a, b] of segments) for (let k = 1; k < 10; ++k) {
                 const x = a[0] + (b[0] - a[0]) * k / 10, y = a[1] + (b[1] - a[1]) * k / 10;
                 assert(x <= node.x || x >= node.x + node.width || y <= node.y - 10 || y >= node.y + 10,
@@ -103,6 +107,70 @@ for (const inputs of [
         }
         if (inputs.length === 4) assert.equal(new Set(layout.edges.map(e => e.rail)).size, 1,
             "Disjoint connections reuse a rail instead of consuming extra width");
+        if (width >= 600) for (const edge of layout.edges) {
+            const source = layout.nodes.get(edge.from), target = layout.nodes.get(edge.to);
+            assert(source.x + source.width < edge.points[1][0] && edge.points[1][0] < target.x,
+                "With enough room, connections turn between columns instead of returning from the right edge");
+            assert(edge.points.every((p, i) => !i || p[0] >= edge.points[i - 1][0]), "Spacious paths run left to right");
+        }
+    }
+}
+const sparse = {
+    nodes: [{inputs: [], product: {}}, {inputs: [0]}, {inputs: [1]}, {inputs: [2], product: {}}, {inputs: [3]}],
+    tracks: [[0, 1], [1, 2], [3, 4]], output: 4
+};
+const sparseGraph = graphLayout(sparse), sparseRows = graphRows(sparse, sparseGraph.nodes);
+for (const node of routeRows(sparseRows, sparseGraph, 600, 60).nodes.values())
+    assert(Number.isFinite(node.x) && Number.isFinite(node.width), "Empty ownership lanes do not break responsive placement");
+
+// Columns follow the whole signal path, including multiple stages within a lane.
+const shared = {
+    nodes: [[], [0], [1], [], [3], [2, 4], [5], [6]].map(inputs => ({inputs, product: {}})),
+    tracks: [[0, 2, 1], [3, 4], [-1, 7, 6]], output: 7
+};
+const sharedGraph = graphLayout(shared), sharedRows = graphRows(shared, sharedGraph.nodes);
+const narrow = routeRows(sharedRows, sharedGraph, 380, 60), wide = routeRows(sharedRows, sharedGraph, 1000, 60);
+assert(wide.nodes.get(5).x > narrow.nodes.get(5).x, "The shared bus moves downstream as the pane grows");
+for (const edge of wide.edges) assert(wide.nodes.get(edge.from).x + wide.nodes.get(edge.from).width < wide.nodes.get(edge.to).x);
+let previous = narrow;
+for (let width = 381; width <= 1000; ++width) {
+    const next = routeRows(sharedRows, sharedGraph, width, 60);
+    for (const node of next.nodes.values()) {
+        const delta = node.x - previous.nodes.get(node.id).x;
+        assert(delta >= -1e-7 && delta < 4, "Resizing spreads the graph continuously without backward jumps");
+    }
+    for (const edge of next.edges) {
+        const a = next.nodes.get(edge.from), b = next.nodes.get(edge.to);
+        if (a.track === b.track) assert(Math.abs(b.x - a.x - a.width - 8) < 1e-7,
+            "Extra width moves processing lanes instead of stretching their serial connections");
+    }
+    previous = next;
+}
+const shortReturn = {
+    nodes: [[], [0], [1], [2], [3], [4]].map(inputs => ({inputs, product: {}})),
+    tracks: [[0, 1], [2, 5, 3, 4]], output: 5
+};
+const returnGraph = graphLayout(shortReturn);
+const returned = routeRows(graphRows(shortReturn, returnGraph.nodes), returnGraph, 380, 60);
+const cable = returned.edges.find(e => e.from === 0 && e.to === 2);
+assert(cable.forward === undefined, "This compact destination still needs an outside return");
+assert(cable.points[1][0] < returned.nodes.get(3).x,
+    "The return turns before downstream effects in the destination lane, which are not obstacles");
+assert(cable.points[1][0] <= returned.nodes.get(0).x + returned.nodes.get(0).width + 8,
+    "The turn stays near its actual obstacle instead of the pane's right edge");
+// A merge feeding parallel paths can gain an inside output before its inputs
+// fit inside. These routes share a lane, but their vertical spans do not touch.
+const branched = {
+    nodes: [[], [0], [], [2], [1, 3], [4], [5], [6], [7], [5], [9, 8], [10]].map(inputs => ({inputs, product: {}})),
+    tracks: [[0, 1], [2, 3], [4, 5], [6, 8, 7], [-1, 11]], output: 11
+};
+const branchedGraph = graphLayout(branched), branchedRows = graphRows(branched, branchedGraph.nodes);
+for (const height of [44, 60]) for (let width = 500; width <= 650; width += .25) {
+    const layout = routeRows(branchedRows, branchedGraph, width, height);
+    for (const edge of layout.edges.filter(e => e.to === 4)) {
+        const source = layout.nodes.get(edge.from), target = layout.nodes.get(edge.to);
+        assert(edge.points[1][0] <= Math.max(source.x + source.width, target.x) + 8,
+            "An incoming return never detours around a downstream cable during resize");
     }
 }
 const inputlessMix = {nodes: [{inputs: []}], tracks: [], output: 0};
@@ -292,10 +360,11 @@ try {
                 });
             })()`);
             assert(await aligned(), "Routing blocks align with their existing score lanes");
-            assert.deepEqual(await evaluate(`(() => {
+            const offsets = await evaluate(`(() => {
                 const x = id => document.querySelector('.routing-node[data-node="' + id + '"]').getBoundingClientRect().left;
                 return [x(0) - x(1), x(3) - x(1)];
-            })()`), [18, 18], "Effect and mixer lanes are indented in the shared editor");
+            })()`);
+            assert(offsets.every(x => x >= 18), "Effect and mixer lanes are indented in the shared editor");
             await click('.routing-node[data-node="0"]');
             await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
             assert.deepEqual(await openNodes(), [0]);
@@ -313,6 +382,17 @@ try {
             await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: divider.x + 60, y: divider.y, button: "left", buttons: 1});
             await call("Input.dispatchMouseEvent", {type: "mouseReleased", x: divider.x + 60, y: divider.y, button: "left", clickCount: 1});
             assert(await mapWidth() > initialWidth, "The divider gives more room to the routing map");
+            assert(await evaluate(`(() => {
+                const a = document.querySelector('.routing-node[data-node="1"]').getBoundingClientRect();
+                const b = document.querySelector('.routing-node[data-node="0"]').getBoundingClientRect();
+                return b.left - a.left > ${offsets[0]};
+            })()`), "Dragging the divider spreads processing nodes horizontally");
+            await evaluate(`(() => {
+                const divider = document.querySelector('#routing-split');
+                for (let i = 0; i < 50; ++i) divider.dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowRight'}));
+            })()`);
+            assert(await evaluate('document.querySelector("#score-canvas").clientWidth >= 180'), "Widening routing keeps a usable time viewport");
+            assert(await mapWidth() > 600, "The routing pane can grow beyond the former sixty-percent limit");
             await evaluate(`(() => {
                 const h = document.querySelector('#track-headers'), r = h.getBoundingClientRect();
                 h.dispatchEvent(new WheelEvent('wheel', {bubbles:true, cancelable:true, ctrlKey:true, deltaY:1000, clientX:r.left+10, clientY:r.top+10}));

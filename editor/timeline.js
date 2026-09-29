@@ -227,7 +227,7 @@ export function timeline(request, select, inspect, seek, error) {
         if (!roll.clientWidth || !roll.clientHeight) return;
         width = roll.clientWidth;
         height = roll.clientHeight;
-        label = Math.min(labelWidth, Math.max(140, Math.round(width * .6)));
+        label = Math.min(labelWidth, Math.max(140, width - 180));
         panel.style.setProperty("--track-label", `${label}px`);
         space.style.right = `${roll.offsetWidth - width}px`;
         headers.style.width = `${label}px`;
@@ -390,13 +390,13 @@ export function timeline(request, select, inspect, seek, error) {
     };
     divider.onpointermove = event => {
         if (!divider.hasPointerCapture(event.pointerId)) return;
-        labelWidth = Math.max(140, Math.min(width * .6, point(event)[0]));
+        labelWidth = Math.max(140, Math.min(width - 180, point(event)[0]));
         resize();
     };
     divider.onkeydown = event => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
-        labelWidth = Math.max(140, Math.min(width * .6, label + (event.key === "ArrowLeft" ? -20 : 20)));
+        labelWidth = Math.max(140, Math.min(width - 180, label + (event.key === "ArrowLeft" ? -20 : 20)));
         resize();
     };
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);

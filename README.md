@@ -128,7 +128,8 @@ and updates the session's files. Reloading the page restores the published files
 - **Score view:** drag or Shift+wheel to pan time, wheel to zoom time,
   Ctrl/Command+wheel to resize tracks. Wheel over names scrolls tracks vertically.
   The left column shows compact routing blocks aligned with the score lanes;
-  click a block to inspect its signal path. Drag the divider to resize the map.
+  click a block to inspect its signal path. Drag the divider to resize the map:
+  more width spreads nodes along the signal flow and shortens connections.
   Follow keeps the playhead in view. The 3D toggle changes the projection;
   drag then orbits, right-drag pans and Alt+wheel zooms time.
 - **Automation** toggles visibility only. Each track's checklist selects curves.
