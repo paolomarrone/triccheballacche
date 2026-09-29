@@ -195,7 +195,6 @@ export function timeline(request, select, selectTrack, seek, error) {
         headers.style.height = `${Math.max(0, height - ruler)}px`;
         headers.style.marginBottom = `${-Math.max(0, height - ruler)}px`;
         tracks.style.setProperty("--track-height", `${row}px`);
-        tracks.classList.toggle("compact", row < 54);
         get("lanes-space").style.height = `${Math.max(height, ruler + (score?.tracks.length || 0) * row)}px`;
         changed();
     }
@@ -374,10 +373,7 @@ export function timeline(request, select, selectTrack, seek, error) {
                 button.setAttribute("aria-pressed", index === trackIndex);
                 button.append(title, effects);
                 button.onclick = () => chooseTrack(index);
-                const heading = document.createElement("div");
-                heading.className = "track-heading";
-                heading.append(button, envelopes.control(index));
-                lane.append(heading);
+                lane.append(button, envelopes.control(index));
                 if (track[0] >= 0) {
                     const controls = document.createElement("div");
                     controls.className = "track-listen";

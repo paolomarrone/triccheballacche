@@ -26,10 +26,9 @@ export function automation(request, changed) {
     window.addEventListener("resize", () => menu.hidePopover());
     document.getElementById("roll").addEventListener("scroll", () => menu.hidePopover());
 
-    function caption(button, index) {
+    function describe(button, index) {
         const names = choices[index].filter(p => selected[index].has(p.key)).map(p => p.name);
-        button.textContent = `${names.length === 1 ? names[0] : `${names.length} parameters`} ▾`;
-        button.title = names.join("\n") || "Choose automation parameters";
+        button.title = `Automation for track ${index + 1}\n${names.join("\n") || "No parameters selected"}`;
     }
 
     function checklist(button, index) {
@@ -63,7 +62,7 @@ export function automation(request, changed) {
             boxes[0].checked = checked.size === list.length;
             boxes[0].indeterminate = checked.size > 0 && checked.size < list.length;
             list.forEach((p, i) => boxes[i + 1].checked = checked.has(p.key));
-            caption(button, index);
+            describe(button, index);
         }
         update();
         requestAnimationFrame(() => {
@@ -105,12 +104,13 @@ export function automation(request, changed) {
         },
         control(index) {
             const control = document.createElement("button");
-            control.className = "track-automation";
+            control.className = "icon track-automation";
+            control.append(toggle.parentElement.querySelector("svg").cloneNode(true));
             control.setAttribute("aria-label", `Automation for track ${index + 1}`);
             control.popoverTargetElement = menu;
             control.popoverTargetAction = "show";
             control.hidden = !choices[index].length;
-            caption(control, index);
+            describe(control, index);
             control.onclick = event => {
                 if (anchor === control && menu.matches(":popover-open")) {
                     event.preventDefault();
