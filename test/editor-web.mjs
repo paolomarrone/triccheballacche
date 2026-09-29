@@ -14,13 +14,13 @@ try {
         await call("Browser.setDownloadBehavior", {behavior: "allow", downloadPath: resolve(downloads)});
         await call("Emulation.setDeviceMetricsOverride", {width: 1000, height: 760, deviceScaleFactor: 1, mobile: false});
         await call("Page.navigate", {url: `http://127.0.0.1:${server.address().port}/editor/index.html?score=${encodeURIComponent(entry)}`});
-        await wait('document.querySelector("#run")?.disabled === false');
+        await wait('document.querySelector("#play")?.disabled === false');
         assert(await evaluate('crossOriginIsolated && !globalThis.webui'));
         assert.equal(await evaluate('document.querySelector("#save").getAttribute("aria-label")'), "Download");
-        assert(await evaluate('document.querySelector("#plugin-views").getBoundingClientRect().width > 0'));
+        assert(await evaluate('document.querySelector("#views").getBoundingClientRect().width > 0'));
         assert.equal(await evaluate('getComputedStyle(document.querySelector("#sheet")).display'), "flex");
         const source = await evaluate('document.querySelector("#code").value');
-        await click("#run");
+        await click("#play");
         await wait('!document.querySelector("#stop").disabled');
         await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
         const revision = await evaluate('document.querySelector("#timeline").dataset.revision');
@@ -52,13 +52,14 @@ try {
         await evaluate('document.querySelector("#score-canvas").dispatchEvent(new KeyboardEvent("keydown", {key: "Home"}))');
         await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
         await set("#code", "(error \"wasm error 音\")");
-        await click("#run");
+        await click("#play");
         await wait('document.querySelector("#errors").textContent.includes("wasm error 音")');
         assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
         assert(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes) > 0'));
         await set("#code", source); // Restore the exact unsaved score.
-        await click("#run");
-        await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${revision}`);
+        await click("#play");
+        await wait('!document.querySelector("#stop").disabled');
+        assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision, "Restoring the prepared buffer resumes the existing score");
         await click("#stop");
         await wait('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
@@ -74,7 +75,7 @@ try {
         assert.equal(contents, downloaded);
         assert.equal(await readFile(entry, "utf8"), source, "Download must not modify server files");
         await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
-        await wait('!document.querySelector("#run").disabled');
+        await wait('!document.querySelector("#play").disabled');
         assert.equal(await evaluate('document.querySelector("#code").value'), downloaded, "Downloads also update the session filesystem");
         await set("#path", "examples/absent.janet");
         await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');

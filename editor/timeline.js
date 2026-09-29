@@ -22,9 +22,8 @@ export function timeline(request, select, selectTrack, seek, error) {
         get("score-3d").disabled = get("score-reset").disabled = true;
     }
 
-    get("score-3d").onclick = () => {
-        flat = !flat;
-        get("score-3d").setAttribute("aria-pressed", !flat);
+    get("score-3d").onchange = () => {
+        flat = !get("score-3d").checked;
         get("score-reset").hidden = flat;
         get("automation-parameters").hidePopover();
         drag = undefined;

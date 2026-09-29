@@ -31,18 +31,18 @@ try {
         await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {
             await call("Emulation.setDeviceMetricsOverride", {width: 1300, height: 950, deviceScaleFactor: 1, mobile: false});
             await call("Page.navigate", {url});
-            await wait('document.querySelector("#run")?.disabled === false');
+            await wait('document.querySelector("#play")?.disabled === false');
             await wait('document.querySelector("#score-canvas").dataset.projection === "2d"');
             assert.equal(await evaluate('document.querySelectorAll("#timeline canvas").length'), 1);
             await click("#score-canvas");
-            assert.deepEqual(diagnostics, [], "An empty 2D score remains interactive before Run");
+            assert.deepEqual(diagnostics, [], "An empty 2D score remains interactive before playback");
             await click("#score-3d");
             await evaluate(`(() => {
                 const split = document.querySelector('#split');
                 for (let i = 0; i < 16; ++i) split.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowUp'}));
             })()`);
             assert(await evaluate('document.querySelector("#timeline").clientHeight > 500'), "The divider expands the score panel");
-            await click("#run");
+            await click("#play");
             await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
             await wait('Number(document.querySelector("#score-canvas").dataset.automation) === 10');
             await wait('Number(document.querySelector("#score-canvas").dataset.active) > 0');
@@ -51,7 +51,7 @@ try {
             assert(Number(projection.notes) > 10, "Include all source tracks, beyond a single eight-lane response");
             assert.equal(await evaluate('document.querySelector("#score-message").hidden'), true);
             await click("#score-3d");
-            assert.equal(await evaluate('document.querySelector("#score-3d").getAttribute("aria-pressed")'), "false");
+            assert.equal(await evaluate('document.querySelector("#score-3d").checked'), false);
             const painted = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
             const hoverNote = async (track, late = false) => {
                 await painted();
@@ -234,7 +234,7 @@ try {
             await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0 && document.querySelector("#score-canvas").dataset.automation === "10"');
             await click("#play");
             await set("#code", source.replace("(+ 60 i)", "(+ 48 i)"));
-            await click("#run");
+            await click("#play");
             await wait(`Number(document.querySelector('#score-canvas').dataset.revision) > ${projection.revision}`);
             assert.equal(await evaluate('document.querySelector("#track-list .track-listen button").getAttribute("aria-pressed")'), "true", "Live revisions retain audition state");
             const panelHeight = await evaluate('document.querySelector("#timeline").clientHeight');
@@ -244,12 +244,13 @@ try {
             await click("#stop");
             const revision = await evaluate('document.querySelector("#score-canvas").dataset.revision');
             await set("#code", '(error "invalid spatial draft")');
-            await click("#run");
+            await click("#play");
             await wait('document.querySelector("#errors").textContent.includes("invalid spatial draft")');
             assert.equal(await evaluate('document.querySelector("#score-canvas").dataset.revision'), revision);
             assert(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes) > 0'), "Failed evaluation retains the last projection");
             await call("Emulation.setEmulatedMedia", {features: [{name: "prefers-color-scheme", value: "dark"}]});
             await writeFile(`build/test/score-space-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
+            await set("#code", source.replace("(+ 60 i)", "(+ 48 i)"));
             // Losing graphics must not interrupt playback or prevent context recovery.
             const extension = await evaluate(`(() => {
                 const gl = document.querySelector('#score-canvas').getContext('webgl2');
@@ -273,7 +274,7 @@ try {
   (daw/note s (* i 0.001) 0.0005 (+ 48 (% i 24)) 80)
   (daw/param s (* i 0.001) :gain (* 0.001 (% i 2))))
 (daw/end 5)`);
-            await click("#run");
+            await click("#play");
             await wait('document.querySelector("#score-canvas").dataset.dense === "true" && document.querySelector("#score-canvas").dataset.automationDense === "true"');
             await click("#stop");
             assert.deepEqual(diagnostics, []);
@@ -290,9 +291,9 @@ try {
                 return type.startsWith('webgl') ? null : context.call(this, type, ...args);
             };`});
         await call("Page.navigate", {url: `http://127.0.0.1:${server.address().port}/editor/index.html?score=${entry}&project=../${directory}/project.json`});
-        await wait('document.querySelector("#run")?.disabled === false');
+        await wait('document.querySelector("#play")?.disabled === false');
         await wait('document.querySelector("#score-message").textContent.includes("unavailable")');
-        await click("#run");
+        await click("#play");
         await wait('Number(document.querySelector("#time").value) > .2');
         assert(await evaluate('document.querySelector("#score-3d").disabled'));
         assert(!await evaluate('document.querySelector("#score-message").hidden'));

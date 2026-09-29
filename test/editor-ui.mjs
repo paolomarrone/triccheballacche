@@ -45,7 +45,7 @@ try {
             app = nativeEditor(entry);
             url = await app.url;
         }
-        await withBrowser(async ({call, evaluate, wait, click, diagnostics}) => {
+        await withBrowser(async ({call, evaluate, wait, click, key, diagnostics}) => {
             const openEffect = async () => evaluate(`document.querySelector('.plugin[data-node="1"]').open = true`);
             const toggleParameters = async () => evaluate(`document.querySelector('.plugin[data-node="1"] button[aria-label="Toggle parameter controls"]').click()`);
             const root = `document.querySelector('.plugin[data-node="1"] .plugin-body > div')?.shadowRoot`;
@@ -53,9 +53,9 @@ try {
             const fixture = `${root}?.querySelector(".fixture-ui")`;
             await call("Page.navigate", {url});
             await call("Emulation.setDeviceMetricsOverride", {width: 1100, height: 760, deviceScaleFactor: 1, mobile: false});
-            await wait('document.querySelector("#run")?.disabled === false');
+            await wait('document.querySelector("#play")?.disabled === false');
             await click("#views");
-            await click("#run");
+            await click("#play");
             await wait(`${synthRoot}?.querySelectorAll(".perone-controls label").length === 3`);
             const toggle = async (track, bit, pressed) => {
                 const button = `document.querySelector('#track-list .track:nth-child(${track + 1}) [data-listen="${bit}"]')`;
@@ -145,7 +145,8 @@ try {
             assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
             assert(await evaluate(`${fixture} === retainedUI`), "Play preserves the GUI object");
             assert.equal(await evaluate("fixtureFreed"), 1);
-            await click("#run");
+            await wait('!document.querySelector("#play").disabled');
+            await key("Enter", "Enter", 2);
             await wait(`${synthRoot}?.querySelector(".perone-controls")`);
             assert.equal(await evaluate('document.querySelectorAll("#track-list [data-listen][aria-pressed=true]").length'), 0,
                 "A newly prepared score clears mute/solo");
@@ -210,7 +211,8 @@ try {
             await wait('document.querySelector("#stop").disabled');
             // An asynchronous factory can complete while stopped: the prepared project still owns it.
             const freed = await evaluate("fixtureFreed");
-            await click("#run");
+            await wait('!document.querySelector("#play").disabled');
+            await key("Enter", "Enter", 2);
             await wait(`${synthRoot}?.querySelector(".perone-controls")`);
             await evaluate("fixtureWait = true; fixtureResume = undefined");
             await openEffect();
@@ -242,7 +244,7 @@ try {
 (def wet (daw/track (daw/through group (daw/plugin "${directory}/effect.perone")) {:name "Wet"}))
 (daw/output (daw/mix [group wet]))`);
             await evaluate(`(() => { const code = document.querySelector('#code'); code.value = ${JSON.stringify(graph)}; code.dispatchEvent(new Event('input')); })()`);
-            await click("#run");
+            await click("#play");
             await wait('document.querySelectorAll("#track-list [data-listen]").length === 8');
             assert.match(await evaluate('document.querySelector("#track-list .track:nth-child(3)").textContent'), /Group/);
             assert.match(await evaluate('document.querySelector("#track-list .track:nth-child(3) small").textContent'), /Wet.*out|out.*Wet/);

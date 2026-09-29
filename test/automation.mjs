@@ -43,8 +43,8 @@ try {
         await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {
             await call("Page.navigate", {url});
             await call("Emulation.setDeviceMetricsOverride", {width: 1100, height: 760, deviceScaleFactor: 1, mobile: false});
-            await wait('document.querySelector("#run")?.disabled === false');
-            await click("#run");
+            await wait('document.querySelector("#play")?.disabled === false');
+            await click("#play");
             await wait('document.querySelector("#score-canvas").dataset.automation === "2"');
             await click("#stop");
             const control = ".track-automation";
@@ -105,7 +105,7 @@ try {
             await key("Escape");
             await click("#show-automation");
             await wait('document.querySelector("#score-canvas").dataset.automation === "0"');
-            assert.equal(await evaluate('document.querySelector("#show-automation").getAttribute("aria-pressed")'), "false");
+            assert.equal(await evaluate('document.querySelector("#show-automation").checked'), false);
             await open();
             assert.deepEqual(await selected(), ["1:1", "2:1"], "Global visibility retains every selected parameter");
             await click(control);
@@ -115,7 +115,7 @@ try {
             await click("#play");
             const revision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
             await set("#code", source.replace(":gain 0.03", ":gain 0.02"));
-            await click("#run");
+            await click("#play");
             await wait(`Number(document.querySelector('#timeline').dataset.revision) > ${revision}`);
             await open();
             assert.deepEqual(await selected(), ["1:1", "2:1"], "Multiple selections survive live revisions");

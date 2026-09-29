@@ -44,7 +44,7 @@ try {
             assert(await evaluate('["open", "save", "settings"].every(id => !document.getElementById(id).textContent.trim())'));
             assert(await evaluate('["open", "save"].every(id => document.getElementById(id).parentElement.id === "file-bar")'));
             assert.equal(await evaluate('document.querySelector("body > nav").lastElementChild.id'), "settings");
-            await click("#run");
+            await click("#play");
             await wait('Number(document.querySelector("#time").value) > 0');
             await click("#settings");
             await wait('document.querySelector("#settings-dialog").open');
@@ -72,7 +72,7 @@ try {
             assert.equal(await evaluate('document.querySelector("#examples").value'), "");
             await evaluate('globalThis.confirm = () => true');
             await set("#examples", "examples/gui.janet");
-            await wait('document.querySelector("#path").value === "examples/gui.janet" && !document.querySelector("#run").disabled');
+            await wait('document.querySelector("#path").value === "examples/gui.janet" && !document.querySelector("#play").disabled');
             const guiSource = await readFile("examples/gui.janet", "utf8");
             assert.equal(await evaluate('document.querySelector("#code").value'), guiSource);
             await click("#open");
@@ -82,7 +82,7 @@ try {
             await wait(fileButton("polpo.janet"));
             await screenshot("files");
             await click('#file-list [data-name="polpo.janet"]');
-            await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#run").disabled');
+            await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#play").disabled');
             assert.equal(await evaluate('document.querySelector("#code").value'), original);
             assert.match(await evaluate('document.querySelector("#path").value'), /\/examples\/prog\/polpo\.janet$/);
             await screenshot("toolbar");
@@ -93,7 +93,7 @@ try {
             await set("#path", entry);
             await evaluate('document.querySelector("#path").focus()');
             await key("Enter", "Enter");
-            await wait('!document.querySelector("#run").disabled');
+            await wait('!document.querySelector("#play").disabled');
             assert.equal(await evaluate('document.querySelector("#path").value'), entry);
             await click("#open");
             await wait('document.querySelector("#file-list").inert === false');
@@ -102,21 +102,21 @@ try {
                 await evaluate('document.querySelector("#file-location").requestSubmit()');
                 await wait(fileButton("score \"音\".janet"));
                 await evaluate(`${fileButton('score "音".janet')}.click()`);
-                await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#run").disabled');
+                await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#play").disabled');
                 assert.equal(await evaluate('document.querySelector("#code").value'), pickedSource);
                 assert.equal(await evaluate('document.querySelector("#path").value'), picked);
             } else {
                 const {root} = await call("DOM.getDocument");
                 const {nodeId} = await call("DOM.querySelector", {nodeId: root.nodeId, selector: "#file-input"});
                 await call("DOM.setFileInputFiles", {nodeId, files: [upload]});
-                await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#run").disabled');
+                await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#play").disabled');
                 assert.equal(await evaluate('document.querySelector("#code").value'), uploadedSource);
                 assert.equal(await evaluate('document.querySelector("#path").value'), "/examples/prog/upload 音.janet");
             }
-            await click("#run");
+            await click("#play");
             await wait(`document.querySelector("#errors").textContent.includes(${JSON.stringify(mode === "native" ? "Selected file imports its neighbor" : "Uploaded file imports pattern")})`);
             await set("#examples", entry);
-            await wait('document.querySelector("#path").value === "examples/prog/polpo.janet" && !document.querySelector("#run").disabled');
+            await wait('document.querySelector("#path").value === "examples/prog/polpo.janet" && !document.querySelector("#play").disabled');
             await click("#open");
             await set("#file-directory", "/no/such/directory");
             await evaluate('document.querySelector("#file-location").requestSubmit()');
@@ -125,11 +125,11 @@ try {
             assert.equal(await evaluate('document.querySelector("#code").value'), original);
             assert.equal(await readFile(entry, "utf8"), original, "Opening and browsing must never save files");
             await click("#stop");
-            await wait('!document.querySelector("#run").disabled');
+            await wait('!document.querySelector("#play").disabled');
             await set("#examples", "examples/sempiterno.janet");
-            await wait('document.querySelector("#path").value === "examples/sempiterno.janet" && !document.querySelector("#run").disabled');
+            await wait('document.querySelector("#path").value === "examples/sempiterno.janet" && !document.querySelector("#play").disabled');
             const revision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
-            await click("#run");
+            await click("#play");
             await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${revision}`);
             await wait('parseFloat(document.querySelector("#time").value) > 0');
             assert(await evaluate('document.querySelector("#errors").hidden'));

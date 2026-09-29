@@ -8,8 +8,7 @@
 <script type="importmap">{"imports":{"three":"./vendor/three/three.module.min.js"}}</script>
 <script type="module" src="start.js"></script>
 <nav aria-label="Score and playback">
-    <button id="run" title="Evaluate score and play · Ctrl+Enter" aria-label="Run" disabled>Run</button>
-    <button id="play" title="Resume prepared score · Ctrl+Space" aria-label="Play" disabled>▶</button>
+    <button id="play" title="Play · Ctrl+Space · Ctrl+Enter to reevaluate" aria-label="Play" disabled>▶</button>
     <button id="stop" title="Stop · Esc" aria-label="Stop" disabled>■</button>
     <button id="rewind" title="Return to start · Home in the timeline" aria-label="Return to start" disabled>|◀</button>
     <div id="file-bar">
@@ -19,7 +18,7 @@
         <button id="save" class="icon" title="Save · Ctrl+S" aria-label="Save" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21H3V3h14l4 4v14zM7 3v6h9V3M7 21v-8h10v8"/></svg></button>
     </div>
     <select id="examples" aria-label="Examples" disabled><option value="">Examples</option></select>
-    <label id="plugin-views" title="Show plugin UIs"><input id="views" type="checkbox" disabled> GUI</label>
+    <label class="icon" title="Show plugin UIs"><input id="views" type="checkbox" aria-label="Show plugin UIs" aria-controls="plugins" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M14 4v16m3-12h1m-1 4h1m-1 4h1"/></svg></label>
     <button id="settings" class="icon" title="Settings" aria-label="Settings" aria-haspopup="dialog" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-1 3-3 1-2 4 2 2v3l3 2 1 3h6l1-3 3-2v-3l2-2-2-4-3-1-1-3z"/><circle cx="12" cy="12" r="3"/></svg></button>
 </nav>
 <main>
@@ -34,10 +33,10 @@
         <div id="split" role="separator" aria-label="Timeline height" aria-orientation="horizontal" tabindex="0"></div>
         <section id="timeline" aria-label="Score projection">
             <div id="timeline-tools">
-                <label><input id="follow" type="checkbox" checked> Follow</label>
-                <button id="show-automation" aria-pressed="true" title="Show or hide automation curves">Show automation</button>
-                <button id="score-3d" aria-pressed="false" title="Show the score in 3D" disabled>3D</button>
-                <button id="score-reset" title="Reset camera" aria-label="Reset camera" hidden disabled>↺</button>
+                <label class="icon" title="Follow playhead"><input id="follow" type="checkbox" aria-label="Follow playhead" checked><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h5m-3-3 3 3-3 3m16-3h-5m3-3-3 3 3 3"/></svg></label>
+                <label class="icon" title="Show automation"><input id="show-automation" type="checkbox" aria-label="Show automation" checked><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 17 6-10 5 7 5-9"/><circle cx="4" cy="17" r="2"/><circle cx="10" cy="7" r="2"/><circle cx="15" cy="14" r="2"/><circle cx="20" cy="5" r="2"/></svg></label>
+                <label class="icon" title="3D view"><input id="score-3d" type="checkbox" aria-label="3D view" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5v9l-9 5-9-5V8zm-9 5 9 5 9-5m-9 5v9"/></svg></label>
+                <button id="score-reset" class="icon" title="Reset camera" aria-label="Reset camera" hidden disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button>
                 <output id="note-info"></output>
             </div>
             <div id="timeline-body">

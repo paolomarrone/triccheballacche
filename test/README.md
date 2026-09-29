@@ -79,8 +79,12 @@ It also checks that late replies cannot restore hidden curves or keep queuing qu
 `playback.mjs` and `player-lifecycle.mjs` cover real AudioWorklet output, stop/restart,
 live mute/solo, context closure, timeouts, cancellation during preparation and cleanup retries.
 
-Editor tests cover Unicode paths, unsaved relative imports, Run/Play/Stop, atomic saves
-or downloads, diagnostics and recovery, source tracking, scrolling and selection.
+Editor tests cover Unicode paths, unsaved relative imports, Play/Stop and explicit
+reevaluation, atomic saves or downloads, diagnostics and recovery, source tracking,
+scrolling and selection.
+Play evaluates changed text or paths, including saved edits, resumes unchanged
+code, and leaves identical queued revisions alone. Ctrl/Command+Enter forces
+evaluation; Ctrl/Command+Space also starts an unprepared score.
 They check timeline persistence, notes retained while dragging with delayed replies,
 independent time/track zoom, stale replies, large times, unknown ends and bounded
 requests/canvas sizes. `chromium.mjs` shares browser startup, DevTools, bounded waits,
@@ -141,11 +145,11 @@ relative JavaScript, CSS and a separate UI Wasm with external imports through
 values, automation, meters, 400-value gesture bursts, binary messages, concurrent
 plugin sections, track selection, collapse, generic controls, stale/invalid callbacks
 and restart. Stop/Play must retain the GUI object and allow parameter edits while
-stopped; Run replaces it. Asynchronous creation must preserve early gestures
-across Stop and free a view that arrives after disposal. Screenshots are saved as
+stopped; an explicit reevaluation replaces it. Asynchronous creation must preserve
+early gestures across Stop and free a view that arrives after disposal. Screenshots are saved as
 `build/test/editor-ui-{native,web}.png`.
 The same test checks track audition buttons on both backends: independent chain
-selection, mute/solo precedence, Stop/Play persistence and reset on a new Run.
+selection, mute/solo precedence, Stop/Play persistence and reset on a newly prepared score.
 
 `loader.c` and `perone-controls.mjs` test parameter coalescing, FIFO messages,
 concurrent acknowledgements, stereo copies, automation precedence, overflow and

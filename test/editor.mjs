@@ -30,9 +30,9 @@ await chmod(path, 0o640);
 const app = nativeEditor(path);
 try {
     const url = await app.url;
-    await withBrowser(async ({call, evaluate, wait, click, set, diagnostics}) => {
+    await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {
         await call("Page.navigate", {url});
-        await wait('document.querySelector("#run")?.disabled === false');
+        await wait('document.querySelector("#play")?.disabled === false');
         await call("Emulation.setDeviceMetricsOverride", {width: 900, height: 520, deviceScaleFactor: 1, mobile: false});
         await evaluate(`(() => {
             const call = webui.call.bind(webui);
@@ -66,7 +66,7 @@ try {
         assert(await evaluate('(document.querySelector("#sheet").clientHeight + document.querySelector("#timeline").clientHeight) > innerHeight * 0.82'), "Keep the editor dense");
         const changed = source.replace("0.01", "0.02");
         await set("#code", changed);
-        await click("#run");
+        await click("#play");
         await wait('!document.querySelector("#stop").disabled');
         await wait('parseFloat(document.querySelector("#time").value) > 0.05');
         await wait(`document.querySelector('#marks [data-line="${producer}"]')`);
@@ -110,7 +110,7 @@ try {
         assert(Math.max(...geometry) - Math.min(...geometry) < 1, "Highlights must stay aligned when scrolling");
         assert.deepEqual(await evaluate('[document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd]'), [4, 8]);
         await evaluate('document.querySelector("#code").scrollTop = document.querySelector("#code").scrollLeft = 0');
-        assert.equal(await readFile(path, "utf8"), source, "Run must not save the draft");
+        assert.equal(await readFile(path, "utf8"), source, "Play must not save the draft");
         await click("#views");
         await click("#views");
         await wait('document.querySelector("#state").textContent === "Playing"');
@@ -151,7 +151,7 @@ try {
         assert.equal(await evaluate('document.querySelector("#code").value'), changed);
         await set("#path", path);
         await set("#code", "# draft\nunknown-binding");
-        await click("#run");
+        await click("#play");
         await wait('document.querySelector("#errors").textContent.includes("unknown-binding")');
         assert.equal(await evaluate('reports.at(-1).score'), undefined);
         assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), report.revision);
@@ -160,16 +160,17 @@ try {
         assert((await evaluate('document.querySelector("#errors").textContent')).includes(path));
         assert.equal(await evaluate('document.querySelector("#stop").disabled'), true);
         await writeFile(`${directory}/helper.janet`, '(error "Play must not evaluate this import")');
-        await click("#play"); // Use the old project even with an invalid draft and changed imports.
+        await set("#code", changed); // Restoring the prepared buffer resumes without evaluating imports.
+        await click("#play");
         await wait('!document.querySelector("#stop").disabled');
         assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), report.revision);
         assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
-        assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         await click("#stop");
         await writeFile(`${directory}/helper.janet`, `(def duration 3)
 (defn notes [items node] (array/push items [0 2 [:note node 60 100]]))`);
         await set("#code", changed);
-        await click("#run");
+        await wait('!document.querySelector("#play").disabled');
+        await key("Enter", "Enter", 2);
         await wait('!document.querySelector("#stop").disabled');
         await wait('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
@@ -181,7 +182,7 @@ try {
         assert.equal(await evaluate('document.querySelector("#code").value'), changed);
         await set("#path", path);
         await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
-        await wait('document.querySelector("#errors").hidden && !document.querySelector("#run").disabled');
+        await wait('document.querySelector("#errors").hidden && !document.querySelector("#play").disabled');
         const responses = await evaluate(`Promise.all(Array.from({length: 8}, () =>
             webui.call("command", "status").then(JSON.parse)))`);
         assert(responses.every(response => !response.error || response.error.includes("busy")));
@@ -195,7 +196,7 @@ try {
 (daw/end 16)`;
         await evaluate("window.openEnd = true");
         await set("#code", dense);
-        await click("#run");
+        await click("#play");
         await wait('document.querySelector("#score-canvas").dataset.dense === "true"');
         const denseReport = await evaluate('reports.at(-1).score');
         assert.equal(denseReport.end, null, "Exercise navigation and follow with an unknown end");
@@ -220,7 +221,7 @@ try {
         };
         await changeStart(0);
         await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#score-canvas").dataset.notes) > 0');
-        assert.deepEqual(await evaluate('Array.from(document.querySelector("#timeline-tools").querySelectorAll("button,input[type=number]")).filter(c => c.getBoundingClientRect().width > 0).map(c => c.id)'), ["show-automation", "score-3d"]);
+        assert.deepEqual(await evaluate('Array.from(document.querySelector("#timeline-tools").querySelectorAll("button,input")).filter(c => c.getBoundingClientRect().width > 0).map(c => c.id)'), ["follow", "show-automation", "score-3d"]);
         const beforeZoom = await evaluate('[Number(document.querySelector("#score-canvas").dataset.scale), document.querySelector("#track-list .track").clientHeight]');
         await evaluate(`(() => {
             const c = document.querySelector("#score-canvas"), r = c.getBoundingClientRect();
@@ -288,7 +289,7 @@ try {
         assert(invalid.error && !invalid.lanes);
         await evaluate("window.openEnd = false");
         await set("#code", changed);
-        await click("#run");
+        await click("#play");
         await wait('!document.querySelector("#stop").disabled');
         assert.deepEqual(diagnostics, []);
         // Closing the frontend while playing must stop and release the native session.

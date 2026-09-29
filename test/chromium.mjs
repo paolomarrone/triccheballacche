@@ -74,10 +74,10 @@ export async function withBrowser(run, {graphics = false} = {}) {
             const node = document.querySelector(${JSON.stringify(selector)}); node.value = ${JSON.stringify(value)};
             for (const type of ["input", "change"]) node.dispatchEvent(new Event(type, {bubbles: true}));
         })()`);
-        const key = async (key, code = key) => {
-            const windowsVirtualKeyCode = {Enter: 13, Escape: 27}[key] || 0;
+        const key = async (key, code = key, modifiers = 0) => {
+            const windowsVirtualKeyCode = {Enter: 13, Escape: 27, " ": 32}[key] || 0;
             for (const type of ["keyDown", "keyUp"])
-                await call("Input.dispatchKeyEvent", {type, key, code, windowsVirtualKeyCode});
+                await call("Input.dispatchKeyEvent", {type, key, code, windowsVirtualKeyCode, modifiers});
         };
         await call("Runtime.enable");
         await call("Page.enable");

@@ -107,16 +107,20 @@ The test server supplies `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: require-corp`. Chromium is verified; Firefox and
 Safari remain unverified.
 
-**Run** (Ctrl/Command+Enter) evaluates the current buffer at its original path,
-preserving relative imports. A running `daw/score` accepts compatible musical
-revisions on its beat grid without restarting audio or plugins. Otherwise Run
-prepares and starts a new session. **Play** (Ctrl/Command+Space)
-resumes the prepared score without evaluating Janet or recreating plugins.
+**Play** (Ctrl/Command+Space) evaluates the buffer when its text or path differs
+from the prepared score, preserving relative imports. Otherwise it resumes the
+existing score without evaluating Janet or recreating plugins. Saving a file
+does not mark its changes as applied. A running `daw/score` accepts compatible
+musical revisions on its beat grid without restarting audio or plugins; pressing
+Play again leaves an identical queued revision alone. Without live playback,
+evaluation starts a new session. **Ctrl/Command+Enter** forces evaluation even
+with unchanged text, for import changes or new random variations.
 **Stop** (Esc) holds the position and DSP state, keeping the project and its UIs ready.
 Click the timeline ruler to seek, or enter seconds in the time field and press Enter.
 The return-to-start button, or Home in the timeline, seeks to zero. Play at the end
 of a finite score starts it again.
-An evaluation error leaves the previous project available for Play.
+An evaluation error retains the previous score and any ongoing playback. Restore
+its text and path to resume it without reevaluating.
 Ctrl/Command+S saves.
 Desktop saves replace the file atomically; web **Download** saves a local copy
 and updates the session filesystem. Reloading restores the published files.
@@ -130,17 +134,21 @@ On the web, **Choose from device** imports a local file into the selected sessio
 directory; its relative imports must already be available there.
 
 The top-right **Settings** icon opens a modal with a **Plugins** category: plugin
-sources, available bundles and instance counts from the last successful Run.
+sources, available bundles and instance counts from the last successful evaluation.
 The browser uses its published catalog; the desktop discovers local plugins,
 Brickworks C bundles, A-SID, Tibia C and files under `examples/`, honoring the
 plugin path environment variables below. Discovery reads metadata without
 creating DSPs. Reload after adding bundles. The right panel controls the selected
 track's plugin instances.
 
+Plugin UIs, Follow, automation and 3D use matching icon toggles: a highlighted,
+outlined icon means enabled. Hover for the name, or use Tab and Space to toggle
+from the keyboard.
+
 Active event origins light up automatically, including note generators inside
 functions. Editing suspends tracking until the buffer matches the running score
-or is rerun. The timeline shows tracks, effect chains and MIDI notes from the last
-successful run; it remains after Stop or a failed preparation. Drag or Shift+wheel
+or is evaluated again. The timeline shows tracks, effect chains and MIDI notes from the last
+successful evaluation; it remains after Stop or a failed preparation. Drag or Shift+wheel
 to pan, wheel to zoom in time, and Ctrl/Command+wheel to resize all tracks together.
 **Follow** scrolls the score under the playhead; wheel over track names or use the
 scrollbar to move vertically between tracks. Notes and automation are prefetched
@@ -328,11 +336,12 @@ scheduling error is caught, events already emitted remain in the session.
 (daw/score (p/loop (p/map |[:note bass $ 100] (p/steps 0.5 [36 nil 43 39]))))
 ```
 
-Run again after editing the notes, automation or initial parameters. A compatible
+Press Play after editing the notes, automation or initial parameters. A compatible
 revision enters at the next `:quantum` boundary, preserving global phase, DSP state,
 UI instances and mute/solo. Preparation errors leave the current music running.
 Only one revision may be queued. Stop or seeking cancels a pending revision;
-seeking uses the latest active revision across the timeline. Play resumes it.
+seeking uses the latest active revision across the timeline. Play resumes it when
+the buffer matches; otherwise it evaluates the draft.
 Changed declared parameters are applied at the boundary;
 unchanged declarations preserve the current values, including temporary UI edits.
 
@@ -431,7 +440,7 @@ The DSP loader uses
 ABI v2. No internal `parameters.h`, C metadata tables or per-plugin Janet wrapper
 is needed. Native UIs use the separate ABI v1 in `perone_ui.h`.
 
-Click a timeline track header to open its instrument and effects in the **GUI**
+Click a timeline track header to open its instrument and effects in the plugin
 panel, alongside both the editor and timeline. Each plugin has a collapsible
 section with its web UI or generated controls;
 expanded sections update together. The **≡** button switches to generated controls.
@@ -465,8 +474,9 @@ subject to smaller product limits. One view per node consumes output messages;
 duplicated mono effects report from the left instance.
 
 Collapsing a section or changing tracks releases its inline UI and invalidates
-its callbacks. Stop and Play preserve inline and native UIs; controls remain usable
-while stopped. A compatible live Run preserves plugin instances and their views;
+its callbacks. Stop and resuming unchanged code preserve inline and native UIs;
+controls remain usable while stopped. A compatible live update preserves plugin
+instances and their views;
 a new session replaces them.
 Asynchronous creation queues gestures until attachment; a view arriving after
 disposal is freed. Invalid callbacks or communication errors detach the web view.
@@ -539,13 +549,13 @@ containing the score and source annotations. The receiver reconstructs projectio
 data and indices; derived metadata and event copies are not serialized.
 Workers share no Janet objects or plugin pointers. The editor owns a module cache,
 the session owns DSPs, and the player owns the audio device. Stop retains all three.
-Play resumes the existing state. Seeking restores score parameters and held notes,
+Resuming unchanged code retains the existing state. Seeking restores score parameters and held notes,
 resets DSPs and event cursors, and discards pending host messages and edits.
 UI gestures are temporary; put lasting changes in the score. Plugin reset semantics govern internal state,
 including random generators; replay does not restore a serialized plugin snapshot.
 Native binaries stay loaded until the editor closes, so restart it after rebuilding
-a plugin. Janet caches immutable bundle metadata within each evaluation and rereads
-it on Run. The web host caches compiled Wasm modules and creates DSP instances
+a plugin. Janet rereads immutable bundle metadata for each evaluation and caches it for
+that evaluation. The web host caches compiled Wasm modules and creates DSP instances
 directly in the worklet, once per activated session.
 The session allocates no memory during processing; mixing buffers are independent
 of duration, while stored events are not. Current limits are 32 tracks, 128 nodes,

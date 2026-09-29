@@ -14,6 +14,10 @@ function tracking() {
     return revision && code.value === tracedSource && path.value === tracedPath;
 }
 
+function needsEvaluation() {
+    return !prepared || code.value !== (pending?.source ?? tracedSource) || path.value !== (pending?.path ?? tracedPath);
+}
+
 function paint() {
     if (code.value !== displayedSource) {
         displayedSource = code.value;
@@ -55,16 +59,16 @@ function update() {
     browser.status(ready && !busy);
     controls?.status(prepared, busy);
     projection.status(prepared, busy);
-    for (const id of ["open", "save", "run", "views"]) byId(id).disabled = !ready || busy;
+    for (const id of ["open", "save", "play", "views"]) byId(id).disabled = !ready || busy;
     byId("stop").disabled = !ready || busy || !playing;
-    byId("play").disabled = !ready || busy || !prepared;
+    byId("play").title = `${needsEvaluation() ? "Evaluate and play" : "Play"} · Ctrl+Space · Ctrl+Enter to reevaluate`;
     byId("rewind").disabled = byId("time").disabled = !ready || busy || !prepared;
     path.disabled = !ready || busy;
     code.disabled = !ready;
     code.readOnly = busy;
     byId("modified").textContent = dirty() ? "●" : "";
     byId("state").textContent = !ready ? "Connecting…" : busy ? "Please wait…" : !playing ? "Stopped" :
-        pending ? "Playing · revision queued" : tracking() ? `Playing${partial ? " · partial origins" : ""}` : "Playing · tracking paused: rerun your changes";
+        pending ? "Playing · revision queued" : tracking() ? `Playing${partial ? " · partial origins" : ""}` : "Playing · tracking paused: press Play to apply changes";
     const before = code.value.slice(0, code.selectionStart).split("\n");
     byId("position").textContent = `${before.length}:${before.at(-1).length + 1}`;
     document.title = `${dirty() ? "* " : ""}${savedPath ? savedPath + " · " : ""}triccheballacche`;
@@ -80,7 +84,7 @@ function showError(error) {
 function request(op, ...args) {
     const result = queue.then(async () => {
         const response = await backend.command(op, ...args);
-        // Any command may observe the audio boundary, including Stop or another Run.
+        // Any command may observe the audio boundary, including Stop or another evaluation.
         // Adopt that revision before its pending source can be replaced by a new submission.
         if (pending && Number.isInteger(response.revision) && response.revision !== revision) {
             const result = response.score ? response : await backend.command("score");
@@ -117,6 +121,7 @@ function request(op, ...args) {
 
 async function action(op, entry = path.value, file) {
     if (!ready || busy) return;
+    if (op === "play" && needsEvaluation()) op = "run";
     const opening = op === "open" || op === "import";
     if (opening && dirty() && !confirm("Open another file and discard unsaved changes?")) return;
     if ((opening || ["save", "run"].includes(op)) && !entry.trim()) {
@@ -172,7 +177,7 @@ const projection = timeline(request, origins => {
 }, index => { views.checked = true; controls?.track(index); }, time => action("seek", time), showError);
 new ResizeObserver(paint).observe(code);
 
-for (const op of ["save", "run", "play", "stop"]) byId(op).addEventListener("click", () => action(op));
+for (const op of ["save", "play", "stop"]) byId(op).addEventListener("click", () => action(op));
 byId("rewind").onclick = () => action("seek", 0);
 byId("time").onkeydown = event => {
     if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
@@ -209,7 +214,7 @@ document.addEventListener("keydown", event => {
     if (event.defaultPrevented || document.querySelector("dialog[open], :popover-open")) return;
     let op;
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") op = "run";
-    if ((event.ctrlKey || event.metaKey) && event.code === "Space" && prepared) op = "play";
+    if ((event.ctrlKey || event.metaKey) && event.code === "Space") op = "play";
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") op = "save";
     if (event.key === "Escape" && playing) op = "stop";
     if (op) {

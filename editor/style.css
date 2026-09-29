@@ -7,7 +7,6 @@ input[type=text], button, select { font: inherit; padding: 3px 7px; }
 #file-bar { display: flex; align-items: center; flex: 1; min-width: 16rem; border: 1px solid var(--border); border-radius: 4px; }
 #path { flex: 1; min-width: 0; width: 0; border: 0; background: transparent; color: inherit; font-family: monospace; }
 #modified { width: .6em; color: var(--accent); }
-body > nav label { display: flex; align-items: center; white-space: nowrap; }
 button { cursor: pointer; }
 button:disabled { cursor: default; }
 main { display: flex; gap: 5px; flex: 1; min-height: 0; }
@@ -31,9 +30,6 @@ footer { color: var(--muted); font-size: 12px; }
 #split:hover, #split:focus-visible { background: var(--border); }
 #timeline { display: flex; flex-direction: column; flex: 0 1 240px; min-height: 100px; border: 1px solid var(--border); }
 #timeline-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px; border-bottom: 1px solid var(--border); }
-#timeline-tools label { white-space: nowrap; }
-#timeline-tools button { padding: 1px 6px; white-space: nowrap; }
-#timeline-tools [aria-pressed=true] { background: var(--active); color: var(--accent); }
 #note-info { margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 12px; }
 #timeline-body { flex: 1; min-height: 0; position: relative; }
 #roll { height: 100%; overflow-y: auto; overflow-x: hidden; position: relative; }
@@ -73,10 +69,13 @@ footer { color: var(--muted); font-size: 12px; }
 #automation-parameters i { width: 14px; height: 2px; flex-shrink: 0; background: light-dark(hsl(var(--curve-hue) 65% 38%), hsl(var(--curve-hue) 65% 70%)); }
 [hidden] { display: none !important; }
 
-.icon { display: inline-flex; flex: 0 0 28px; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 4px; border: 0; border-radius: 3px; background: transparent; color: inherit; }
+.icon { position: relative; display: inline-flex; flex: 0 0 28px; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 4px; border: 0; border-radius: 3px; background: transparent; color: inherit; cursor: pointer; }
 .icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.icon:hover:not(:disabled) { background: var(--active); }
-.icon:disabled { color: var(--muted); opacity: .5; }
+.icon input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+.icon:hover:not(:disabled):not(:has(:disabled)) { background: var(--active); }
+.icon:has(:checked) { color: var(--accent); background: var(--active); box-shadow: inset 0 0 0 1px currentColor; }
+.icon:has(:focus-visible) { outline: 2px solid #559bd1; outline-offset: -2px; }
+.icon:disabled, .icon:has(:disabled) { color: var(--muted); opacity: .5; cursor: default; }
 #examples { max-width: 12rem; }
 #settings { margin-left: auto; }
 dialog { width: min(720px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 0; border: 1px solid var(--border); border-radius: 6px; color: CanvasText; background: Canvas; box-shadow: 0 8px 40px #0004; }

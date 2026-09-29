@@ -27,35 +27,46 @@ try {
             url = await app.url;
         }
         await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {
+            await call("Browser.setDownloadBehavior", {behavior: "deny"});
             await call("Page.navigate", {url});
-            await wait('document.querySelector("#run")?.disabled === false');
+            await wait('document.querySelector("#play")?.disabled === false');
             await click("#views");
-            await click("#run");
+            await key(" ", "Space", 2);
             await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
             await wait('document.querySelector(".plugin-body > div")?.shadowRoot?.querySelector("input")');
             await evaluate('window.savedUI = document.querySelector(".plugin-body > div")');
             const revision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
             const time = await evaluate('parseFloat(document.querySelector("#time").value)');
+            await click("#play");
+            await wait('!document.querySelector("#play").disabled');
+            assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), revision, "Unchanged Play retains the score");
             await set("#code", source.replace('[60 64 67 nil]', '[48 55 60 67]'));
-            await click("#run");
+            await click("#save");
+            await wait('!document.querySelector("#modified").textContent');
+            await click("#play");
+            await wait('document.querySelector("#state").textContent.includes("queued")');
+            await click("#play");
+            await wait('!document.querySelector("#play").disabled');
+            assert(await evaluate('document.querySelector("#errors").hidden'), "Play does not resubmit a queued revision");
             await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${revision}`);
             assert(await evaluate(`parseFloat(document.querySelector('#time').value) >= ${time}`));
             assert(await evaluate('window.savedUI === document.querySelector(".plugin-body > div")'), "UI instance survives live revision");
             assert(await evaluate('document.querySelector("#errors").hidden'));
             await set("#code", '(gccollect) (repeat 10000 (table 1 2)) (error "live error")');
-            await click("#run");
+            await click("#play");
             await wait('document.querySelector("#errors").textContent.includes("live error")');
             assert.equal(await evaluate('document.querySelector("#stop").disabled'), false, "Evaluation failure leaves audio running");
             await set("#code", '(gccollect) (while true nil)');
-            await click("#run");
-            await wait('!document.querySelector("#run").disabled');
+            await click("#play");
+            await wait('!document.querySelector("#play").disabled');
             assert(await evaluate('!document.querySelector("#errors").hidden'), "Runaway evaluation is interrupted");
             assert.equal(await evaluate('document.querySelector("#stop").disabled'), false);
             await set("#code", source);
-            await click("#run");
+            await click("#play");
             await wait('document.querySelector("#state").textContent.includes("queued")');
             await click("#stop");
             await wait('document.querySelector("#state").textContent === "Stopped"');
+            await set("#code", source.replace('[60 64 67 nil]', '[48 55 60 67]'));
             await click("#play");
             await wait('!document.querySelector("#stop").disabled');
             await click("#stop");
@@ -70,7 +81,6 @@ try {
                 await key("Enter");
                 await wait('!document.querySelector("#time").disabled');
             };
-            await set("#code", source.replace('[60 64 67 nil]', '[48 55 60 67]')); // Match the active revision, not the cancelled draft.
             await seek(1000000.125);
             await wait('Number(document.querySelector("#time").value) === 1000000.13');
             assert.equal(await evaluate('document.querySelector("#state").textContent'), "Stopped");
@@ -94,7 +104,7 @@ try {
 
             // A finite score shares the transport, including endpoint restart and invalid-position rejection.
             await set("#code", '(def tone (daw/plugin "build/test/fixture.perone" {:gain 0.04})) (daw/output (daw/track tone)) (daw/note tone 0 3 60) (daw/end 4.00001)');
-            await click("#run");
+            await click("#play");
             await wait('!document.querySelector("#stop").disabled');
             await click("#stop");
             await seek(2);
@@ -107,8 +117,14 @@ try {
             await click("#play");
             await wait('Number(document.querySelector("#time").value) > .1 && Number(document.querySelector("#time").value) < 2');
             await click("#stop");
+            const finiteRevision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
+            await set("#path", `${directory}/renamed.janet`);
+            await click("#play");
+            await wait(`Number(document.querySelector('#timeline').dataset.revision) > ${finiteRevision}`);
+            assert(await evaluate('document.querySelector("#errors").hidden'), "Changing the path evaluates even when the text is unchanged");
+            await click("#stop");
             assert.deepEqual(diagnostics, []);
-            console.log(`OK: ${mode} live revisions, seek, ruler, finite endpoints, Stop/Play, UI continuity, errors and timeout`);
+            console.log(`OK: ${mode} conditional Play, saved edits, pending revisions, path changes, seek, finite endpoints, UI continuity, errors and timeout`);
         }, {graphics: true});
         await app?.close();
         app = undefined;

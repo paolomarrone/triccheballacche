@@ -18,11 +18,8 @@ export function automationRatio({minimum: min, maximum: max, map}, value) {
 // Selection and one bounded window of immutable score automation, independent of DSP/UI readings.
 export function automation(request, changed) {
     const toggle = document.getElementById("show-automation"), menu = document.getElementById("automation-parameters");
-    let score, choices = [], selected = [], data = [];
-    let visible = true, anchor;
-    toggle.onclick = () => {
-        visible = !visible;
-        toggle.setAttribute("aria-pressed", visible);
+    let score, choices = [], selected = [], data = [], anchor;
+    toggle.onchange = () => {
         data = [];
         changed();
     };
@@ -78,7 +75,7 @@ export function automation(request, changed) {
     }
 
     function visibleCurves(view) {
-        if (!visible) return [];
+        if (!toggle.checked) return [];
         return data.flatMap(({index, key, result}) => {
             if (index < view.first || index >= view.first + view.count || result.to <= view.from || result.from >= view.to) return [];
             const parameter = choices[index].find(p => p.key === key && selected[index].has(key));
@@ -129,7 +126,7 @@ export function automation(request, changed) {
             const results = [];
             for (let i = view.first; i < Math.min(choices.length, view.first + view.count); ++i) {
                 for (const p of choices[i]) {
-                    if (!visible || !current()) return results;
+                    if (!toggle.checked || !current()) return results;
                     if (selected[i].has(p.key)) {
                         const result = await request("automation", revision, p.node, p.parameter, String(view.from), String(view.to), view.bins);
                         results.push({index: i, key: p.key, result});
@@ -140,7 +137,7 @@ export function automation(request, changed) {
         },
         accept(results) {
             data = results.filter(({index, key, result}) =>
-                visible && !result.stale && result.revision === score.revision && selected[index].has(key));
+                toggle.checked && !result.stale && result.revision === score.revision && selected[index].has(key));
         },
         hit(view, {row, ruler, scroll}, y, time) {
             const lane = Math.floor((y - ruler + scroll) / row);

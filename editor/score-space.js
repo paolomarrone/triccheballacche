@@ -259,7 +259,7 @@ export function scoreSpace(canvas, message, fail) {
             if (flat) { head.position.y = plan.top; head.scale.y = height * pixel; }
         }
         message.hidden = !!score;
-        if (!score) message.textContent = "Run a score to see its notes";
+        if (!score) message.textContent = "Press Play to see the score";
         canvas.dataset.notes = count;
         canvas.dataset.projection = flat ? "2d" : "3d";
         canvas.dataset.active = active;
@@ -302,7 +302,7 @@ export function scoreSpace(canvas, message, fail) {
     });
     canvas.addEventListener("webglcontextrestored", () => {
         lost = false; controls.enabled = !stopped && !flat; previous = undefined;
-        message.textContent = "Run a score to see its notes"; schedule();
+        message.textContent = "Press Play to see the score"; schedule();
     });
     controls.addEventListener("change", schedule);
     const observer = new ResizeObserver(schedule); observer.observe(canvas);
