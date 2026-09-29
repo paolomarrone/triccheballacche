@@ -1,4 +1,4 @@
-import {graphLayout, graphPath} from "./graph.js";
+import {graphPath} from "./graph.js";
 
 // Read-only routing: cards for plugins and explicit mixes, tracks as annotations.
 // No transport queries, DSP state or musical time belong to this view.
@@ -103,8 +103,8 @@ export function graphView(panel, fit, select) {
     }
 
     return {
-        score(score, preserve = false) {
-            layout = graphLayout(score);
+        score(score, graph, preserve = false) {
+            layout = graph;
             if (!preserve || !layout.nodes.has(selected)) selected = undefined;
             cards.clear(); cables = [];
             const wires = svg("svg", {width: layout.width, height: layout.height, "aria-hidden": "true"});

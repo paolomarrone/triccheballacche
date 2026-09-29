@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
 import {once} from "node:events";
 import {mkdtemp, writeFile, rm} from "node:fs/promises";
-import {graphLayout, graphPath} from "../editor/graph.js";
+import {graphLayout, graphPath, graphRows} from "../editor/graph.js";
 import {serve} from "./server.mjs";
 import {withBrowser} from "./chromium.mjs";
 import {nativeEditor} from "./native.mjs";
@@ -26,6 +26,12 @@ for (const inputs of [
         for (const other of nodes.values())
             assert(node.id === other.id || node.x !== other.x || node.y + node.height <= other.y || other.y + other.height <= node.y);
     }
+    const rows = graphRows({nodes: inputs.map(inputs => ({inputs})), tracks: []}, nodes);
+    assert.equal(rows.nodes.size, nodes.size);
+    assert.equal(new Set([...rows.nodes.values()].map(n => `${n.track}:${n.column}`)).size, nodes.size,
+        "Parallel nodes within a lane occupy distinct slots, including graphs without explicit tracks");
+    for (const node of rows.nodes.values()) for (const input of inputs[node.id])
+        assert(rows.nodes.get(input).column < node.column);
 }
 
 // Only track/master stages disappear, including nested groups. Explicit one-input
@@ -40,6 +46,10 @@ assert.deepEqual([...compact.nodes.values()].map(n => n.inputs), [[], [0], [0], 
 assert.deepEqual([...compact.nodes.values()].map(n => n.tracks), [[1], [4], [], [6, 7]]);
 assert.equal(compact.output, 5);
 assert.deepEqual(score, original, "Visual folding does not change the prepared audio graph");
+assert.deepEqual([...graphRows(score, compact.nodes).nodes.values()], [
+    {id: 0, track: 0, column: 0}, {id: 2, track: 1, column: 0},
+    {id: 3, track: 2, column: 0}, {id: 5, track: 2, column: 1}
+], "Shared nodes appear once, and downstream groups start their own compact chain");
 assert.deepEqual(graphPath(compact.nodes, 2).ids, [0, 2, 5], "A parallel effect excludes the dry branch");
 assert.deepEqual(graphPath(compact.nodes, 5).ids, [0, 2, 3, 5], "Selecting a merge includes its own inputs");
 const master = graphLayout({
@@ -218,6 +228,52 @@ try {
             await call("Emulation.setEmulatedMedia", {features: [{name: "prefers-color-scheme", value: "dark"}]});
             const screenshot = await call("Page.captureScreenshot", {format: "png"});
             await writeFile(`build/test/graph-${mode}.png`, Buffer.from(screenshot.data, "base64"));
+            await click("#score-tab");
+            await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
+            assert.equal(await evaluate('document.querySelectorAll(".routing-node").length'), 4);
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".routing-cable"), p => [Number(p.dataset.from), Number(p.dataset.to)]).sort()'), expected,
+                "The score map shows the same real connections, including repeated and shared inputs");
+            const aligned = () => evaluate(`(() => {
+                const rows = [...document.querySelectorAll('#track-list .track')].map(n => n.getBoundingClientRect());
+                return [[1,0], [0,1], [3,2], [5,2]].every(([id, row]) => {
+                    const r = document.querySelector('.routing-node[data-node="' + id + '"]').getBoundingClientRect();
+                    return r.top >= rows[row].top && r.bottom <= rows[row].bottom;
+                });
+            })()`);
+            assert(await aligned(), "Routing blocks align with their existing score lanes");
+            await click('.routing-node[data-node="0"]');
+            await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
+            assert.deepEqual(await openNodes(), [0]);
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [1, 0, 5]);
+            assert.equal(await evaluate('document.querySelector(".track-select[aria-pressed=true]").dataset.track'), "1");
+            assert.equal(await evaluate('document.querySelector(".routing-node.dim").dataset.node'), "3");
+            const mapWidth = () => evaluate('document.querySelector("#track-headers").clientWidth');
+            const initialWidth = await mapWidth();
+            await evaluate('new Promise(requestAnimationFrame)');
+            const divider = await evaluate(`(() => {
+                const r = document.querySelector('#routing-split').getBoundingClientRect();
+                return {x: r.left + r.width / 2, y: r.top + r.height / 2};
+            })()`);
+            await call("Input.dispatchMouseEvent", {type: "mousePressed", ...divider, button: "left", clickCount: 1});
+            await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: divider.x + 60, y: divider.y, button: "left", buttons: 1});
+            await call("Input.dispatchMouseEvent", {type: "mouseReleased", x: divider.x + 60, y: divider.y, button: "left", clickCount: 1});
+            assert(await mapWidth() > initialWidth, "The divider gives more room to the routing map");
+            await evaluate(`(() => {
+                const h = document.querySelector('#track-headers'), r = h.getBoundingClientRect();
+                h.dispatchEvent(new WheelEvent('wheel', {bubbles:true, cancelable:true, ctrlKey:true, deltaY:1000, clientX:r.left+10, clientY:r.top+10}));
+            })()`);
+            assert(await aligned(), "Vertical zoom keeps blocks in their lanes at the minimum row height");
+            const compactRevision = await evaluate('Number(document.querySelector("#track-routing").dataset.revision)');
+            const compactWidth = await mapWidth();
+            await set("#code", source.replace(":gain 0.001", ":gain 0.003"));
+            await click("#play");
+            await wait(`Number(document.querySelector('#track-routing').dataset.revision) > ${compactRevision}`);
+            assert.equal(await evaluate('document.querySelector(".routing-node[aria-pressed=true]").dataset.node'), "0",
+                "Live revisions preserve the compact map selection");
+            assert.equal(await mapWidth(), compactWidth);
+            const unified = await call("Page.captureScreenshot", {format: "png"});
+            await writeFile(`build/test/graph-score-${mode}.png`, Buffer.from(unified.data, "base64"));
+            await click("#graph-tab");
             await set("#code", '(error "keep the graph")');
             await click("#play");
             await wait('!document.querySelector("#errors").hidden && !document.querySelector("#play").disabled');

@@ -265,7 +265,7 @@ try {
             await click("#play");
             await wait('document.querySelectorAll("#track-list [data-listen]").length === 8');
             assert.match(await evaluate('document.querySelector("#track-list .track:nth-child(3)").textContent'), /Group/);
-            assert.match(await evaluate('document.querySelector("#track-list .track:nth-child(3) small").textContent'), /Wet.*out|out.*Wet/);
+            assert.match(await evaluate('document.querySelector("#track-list .track:nth-child(3) .track-select").title'), /Wet.*out|out.*Wet/);
             await toggle(3, 2, true);
             assert.deepEqual(await inaudible(), [false, false, false, false], "Wet solo retains upstream tracks");
             await toggle(3, 2, false);

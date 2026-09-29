@@ -51,9 +51,9 @@ footer { color: var(--muted); font-size: 12px; }
 .graph-cable.highlighted { stroke: var(--accent); stroke-width: 2.5; }
 #graph-arrow path { fill: currentColor; }
 .graph-node { position: absolute; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 10px 14px; border: 1px solid var(--border); border-left: 3px solid var(--node-color); border-radius: 5px; background: Canvas; color: CanvasText; text-align: left; box-shadow: 0 2px 5px #0001; }
-.graph-node.instrument { --node-color: light-dark(#3578ac, #73b5e6); }
-.graph-node.effect { --node-color: light-dark(#8b5ab5, #c99bef); }
-.graph-node.mix { --node-color: var(--accent); }
+:is(.graph-node, .routing-node).instrument { --node-color: light-dark(#3578ac, #73b5e6); }
+:is(.graph-node, .routing-node).effect { --node-color: light-dark(#8b5ab5, #c99bef); }
+:is(.graph-node, .routing-node).mix { --node-color: var(--accent); }
 .graph-node strong, .graph-node small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .graph-node strong { font-size: 13px; font-weight: 500; }
 .graph-node small { font-size: 11px; color: var(--muted); }
@@ -76,16 +76,26 @@ footer { color: var(--muted); font-size: 12px; }
 .plugin summary button[aria-pressed=true] { color: var(--accent); background: var(--active); }
 .plugin-body { padding: 6px; overflow: auto; }
 #track-headers { position: sticky; top: 24px; overflow: hidden; background: Canvas; }
-#track-list .track { display: flex; height: var(--track-height); border-bottom: 1px solid var(--border); }
-#track-list .track-automation { align-self: center; margin-right: 4px; }
-#track-list .track-select { display: flex; flex: 1; min-width: 0; flex-direction: column; justify-content: center; gap: 2px; padding: 3px 8px; border: 0; text-align: left; background: Canvas; color: CanvasText; }
+#track-map { position: relative; }
+#track-list .track { position: relative; height: var(--track-height); border-bottom: 1px solid var(--border); }
+#track-list .track-automation { position: absolute; top: calc(50% - 14px); right: 29px; }
+#track-list .track-select { display: block; width: calc(100% - 62px); height: 20px; padding: 2px 8px; border: 0; text-align: left; font-size: 11px; background: transparent; color: var(--muted); }
 #track-list button:hover, #track-list button[aria-pressed=true] { background: var(--active); }
-#track-list .track-listen { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding-right: 4px; }
+#track-list .track-listen { position: absolute; right: 4px; top: calc(50% - 21px); display: flex; flex-direction: column; gap: 2px; }
 #track-list .track-listen button { width: 22px; height: 20px; padding: 0; font-size: 11px; line-height: 1; }
 #track-list .track-listen button[aria-pressed=true] { color: var(--accent); }
 #track-list .inaudible .track-select { color: var(--muted); }
-#track-list span, #track-list small { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-#track-list small { color: var(--muted); font-size: 12px; }
+#track-list span { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+#track-routing { position: absolute; inset: 0; pointer-events: none; }
+#track-routing > svg { position: absolute; width: 100%; height: 100%; overflow: visible; }
+.routing-node { position: absolute; height: 20px; padding: 1px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid var(--node-color); border-radius: 3px; font-size: 10px; text-align: left; background: Canvas; color: CanvasText; pointer-events: auto; }
+.routing-node::before { content: ""; display: inline-block; width: 3px; height: 8px; margin-right: 4px; border-radius: 1px; background: var(--node-color); }
+.routing-node:hover, .routing-node[aria-pressed=true] { background: var(--active); outline: 1px solid var(--accent); }
+.routing-cable { fill: none; stroke: light-dark(#8a98a6, #74879b); stroke-width: 1; stroke-linejoin: round; }
+.routing-cable.highlighted { stroke: var(--accent); stroke-width: 1.5; }
+#track-routing .dim { opacity: .2; }
+#routing-split { position: absolute; top: 0; bottom: 0; left: var(--track-label); width: 6px; margin-left: -3px; cursor: col-resize; touch-action: none; border-right: 1px solid var(--border); }
+#routing-split:hover, #routing-split:focus-visible { background: var(--border); }
 #automation-parameters { position: fixed; inset: auto; margin: 0; width: max-content; max-width: calc(100vw - 16px); max-height: min(280px, 50vh); overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: 4px; background: Canvas; color: CanvasText; box-shadow: 0 4px 14px #0003; }
 #automation-parameters label { display: flex; align-items: center; gap: 5px; padding: 3px 5px; cursor: pointer; }
 #automation-parameters label:hover { background: var(--active); }

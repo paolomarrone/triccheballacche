@@ -1,6 +1,8 @@
 // A viewport in seconds, independent of score duration, with one bounded buffer around it.
 import {automation} from "./automation.js";
 import {graphView} from "./graph-view.js";
+import {graphLayout} from "./graph.js";
+import {trackGraph} from "./track-graph.js";
 
 export function timeline(request, select, inspect, seek, error) {
     const get = id => document.getElementById(id);
@@ -16,6 +18,11 @@ export function timeline(request, select, inspect, seek, error) {
     const ruler = 24;
     const envelopes = automation(request, changed);
     const routing = graphView(get("graph-view"), get("graph-fit"), inspect.node);
+    const map = trackGraph(get("track-routing"), (id, path, index) => {
+        highlightTrack(index);
+        inspect.node(id, path);
+    });
+    let labelWidth = 380;
     let graphMode = false, scroll = 0;
     let renderer, flat = true, disposed = false;
 
@@ -209,7 +216,7 @@ export function timeline(request, select, inspect, seek, error) {
 
     function draw() {
         if (graphMode) return;
-        tracks.style.transform = `translateY(${-roll.scrollTop}px)`;
+        get("track-map").style.transform = `translateY(${-roll.scrollTop}px)`;
         const view = viewport(), dark = matchMedia("(prefers-color-scheme: dark)").matches;
         renderer?.update({score, data, view, curves: envelopes.curves(view),
             time, playing, selected, audible, dark, flat, pitchRange,
@@ -220,13 +227,14 @@ export function timeline(request, select, inspect, seek, error) {
         if (!roll.clientWidth || !roll.clientHeight) return;
         width = roll.clientWidth;
         height = roll.clientHeight;
-        label = Math.min(230, Math.round(width * 0.3));
+        label = Math.min(labelWidth, Math.max(140, Math.round(width * .6)));
         panel.style.setProperty("--track-label", `${label}px`);
         space.style.right = `${roll.offsetWidth - width}px`;
         headers.style.width = `${label}px`;
         headers.style.height = `${Math.max(0, height - ruler)}px`;
         headers.style.marginBottom = `${-Math.max(0, height - ruler)}px`;
         tracks.style.setProperty("--track-height", `${row}px`);
+        map.resize(label, row);
         get("lanes-space").style.height = `${Math.max(height, ruler + (score?.tracks.length || 0) * row)}px`;
         changed();
     }
@@ -325,9 +333,14 @@ export function timeline(request, select, inspect, seek, error) {
         } catch (cause) { error(cause); }
     }
 
-    function chooseTrack(index) {
+    function highlightTrack(index) {
         trackIndex = index;
         for (const button of tracks.querySelectorAll(".track-select")) button.setAttribute("aria-pressed", Number(button.dataset.track) === index);
+    }
+
+    function chooseTrack(index) {
+        highlightTrack(index);
+        map.clear();
         inspect.track(index);
     }
 
@@ -371,6 +384,21 @@ export function timeline(request, select, inspect, seek, error) {
         }
     };
     new ResizeObserver(resize).observe(roll);
+    const divider = get("routing-split");
+    divider.onpointerdown = event => {
+        if (!event.button) divider.setPointerCapture(event.pointerId);
+    };
+    divider.onpointermove = event => {
+        if (!divider.hasPointerCapture(event.pointerId)) return;
+        labelWidth = Math.max(140, Math.min(width * .6, point(event)[0]));
+        resize();
+    };
+    divider.onkeydown = event => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        labelWidth = Math.max(140, Math.min(width * .6, label + (event.key === "ArrowLeft" ? -20 : 20)));
+        resize();
+    };
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
 
     import("./score-space.js").then(({scoreSpace}) => {
@@ -388,7 +416,9 @@ export function timeline(request, select, inspect, seek, error) {
         score(value) {
             score = value; data = selected = undefined; from = 0; latency = 0; roll.scrollTop = 0;
             scroll = 0;
-            routing.score(score);
+            const graph = graphLayout(score);
+            routing.score(score, graph);
+            map.score(score, graph);
             envelopes.score(score);
             listening = score.tracks.map(() => 0);
             outputs = score.nodes.map(() => []);
@@ -399,14 +429,13 @@ export function timeline(request, select, inspect, seek, error) {
             tracks.replaceChildren(...score.tracks.map((track, index) => {
                 const lane = document.createElement("div");
                 lane.className = "track";
-                const button = document.createElement("button"), title = document.createElement("span"), effects = document.createElement("small");
+                const button = document.createElement("button"), title = document.createElement("span");
                 button.className = "track-select";
                 title.textContent = `${index + 1}  ${name(track)}`;
-                effects.textContent = chain(track).slice(name(track).length + 1);
                 button.title = chain(track);
                 button.dataset.track = index;
                 button.setAttribute("aria-pressed", index === trackIndex);
-                button.append(title, effects);
+                button.append(title);
                 button.onclick = () => chooseTrack(index);
                 lane.append(button, envelopes.control(index));
                 if (track[0] >= 0) {
@@ -430,7 +459,9 @@ export function timeline(request, select, inspect, seek, error) {
         },
         revise(value) {
             score = value;
-            routing.score(score, true);
+            const graph = graphLayout(score);
+            routing.score(score, graph, true);
+            map.score(score, graph, true);
             envelopes.score(score, true);
             for (const [index, lane] of Array.from(tracks.children).entries())
                 lane.querySelector(".track-automation").replaceWith(envelopes.control(index));

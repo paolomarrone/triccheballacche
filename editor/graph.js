@@ -35,6 +35,28 @@ export function graphPath(nodes, id) {
     return {up, down, ids};
 }
 
+// Pin nodes to the existing score lanes. Shared nodes have one owner; columns
+// follow the signal and leave room for parallel nodes within the same lane.
+export function graphRows(score, graph) {
+    const owners = new Map(), nodes = new Map(), next = [];
+    score.tracks.forEach((track, index) => {
+        for (const id of trackNodes(score, track))
+            if (graph.has(id) && !owners.has(id)) owners.set(id, index);
+    });
+    function visit(id) {
+        if (nodes.has(id)) return nodes.get(id);
+        const inputs = graph.get(id).inputs.map(visit);
+        const track = owners.get(id) ?? Math.max(0, score.tracks.length - 1);
+        const column = Math.max(next[track] || 0, ...inputs.filter(node => node.track === track).map(node => node.column + 1));
+        const node = {id, track, column};
+        next[track] = column + 1;
+        nodes.set(id, node);
+        return node;
+    }
+    for (const id of graph.keys()) visit(id);
+    return {nodes, columns: next};
+}
+
 // Start every source in the first rank, regardless of its downstream chain length.
 function rankFromSources(graph) {
     const ranks = new Map();

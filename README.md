@@ -127,6 +127,8 @@ and updates the session's files. Reloading the page restores the published files
   Errors leave the current music running. Stop or seek cancels queued revisions.
 - **Score view:** drag or Shift+wheel to pan time, wheel to zoom time,
   Ctrl/Command+wheel to resize tracks. Wheel over names scrolls tracks vertically.
+  The left column shows compact routing blocks aligned with the score lanes;
+  click a block to inspect its signal path. Drag the divider to resize the map.
   Follow keeps the playhead in view. The 3D toggle changes the projection;
   drag then orbits, right-drag pans and Alt+wheel zooms time.
 - **Automation** toggles visibility only. Each track's checklist selects curves.
