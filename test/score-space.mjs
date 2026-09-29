@@ -298,10 +298,13 @@ try {
         assert(await evaluate('document.querySelector("#score-3d").disabled'));
         assert(!await evaluate('document.querySelector("#score-message").hidden'));
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
+        await click("#graph-tab");
+        await wait('document.querySelectorAll(".graph-node").length === 11');
+        assert.equal(await evaluate('document.querySelectorAll(".graph-cable").length'), 10);
         await click("#stop");
         assert.deepEqual(diagnostics, []);
         await call("Page.navigate", {url: "about:blank"});
-        console.log("OK: editing and playback remain usable without WebGL");
+        console.log("OK: editing, playback and routing remain usable without WebGL");
     });
 } finally {
     if (app) await app.close();

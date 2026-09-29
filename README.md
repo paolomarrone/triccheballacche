@@ -131,6 +131,10 @@ and updates the session's files. Reloading the page restores the published files
   drag then orbits, right-drag pans and Alt+wheel zooms time.
 - **Automation** toggles visibility only. Each track's checklist selects curves.
   Source highlights and note/curve picking connect the view to the code.
+- **Graph** shows plugins and explicit mixes; track/master gain stages are folded
+  into connections, with track names on their sources.
+  Click a node to highlight its paths; drag the background to pan, wheel to zoom,
+  or use Home to fit. This view is read-only and independent of score duration.
 - **Track names** open the plugin panel. Mute/solo affects audition, including
   routed groups. Plugin sections collapse; the window icon toggles a native UI
   where available. Manual parameter edits are temporary, not written to Janet.
@@ -203,7 +207,7 @@ musical names keep their spelling. Formatting is in `.editorconfig` and
 | `make test-library-build` | Node.js/npm; builds and checks the canonical library. |
 | `make test-web` / `make test-browser` | Emscripten/Node.js; Chromium for browser. |
 | `make test-editor` | Native GUI build, Node.js, Chromium and an audio device. |
-| `make test-live test-editor-ui test-score-space` | Native and browser prerequisites. |
+| `make test-live test-editor-ui test-score-space test-graph` | Native and browser prerequisites. |
 | `make test-library` | Native and Wasm production bundles, plus editor prerequisites. |
 | `make -C plugins/piano test` | Downloaded bank and Tibia; `test-web` also needs Emscripten/Node.js. |
 

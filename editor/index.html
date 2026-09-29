@@ -31,21 +31,31 @@
             </div>
         </div>
         <div id="split" role="separator" aria-label="Timeline height" aria-orientation="horizontal" tabindex="0"></div>
-        <section id="timeline" aria-label="Score projection">
+        <section id="timeline" aria-label="Score and routing">
             <div id="timeline-tools">
-                <label class="icon" title="Follow playhead"><input id="follow" type="checkbox" aria-label="Follow playhead" checked><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h5m-3-3 3 3-3 3m16-3h-5m3-3-3 3 3 3"/></svg></label>
-                <label class="icon" title="Show automation"><input id="show-automation" type="checkbox" aria-label="Show automation" checked><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 17 6-10 5 7 5-9"/><circle cx="4" cy="17" r="2"/><circle cx="10" cy="7" r="2"/><circle cx="15" cy="14" r="2"/><circle cx="20" cy="5" r="2"/></svg></label>
-                <label class="icon" title="3D view"><input id="score-3d" type="checkbox" aria-label="3D view" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5v9l-9 5-9-5V8zm-9 5 9 5 9-5m-9 5v9"/></svg></label>
-                <button id="score-reset" class="icon" title="Reset camera" aria-label="Reset camera" hidden disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button>
-                <output id="note-info"></output>
+                <nav id="projection-tabs" role="tablist" aria-label="Visualization">
+                    <button id="score-tab" role="tab" aria-selected="true" aria-controls="timeline-body">Score</button>
+                    <button id="graph-tab" role="tab" aria-selected="false" aria-controls="graph-view" tabindex="-1">Graph</button>
+                </nav>
+                <div id="score-tools" class="view-tools">
+                    <label class="icon" title="Follow playhead"><input id="follow" type="checkbox" aria-label="Follow playhead" checked><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h5m-3-3 3 3-3 3m16-3h-5m3-3-3 3 3 3"/></svg></label>
+                    <label class="icon" title="Show automation"><input id="show-automation" type="checkbox" aria-label="Show automation" checked><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 17 6-10 5 7 5-9"/><circle cx="4" cy="17" r="2"/><circle cx="10" cy="7" r="2"/><circle cx="15" cy="14" r="2"/><circle cx="20" cy="5" r="2"/></svg></label>
+                    <label class="icon" title="3D view"><input id="score-3d" type="checkbox" aria-label="3D view" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 9 5v9l-9 5-9-5V8zm-9 5 9 5 9-5m-9 5v9"/></svg></label>
+                    <button id="score-reset" class="icon" title="Reset camera" aria-label="Reset camera" hidden disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button>
+                    <output id="note-info"></output>
+                </div>
+                <div id="graph-tools" class="view-tools" hidden>
+                    <button id="graph-fit" class="icon" title="Fit graph · Home" aria-label="Fit graph" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M8 8h8v8H8z"/></svg></button>
+                </div>
             </div>
-            <div id="timeline-body">
+            <div id="timeline-body" role="tabpanel" aria-labelledby="score-tab">
                 <div id="roll"><div id="track-headers"><div id="track-list"></div></div><div id="lanes-space" aria-hidden="true"></div></div>
                 <div id="score-view">
                     <canvas id="score-canvas" tabindex="0" aria-label="Score notes"></canvas>
                     <p id="score-message" role="status">Loading score view…</p>
                 </div>
             </div>
+            <div id="graph-view" role="tabpanel" aria-labelledby="graph-tab" tabindex="0" hidden></div>
         </section>
         <pre id="errors" role="alert" hidden></pre>
     </div>

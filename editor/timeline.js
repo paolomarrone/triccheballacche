@@ -1,5 +1,6 @@
 // A viewport in seconds, independent of score duration, with one bounded buffer around it.
 import {automation} from "./automation.js";
+import {graphView} from "./graph-view.js";
 
 export function timeline(request, select, selectTrack, seek, error) {
     const get = id => document.getElementById(id);
@@ -14,7 +15,35 @@ export function timeline(request, select, selectTrack, seek, error) {
     const changing = new Set();
     const ruler = 24;
     const envelopes = automation(request, changed);
+    const routing = graphView(get("graph-view"), get("graph-fit"));
+    let graphMode = false, scroll = 0;
     let renderer, flat = true, disposed = false;
+
+    const tabs = [get("score-tab"), get("graph-tab")];
+    function mode(graph) {
+        if (graph === graphMode) return;
+        if (graph) scroll = roll.scrollTop;
+        graphMode = graph;
+        tabs.forEach((tab, i) => {
+            tab.setAttribute("aria-selected", Boolean(i) === graph);
+            tab.tabIndex = Boolean(i) === graph ? 0 : -1;
+        });
+        get("timeline-body").hidden = get("score-tools").hidden = graph;
+        get("graph-view").hidden = get("graph-tools").hidden = !graph;
+        get("automation-parameters").hidePopover();
+        cancelAnimationFrame(animation);
+        if (!graph) { resize(); roll.scrollTop = scroll; animate(performance.now()); }
+        changed();
+    }
+    tabs.forEach((tab, i) => {
+        tab.onclick = () => mode(Boolean(i));
+        tab.onkeydown = event => {
+            const next = event.key === "Home" ? 0 : event.key === "End" ? 1 :
+                ["ArrowLeft", "ArrowRight"].includes(event.key) ? 1 - i : -1;
+            if (next < 0) return;
+            event.preventDefault(); tabs[next].focus(); mode(Boolean(next));
+        };
+    });
 
     function renderError(cause) {
         message.textContent = `Score view unavailable: ${cause.message || cause}`;
@@ -92,6 +121,7 @@ export function timeline(request, select, selectTrack, seek, error) {
 
     function changed(invalidate = true) {
         if (invalidate) ++version;
+        if (graphMode) return;
         draw();
         if (!scheduled) {
             scheduled = true;
@@ -106,7 +136,7 @@ export function timeline(request, select, selectTrack, seek, error) {
     }
 
     async function load() {
-        if (!score || pending || disposed || width <= label || height <= ruler) return;
+        if (!score || pending || disposed || graphMode || width <= label || height <= ruler) return;
         const generation = version, revision = score.revision, view = viewport();
         const margin = Math.max(view.span / 2, latency * 2);
         if (loaded?.generation === generation && covers(loaded, view, margin)) return;
@@ -178,6 +208,7 @@ export function timeline(request, select, selectTrack, seek, error) {
     }
 
     function draw() {
+        if (graphMode) return;
         tracks.style.transform = `translateY(${-roll.scrollTop}px)`;
         const view = viewport(), dark = matchMedia("(prefers-color-scheme: dark)").matches;
         renderer?.update({score, data, view, curves: envelopes.curves(view),
@@ -186,6 +217,7 @@ export function timeline(request, select, selectTrack, seek, error) {
     }
 
     function resize() {
+        if (!roll.clientWidth || !roll.clientHeight) return;
         width = roll.clientWidth;
         height = roll.clientHeight;
         label = Math.min(230, Math.round(width * 0.3));
@@ -215,6 +247,7 @@ export function timeline(request, select, selectTrack, seek, error) {
 
     function animate(now) {
         animation = 0;
+        if (graphMode) return;
         // Interpolate between transport reports, but stop extrapolating if the
         // backend stalls. Audio remains the authority for musical time.
         time = playing ? Math.max(time, position + Math.min(.1, Math.max(0, now - stamp) / 1000)) : position;
@@ -354,6 +387,8 @@ export function timeline(request, select, selectTrack, seek, error) {
         },
         score(value) {
             score = value; data = selected = undefined; from = 0; latency = 0; roll.scrollTop = 0;
+            scroll = 0;
+            routing.score(score);
             envelopes.score(score);
             listening = score.tracks.map(() => 0);
             outputs = score.nodes.map(() => []);
@@ -395,6 +430,7 @@ export function timeline(request, select, selectTrack, seek, error) {
         },
         revise(value) {
             score = value;
+            routing.score(score, true);
             envelopes.score(score, true);
             for (const [index, lane] of Array.from(tracks.children).entries())
                 lane.querySelector(".track-automation").replaceWith(envelopes.control(index));

@@ -30,6 +30,10 @@ footer { color: var(--muted); font-size: 12px; }
 #split:hover, #split:focus-visible { background: var(--border); }
 #timeline { display: flex; flex-direction: column; flex: 0 1 240px; min-height: 100px; border: 1px solid var(--border); }
 #timeline-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px; border-bottom: 1px solid var(--border); }
+.view-tools { display: flex; flex: 1; align-items: center; gap: 4px; }
+#projection-tabs { gap: 2px; }
+#projection-tabs button { padding: 4px 8px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); }
+#projection-tabs button[aria-selected=true] { background: var(--active); color: var(--accent); }
 #note-info { margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 12px; }
 #timeline-body { flex: 1; min-height: 0; position: relative; }
 #roll { height: 100%; overflow-y: auto; overflow-x: hidden; position: relative; }
@@ -37,6 +41,27 @@ footer { color: var(--muted); font-size: 12px; }
 #score-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 #score-message { position: absolute; inset: 8px 12px auto; margin: 0; color: var(--muted); pointer-events: none; }
 #lanes-space { pointer-events: none; }
+
+#graph-view { flex: 1; min-height: 0; position: relative; overflow: hidden; touch-action: none; background: light-dark(#f5f7f9, #171b20); cursor: grab; }
+#graph-view:active { cursor: grabbing; }
+.graph-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.graph-world > svg { position: absolute; inset: 0; overflow: visible; pointer-events: none; color: var(--muted); }
+.graph-cable { fill: none; stroke: light-dark(#8997a6, #8395a8); stroke-width: 1.5; }
+.graph-cable.highlighted { stroke: var(--accent); stroke-width: 2.5; }
+#graph-arrow path { fill: currentColor; }
+.graph-node { position: absolute; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 10px 14px; border: 1px solid var(--border); border-left: 3px solid var(--node-color); border-radius: 5px; background: Canvas; color: CanvasText; text-align: left; box-shadow: 0 2px 5px #0001; }
+.graph-node.instrument { --node-color: light-dark(#3578ac, #73b5e6); }
+.graph-node.effect { --node-color: light-dark(#8b5ab5, #c99bef); }
+.graph-node.mix { --node-color: var(--accent); }
+.graph-node strong, .graph-node small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-node strong { font-size: 13px; font-weight: 500; }
+.graph-node small { font-size: 11px; color: var(--muted); }
+.graph-node[aria-pressed=true] { background: var(--active); outline: 2px solid var(--accent); }
+.graph-node:hover { border-color: var(--node-color); }
+.graph-world .dim { opacity: .25; }
+.graph-port { position: absolute; left: -6px; width: 8px; height: 8px; border: 1px solid var(--node-color); border-radius: 50%; background: Canvas; transform: translateY(-50%); }
+.graph-port.output { left: auto; right: -5px; background: var(--node-color); }
+.graph-message { position: absolute; top: 8px; left: 12px; margin: 0; color: var(--muted); pointer-events: none; }
 
 #workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; gap: 5px; }
 #plugins { display: flex; flex-direction: column; flex: 0 1 auto; width: max-content; max-width: 65%; min-width: min(330px, 45%); border: 1px solid var(--border); }
