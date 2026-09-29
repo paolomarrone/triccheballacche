@@ -140,7 +140,7 @@ try {
                         return result;
                     };
                 })()`);
-                await pan(2);
+                await pan(50);
                 await wait('typeof window.releaseAutomation === "function"');
                 await click("#show-automation");
                 await wait('document.querySelector("#notes").dataset.automation === "0"');

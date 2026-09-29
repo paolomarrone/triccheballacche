@@ -1,4 +1,4 @@
-// A viewport in seconds, independent of score duration. Only visible lanes and intervals cross the bridge.
+// A viewport in seconds, independent of score duration, with one bounded buffer around it.
 import {automation} from "./automation.js";
 
 export function timeline(request, select, selectTrack, seek, error) {
@@ -9,6 +9,7 @@ export function timeline(request, select, selectTrack, seek, error) {
     const tabs = [get("tab-tracks"), get("tab-score")];
     let score, data, from = 0, scale = 0.02, time = 0, playing = false;
     let width = 0, height = 0, row = 60, label = 220, version = 0, pending = false, scheduled = false;
+    let loaded, latency = 0, position = 0, stamp = 0, animation = 0;
     let hits = [], drag, selected, rowHeight = 60, trackIndex = 0;
     let listening = [], outputs = [], enabled = false;
     const changing = new Set();
@@ -83,7 +84,7 @@ export function timeline(request, select, selectTrack, seek, error) {
         if (event.altKey) zoom(Math.exp(event.deltaY * unit * .005));
         else move(from + (event.deltaX || event.deltaY) * unit * scale);
     }, {capture: true, passive: false});
-    window.addEventListener("pagehide", () => { disposed = true; spatial?.dispose(); });
+    window.addEventListener("pagehide", () => { disposed = true; cancelAnimationFrame(animation); spatial?.dispose(); });
 
     function audible(index) {
         const node = score.nodes[score.tracks[index][1]];
@@ -122,14 +123,15 @@ export function timeline(request, select, selectTrack, seek, error) {
     }
 
     function viewport() {
-        return {from, to: from + Math.max(1, width - label) * scale,
+        const span = Math.max(1, width - label) * scale;
+        return {from, to: from + span, span,
             first: spatialMode ? 0 : Math.floor(roll.scrollTop / row),
             count: spatialMode ? score?.tracks.length || 0 : Math.min(8, Math.ceil((height - ruler + roll.scrollTop % row) / row)),
             bins: Math.max(1, Math.min(512, Math.ceil((width - label) / 3)))};
     }
 
-    function changed() {
-        ++version;
+    function changed(invalidate = true) {
+        if (invalidate) ++version;
         draw();
         if (!scheduled) {
             scheduled = true;
@@ -137,9 +139,23 @@ export function timeline(request, select, selectTrack, seek, error) {
         }
     }
 
+    function covers(buffer, view, margin = 0) {
+        return buffer && buffer.span === view.span && buffer.first <= view.first &&
+            buffer.first + buffer.count >= view.first + view.count &&
+            buffer.from <= Math.max(0, view.from - margin) && buffer.to >= view.to + margin;
+    }
+
     async function load() {
         if (!score || pending || disposed || width <= label || height <= ruler) return;
         const generation = version, revision = score.revision, view = viewport();
+        const margin = Math.max(view.span / 2, latency * 2);
+        if (loaded?.generation === generation && covers(loaded, view, margin)) return;
+        // Refill before the visible window reaches the buffer edge. Moving within
+        // the buffer does not invalidate in-flight notes or automation queries.
+        const padding = Math.max(view.span, latency * 3), started = performance.now();
+        view.from = Math.max(0, view.from - padding);
+        view.to += padding;
+        view.bins = Math.min(512, view.bins * 3);
         pending = true;
         try {
             const result = {revision, from: view.from, to: view.to, first: view.first, lanes: []};
@@ -149,23 +165,27 @@ export function timeline(request, select, selectTrack, seek, error) {
                 if (part.stale || part.revision !== revision || score.revision !== revision) return;
                 result.lanes.push(...part.lanes);
                 // Keep the previous complete window when a newer viewport supersedes a batch.
-                if (generation !== version && first + 8 < end) return;
+                if ((generation !== version || !covers(view, viewport())) && first + 8 < end) return;
             }
             if (revision === score?.revision) {
-                // Retain one bounded window and project it at the current scroll/zoom while the next loads.
-                data = result;
-                panel.dataset.revision = revision;
-                draw();
-                const curves = await envelopes.query(view, revision, () => generation === version);
-                if (revision === score.revision) {
+                const current = () => generation === version && covers(view, viewport());
+                if (!current()) return;
+                const curves = await envelopes.query(view, revision, current);
+                if (revision === score.revision && current()) {
+                    // Publish a complete buffer, including all requested lanes and curves.
+                    data = result;
+                    loaded = {...view, generation};
+                    panel.dataset.revision = revision;
                     envelopes.accept(curves);
+                    // Account for the bridge only after a complete, current refill.
+                    latency = Math.max((performance.now() - started) / 1000, latency * .75);
                     draw();
                 }
             }
         } catch (cause) { error(cause); }
         finally {
             pending = false;
-            if (generation !== version) load();
+            if (generation !== version || !covers(view, viewport())) load();
         }
     }
 
@@ -315,7 +335,7 @@ export function timeline(request, select, selectTrack, seek, error) {
         if (!Number.isFinite(value) || value + nextScale === value) return;
         from = value;
         scale = nextScale;
-        changed();
+        changed(false);
     }
 
     function zoom(factor, x = (width - label) / 2) {
@@ -324,7 +344,19 @@ export function timeline(request, select, selectTrack, seek, error) {
         move(anchor - x * next, next);
     }
 
-    roll.addEventListener("scroll", changed);
+    function animate(now) {
+        animation = 0;
+        // Interpolate between transport reports, but stop extrapolating if the
+        // backend stalls. Audio remains the authority for musical time.
+        time = playing ? Math.max(time, position + Math.min(.1, Math.max(0, now - stamp) / 1000)) : position;
+        if (score && playing && follow.checked) move(time - viewport().span * .15);
+        else draw();
+        if (playing && !disposed) animation = requestAnimationFrame(animate);
+    }
+
+    follow.onchange = () => { if (follow.checked) move(time - viewport().span * .15); };
+
+    roll.addEventListener("scroll", () => changed(false));
     roll.addEventListener("wheel", event => {
         event.preventDefault();
         const [x, y] = point(event), unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1;
@@ -427,7 +459,7 @@ export function timeline(request, select, selectTrack, seek, error) {
             buttons();
         },
         score(value) {
-            score = value; data = selected = undefined; from = 0; roll.scrollTop = 0;
+            score = value; data = selected = undefined; from = 0; latency = 0; roll.scrollTop = 0;
             envelopes.score(score);
             listening = score.tracks.map(() => 0);
             outputs = score.nodes.map(() => []);
@@ -480,12 +512,14 @@ export function timeline(request, select, selectTrack, seek, error) {
             changed();
         },
         position(seconds, active, locate = false) {
-            if (time === seconds && playing === active && !locate) return;
-            time = seconds; playing = active;
-            const span = viewport().to - from;
-            if (score && (locate || active && follow.checked) && (time < from || time > from + span * 0.85)) move(time - span * 0.15);
-            else if (locate) changed();
-            else draw();
+            if (position === seconds && playing === active && !locate) return;
+            if (locate || !playing || seconds < position) time = seconds;
+            position = seconds; playing = active; stamp = performance.now();
+            const view = viewport();
+            if (score && locate && (seconds < from || seconds > from + view.span * .85)) from = Math.max(0, seconds - view.span * .15);
+            if (locate) changed(false);
+            cancelAnimationFrame(animation);
+            animate(stamp);
         }
     };
 }

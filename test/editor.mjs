@@ -190,9 +190,9 @@ try {
 (def tracks @[(daw/track lead {:effects [fx]})])
 (for i 0 9 (array/push tracks (daw/track (daw/plugin "build/test/fixture.perone" {:gain 0.001}))))
 (daw/output (daw/master (daw/mix tracks)))
-(for i 0 1200 (daw/note lead (* i 0.005) 0.03 (+ 60 (% i 12)) 80))
+(for i 0 1200 (daw/note lead (* i 0.01) 0.03 (+ 60 (% i 12)) 80))
 (daw/note lead 0 8 48 90)
-(daw/end 12)`;
+(daw/end 16)`;
         await evaluate("window.openEnd = true");
         await set("#code", dense);
         await click("#run");
@@ -214,7 +214,6 @@ try {
         const changeStart = async value => {
             await evaluate(`(() => {
                 const canvas = document.querySelector("#notes"), rect = canvas.getBoundingClientRect();
-                canvas.dispatchEvent(new KeyboardEvent("keydown", {key: "Home"}));
                 canvas.dispatchEvent(new WheelEvent("wheel", {bubbles: true, cancelable: true, shiftKey: true,
                     clientX: rect.left + 300, deltaY: (${value} - Number(canvas.dataset.from)) / Number(canvas.dataset.scale)}));
             })()`);
@@ -239,19 +238,22 @@ try {
         await changeStart(0);
         await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#notes").dataset.notes) > 0');
         await evaluate('window.holdRange = true; window.rangeHeld = false');
-        const dragPoint = await evaluate('(() => { const r = document.querySelector("#notes").getBoundingClientRect(); return {x:r.left+330,y:r.top+60}; })()');
+        const dragPoint = await evaluate('(() => { const r = document.querySelector("#notes").getBoundingClientRect(); return {x:r.right-10,y:r.top+60}; })()');
+        const distance = await evaluate('(document.querySelector("#notes").clientWidth - document.querySelector("#track-headers").clientWidth) * .85');
         await call("Input.dispatchMouseEvent", {type: "mousePressed", ...dragPoint, button: "left", clickCount: 1});
         await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - 10, y: dragPoint.y, buttons: 1});
+        assert.equal(await evaluate('window.rangeHeld'), false, "Small pans use prefetched notes");
+        await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - distance, y: dragPoint.y, buttons: 1});
         await wait('window.rangeHeld');
         assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'), "Dragging retains notes while a range reply is pending");
-        await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - 20, y: dragPoint.y, buttons: 1});
+        await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: dragPoint.x - distance - 10, y: dragPoint.y, buttons: 1});
         assert(await evaluate('Number(document.querySelector("#notes").dataset.notes) > 0'), "Repeated movement must not blank the cached window");
-        await call("Input.dispatchMouseEvent", {type: "mouseReleased", x: dragPoint.x - 20, y: dragPoint.y, button: "left", clickCount: 1});
+        await call("Input.dispatchMouseEvent", {type: "mouseReleased", x: dragPoint.x - distance - 10, y: dragPoint.y, button: "left", clickCount: 1});
         await evaluate('window.holdRange = false');
-        await wait('ranges.at(-1).from === Number(document.querySelector("#notes").dataset.from)');
+        await wait('ranges.at(-1).to > Number(document.querySelector("#notes").dataset.from)');
         const canvasSize = await evaluate('[document.querySelector("#notes").width, document.querySelector("#notes").height]');
         await changeStart(1e9);
-        await wait('Math.abs(ranges.at(-1).from - 1e9) < 0.00001 && document.querySelector("#notes").dataset.notes === "0"');
+        await wait('ranges.at(-1).from <= 1e9 && ranges.at(-1).to > 1e9 && document.querySelector("#notes").dataset.notes === "0"');
         assert.deepEqual(await evaluate('[document.querySelector("#notes").width, document.querySelector("#notes").height]'), canvasSize, "Large times must not allocate a song-sized canvas");
         await evaluate('window.holdRange = true; window.rangeHeld = false');
         await changeStart(100);

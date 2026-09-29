@@ -45,6 +45,17 @@ try {
             assert.equal(await evaluate('document.querySelector("#score-message").hidden'), true);
             await click("#score-flat");
             assert.equal(await evaluate('document.querySelector("#score-flat").getAttribute("aria-pressed")'), "true");
+            await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+            const direction = await evaluate(`(() => {
+                const c = document.querySelector('#score-canvas'), r = c.getBoundingClientRect(), notes = new Map();
+                for (let y = r.top + 20; y < r.bottom - 20; y += 4) for (let x = r.left + 20; x < r.right - 20; x += 4) {
+                    c.dispatchEvent(new PointerEvent('pointermove', {clientX: x, clientY: y}));
+                    const hit = c.title.match(/^Track 1 · MIDI [0-9]+ · ([0-9.]+)–/);
+                    if (hit) notes.set(Number(hit[1]), x);
+                    if (notes.has(0) && notes.has(7)) return [notes.get(0), notes.get(7)];
+                }
+            })()`);
+            assert(direction && direction[0] < direction[1], "Flatten must read earlier notes to the left of later notes");
             await click("#score-flat");
             await click("#score-reset");
             // Find a rendered note through real ray casting, then select its Janet origin.
@@ -72,6 +83,7 @@ try {
             await click("#tab-score");
             await wait('document.querySelector("#score-canvas").dataset.automation === "10"');
             const seek = async seconds => {
+                await wait('!document.querySelector("#time").disabled');
                 await evaluate(`(() => { const t = document.querySelector('#time'); t.focus(); t.value = ${seconds}; })()`);
                 await key("Enter");
                 await wait(`!document.querySelector('#time').disabled && Number(document.querySelector('#score-canvas').dataset.time) === ${seconds}`);
@@ -80,6 +92,66 @@ try {
             await wait('Number(document.querySelector("#score-canvas").dataset.from) > 999900 && Number(document.querySelector("#score-canvas").dataset.notes) > 0');
             assert(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes) <= 512 * 11'), "Unbounded scores keep a bounded projection");
             await seek(0);
+            await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
+            // Follow scrolls continuously across buffer refills, including a slow native bridge.
+            for (let i = 0; i < 3; ++i)
+                await evaluate('document.querySelector("#score-canvas").dispatchEvent(new KeyboardEvent("keydown", {key: "+"}))');
+            await seek(50);
+            await wait('Number(document.querySelector("#score-canvas").dataset.bufferFrom) > 40 && document.querySelector("#score-canvas").dataset.automation === "10"');
+            await evaluate(`(() => {
+                const upload = WebGL2RenderingContext.prototype.bufferData;
+                window.uploads = 0;
+                WebGL2RenderingContext.prototype.bufferData = function(...args) { ++window.uploads; return upload.apply(this, args); };
+                if (!window.webui) return;
+                const call = webui.call.bind(webui);
+                window.delayRange = true;
+                webui.call = async (...args) => {
+                    const result = await call(...args);
+                    if (args[1] === 'range' && window.delayRange) await new Promise(resolve => setTimeout(resolve, 100));
+                    return result;
+                };
+            })()`);
+            await click("#play");
+            const frames = await evaluate(`new Promise(resolve => {
+                const frames = [], start = performance.now(), c = document.querySelector('#score-canvas');
+                function sample() {
+                    const d = c.dataset;
+                    frames.push([d.from, d.to, d.time, d.bufferFrom, d.bufferTo, uploads, d.notes, d.automation].map(Number));
+                    if (performance.now() - start < 4600) requestAnimationFrame(sample);
+                    else resolve(frames);
+                }
+                requestAnimationFrame(sample);
+            })`);
+            await click("#stop");
+            await evaluate('window.delayRange = false');
+            assert(frames.every(([from, to, time, a, b, , notes, curves]) =>
+                a <= from && b >= to && notes > 0 && curves === 10 && Math.abs((time - from) / (to - from) - .15) < .001),
+            "Prefetched notes and automation cover the viewport under a fixed playhead");
+            const windows = new Set(frames.map(f => f[3]));
+            assert(windows.size >= 2 && windows.size < 6, "Refill a bounded buffer ahead of playback");
+            let moving = 0, reused = 0;
+            for (let i = 1; i < frames.length; ++i) {
+                const current = frames[i], previous = frames[i - 1], advance = current[0] - previous[0];
+                assert(Math.abs(advance) < .4, "Follow must not jump between time pages");
+                if (advance > 0) {
+                    ++moving;
+                    if (current[3] === previous[3] && current[5] === previous[5]) ++reused;
+                }
+            }
+            assert(moving > 50 && reused > moving * .8, "Scrolling reuses GPU geometry between refills");
+            await wait('document.querySelector("#stop").disabled && !document.querySelector("#play").disabled');
+            await click("#follow");
+            await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+            const parked = await evaluate('document.querySelector("#score-canvas").dataset.from');
+            await click("#play");
+            await wait(`Number(document.querySelector('#score-canvas').dataset.time) > ${frames.at(-1)[2] + .3}`);
+            assert.equal(await evaluate('document.querySelector("#score-canvas").dataset.from'), parked, "Disabling Follow keeps the viewport stationary");
+            await click("#stop");
+            await click("#follow");
+            for (let i = 0; i < 3; ++i)
+                await evaluate('document.querySelector("#score-canvas").dispatchEvent(new KeyboardEvent("keydown", {key: "-"}))');
+            await seek(0);
+            await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0 && document.querySelector("#score-canvas").dataset.automation === "10"');
             await click("#play");
             await set("#code", source.replace("(+ 60 i)", "(+ 48 i)"));
             await click("#run");

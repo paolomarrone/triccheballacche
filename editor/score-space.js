@@ -14,10 +14,14 @@ export function scoreSpace(canvas, message, pick, fail) {
     controls.minDistance = 8;
     controls.maxDistance = 800;
     const ray = new THREE.Raycaster(), pointer = new THREE.Vector2(), transform = new THREE.Object3D(), tint = new THREE.Color();
-    let world = new THREE.Group(), head, meshes = [], targets = [], state, previous, visible = false, flat = false;
-    let frame = 0, lost = false, reset = true, down;
+    let world = new THREE.Group(), content = new THREE.Group(), head;
+    let meshes = [], targets = [], ticks = [], state, previous, visible = false, flat = false;
+    let frame = 0, lost = false, reset = true, down, origin = 0;
     const length = 80, spacing = 5;
-    scene.add(world);
+    const clip = [new THREE.Plane(new THREE.Vector3(1, 0, 0), length / 2),
+        new THREE.Plane(new THREE.Vector3(-1, 0, 0), length / 2)];
+    renderer.localClippingEnabled = true;
+    scene.add(world); world.add(content);
     const help = "Drag to orbit · right-drag to pan · wheel to zoom · Shift+wheel to pan time · Alt+wheel to zoom time";
     canvas.title = help;
 
@@ -33,18 +37,18 @@ export function scoreSpace(canvas, message, pick, fail) {
             object.material?.dispose();
         });
         scene.remove(world);
-        world = new THREE.Group(); scene.add(world);
-        meshes = []; targets = []; head = undefined;
+        world = new THREE.Group(); content = new THREE.Group(); scene.add(world); world.add(content);
+        meshes = []; targets = []; ticks = []; head = undefined;
     }
 
-    function line(points, color, opacity = 1) {
+    function line(points, color, opacity = 1, parent = content) {
         const mesh = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(p => new THREE.Vector3(...p))),
-            new THREE.LineBasicMaterial({color, transparent: true, opacity}));
-        world.add(mesh);
+            new THREE.LineBasicMaterial({color, transparent: true, opacity, clippingPlanes: parent === content ? clip : null}));
+        parent.add(mesh);
         return mesh;
     }
 
-    function label(text, x, y, z, color) {
+    function label(text, x, y, z, color, parent = world) {
         const image = document.createElement("canvas");
         const ctx = image.getContext("2d");
         ctx.font = "32px system-ui";
@@ -55,7 +59,7 @@ export function scoreSpace(canvas, message, pick, fail) {
         texture.colorSpace = THREE.SRGBColorSpace;
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: texture, depthTest: false}));
         sprite.position.set(x, y, z); sprite.scale.set(image.width / image.height * 3, 3, 1);
-        world.add(sprite);
+        parent.add(sprite);
         return sprite;
     }
 
@@ -65,33 +69,38 @@ export function scoreSpace(canvas, message, pick, fail) {
         renderer.setClearColor(dark ? "#171b20" : "#f5f7f9");
         if (!score) return;
         const depth = Math.max(spacing, score.tracks.length * spacing);
-        const x = t => Math.max(-length / 2, Math.min(length / 2, (t - view.from) / (view.to - view.from) * length - length / 2));
+        origin = data?.from ?? view.from;
+        const end = data?.to ?? view.to;
+        const x = t => (Math.max(origin, Math.min(end, t)) - origin) / view.span * length - length / 2;
         const z = i => (i - (score.tracks.length - 1) / 2) * spacing;
         const sources = score.tracks.filter(t => t[0] >= 0).map(t => score.nodes[t[0]]);
         const base = Math.floor(Math.min(...sources.map(n => n.low), 48) / 12) * 12;
         const top = Math.max(...sources.map(n => n.high), base + 12);
         const pitchY = pitch => 1 + (pitch - base) * .25;
         const ink = dark ? "#adb3ba" : "#59616a", grid = dark ? "#45515d" : "#bac7d0";
-        const digits = Math.max(0, Math.min(6, 1 - Math.floor(Math.log10((view.to - view.from) / 8))));
-        for (let j = 0; j <= 8; ++j) {
-            const t = view.from + (view.to - view.from) * j / 8;
+        const rawStep = Math.max(view.span / 8, (end - origin) / 24);
+        const power = 10 ** Math.floor(Math.log10(rawStep));
+        const step = [1, 2, 5, 10].find(n => n * power >= rawStep) * power;
+        const digits = Math.max(0, -Math.floor(Math.log10(step)));
+        for (let j = Math.ceil(origin / step); j * step <= end; ++j) {
+            const t = j * step;
             line([[x(t), 0, -depth / 2], [x(t), 0, depth / 2]], grid, .4);
-            label(`${Number(t.toFixed(digits))}s`, x(t), 0, depth / 2 + 4, ink);
+            ticks.push(label(`${Number(t.toFixed(digits))}s`, x(t), 0, depth / 2 + 4, ink, content));
         }
         score.tracks.forEach((_, i) => {
-            line([[-length / 2, 0, z(i)], [length / 2, 0, z(i)]], color(i), .35);
+            line([[-length / 2, 0, z(i)], [length / 2, 0, z(i)]], color(i), .35, world);
             const title = label(String(i + 1), -length / 2 - 3, 0, z(i), color(i));
             title.userData.hit = {track: i, revision: score.revision}; targets.push(title);
             const lane = data?.lanes[i - data.first];
-            const events = lane?.notes?.filter(n => n[2] > view.from && n[1] < view.to) || [];
+            const events = lane?.notes || [];
             // Dense windows retain pitch extents and counts rather than inventing individual notes.
             const bins = lane?.density?.flatMap(([count, low, high], j, all) => {
                 const a = data.from + (data.to - data.from) * j / all.length, b = a + (data.to - data.from) / all.length;
-                return count && b > view.from && a < view.to ? [{a, b, low, high, count}] : [];
+                return count ? [{a, b, low, high, count}] : [];
             }) || [];
             if (!events.length && !bins.length) return;
             const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
-                new THREE.MeshStandardMaterial({color: color(i), transparent: true, roughness: .5, metalness: .1}), events.length + bins.length);
+                new THREE.MeshStandardMaterial({color: color(i), transparent: true, roughness: .5, metalness: .1, clippingPlanes: clip}), events.length + bins.length);
             const entries = [...events.map(note => ({a: note[1], b: note[2], low: note[3], high: note[3], note})), ...bins];
             entries.forEach((entry, index) => {
                 const {a, b, low, high, note} = entry, pitch = (low + high) / 2;
@@ -102,7 +111,7 @@ export function scoreSpace(canvas, message, pick, fail) {
                 mesh.setColorAt(index, tint.setScalar(note ? .45 + note[4] / 127 * .55 : .65));
             });
             mesh.userData.entries = entries; mesh.userData.track = i; mesh.userData.revision = data.revision;
-            world.add(mesh); meshes.push(mesh); targets.push(mesh);
+            content.add(mesh); meshes.push(mesh); targets.push(mesh);
         });
         for (const {index, parameter: p, result} of curves) {
             const y = value => .6 + automationRatio(p.p, value) * (flat ? 2 : 5);
@@ -111,7 +120,7 @@ export function scoreSpace(canvas, message, pick, fail) {
             const path = [];
             for (let j = 0; j < points.length; ++j) {
                 const [a, value] = points[j], b = points[j + 1]?.[0] ?? result.to;
-                if (b <= view.from || a >= view.to) continue;
+                if (b <= origin || a >= end) continue;
                 path.push([x(a), flat ? .6 : y(value), z(index) + (flat ? y(value) : 1.6)],
                     [x(b), flat ? .6 : y(value), z(index) + (flat ? y(value) : 1.6)]);
             }
@@ -121,17 +130,17 @@ export function scoreSpace(canvas, message, pick, fail) {
                 result.bins.forEach(([low, high], j, bins) => {
                     const a = result.from + (result.to - result.from) * j / bins.length;
                     const b = a + (result.to - result.from) / bins.length;
-                    if (b <= view.from || a >= view.to) return;
+                    if (b <= origin || a >= end) return;
                     const t = (x(a) + x(b)) / 2;
                     extents.push(new THREE.Vector3(t, flat ? .6 : y(low), z(index) + (flat ? y(low) : 1.6)),
                         new THREE.Vector3(t, flat ? .6 : y(high), z(index) + (flat ? y(high) : 1.6)));
                 });
-                world.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(extents),
-                    new THREE.LineBasicMaterial({color: `hsl(${p.hue}, 65%, ${dark ? 70 : 38}%)`, transparent: true, opacity: .25})));
+                content.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(extents),
+                    new THREE.LineBasicMaterial({color: `hsl(${p.hue}, 65%, ${dark ? 70 : 38}%)`, transparent: true, opacity: .25, clippingPlanes: clip})));
             }
         }
         if (!flat) {
-            line([[-length / 2 - 6, 0, depth / 2], [-length / 2 - 6, pitchY(top), depth / 2]], grid, .6);
+            line([[-length / 2 - 6, 0, depth / 2], [-length / 2 - 6, pitchY(top), depth / 2]], grid, .6, world);
             for (let pitch = base; pitch <= top; pitch += 12)
                 label(`C${pitch / 12 - 1}`, -length / 2 - 9, pitchY(pitch), depth / 2, ink);
         }
@@ -141,8 +150,8 @@ export function scoreSpace(canvas, message, pick, fail) {
             color: dark ? "#ffd377" : "#995b00", opacity: .06, transparent: true, side: THREE.DoubleSide, depthWrite: false
         }));
         plane.rotation.y = Math.PI / 2; plane.position.y = headHeight / 2; head.add(plane);
-        const edge = line([[0, .1, -depth / 2], [0, .1, depth / 2]], dark ? "#ffd377" : "#995b00");
-        head.add(edge); world.add(head);
+        line([[0, .1, -depth / 2], [0, .1, depth / 2]], dark ? "#ffd377" : "#995b00", 1, head);
+        world.add(head);
         if (reset) home();
     }
 
@@ -151,7 +160,7 @@ export function scoreSpace(canvas, message, pick, fail) {
         const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
         const extent = Math.max(length + 12, depth + 15) * Math.max(1, 1 / Math.max(.25, aspect));
         controls.target.set(0, 0, depth * .09);
-        camera.position.set(flat ? 0 : -extent * .56, extent * (flat ? 1.65 : 1.12), flat ? .01 : extent * 1.17);
+        camera.position.set(flat ? 0 : -extent * .56, extent * (flat ? 1.65 : 1.12), flat ? controls.target.z + .01 : extent * 1.17);
         camera.lookAt(controls.target); controls.update();
         reset = false;
         schedule();
@@ -169,19 +178,23 @@ export function scoreSpace(canvas, message, pick, fail) {
         }
         const {score, data, view, curves, dark, time, playing, selected, audible} = state;
         if (!previous || previous.score !== score || previous.data !== data || previous.dark !== dark ||
-            previous.view.from !== view.from || previous.view.to !== view.to ||
+            previous.view.span !== view.span ||
             previous.curves.length !== curves.length || curves.some((c, i) => c.result !== previous.curves[i].result || c.parameter !== previous.curves[i].parameter)) {
             reset ||= previous?.score?.tracks.length !== score?.tracks.length;
             build();
         }
         previous = state;
+        // Geometry is anchored to the buffer. Follow moves it under a stationary
+        // playhead; clipping keeps the prefetched edges outside the visible score.
+        content.position.x = (origin - view.from) / view.span * length;
+        for (const tick of ticks) tick.visible = Math.abs(tick.position.x + content.position.x) <= length / 2;
         let count = 0, active = 0;
         for (const mesh of meshes) {
             const track = mesh.userData.track;
             mesh.material.opacity = audible(track) ? 1 : .2;
             mesh.userData.entries.forEach(({note}, i) => {
                 if (!note) return;
-                ++count;
+                if (note[2] > view.from && note[1] < view.to) ++count;
                 const sounding = playing && time >= note[1] && time < Math.max(note[2], note[1] + .1);
                 if (sounding) ++active;
                 const chosen = selected?.node === score.tracks[track][0] && selected.order === note[0] && selected.start === note[1];
@@ -191,7 +204,7 @@ export function scoreSpace(canvas, message, pick, fail) {
             mesh.instanceColor.needsUpdate = true;
         }
         if (head) {
-            head.position.x = (time - view.from) / (view.to - view.from) * length - length / 2;
+            head.position.x = (time - view.from) / view.span * length - length / 2;
             head.visible = time >= view.from && time <= view.to;
         }
         message.hidden = !!score;
@@ -203,6 +216,8 @@ export function scoreSpace(canvas, message, pick, fail) {
         canvas.dataset.revision = score?.revision || 0;
         canvas.dataset.from = view.from;
         canvas.dataset.to = view.to;
+        canvas.dataset.bufferFrom = data?.from ?? view.from;
+        canvas.dataset.bufferTo = data?.to ?? view.to;
         canvas.dataset.time = time;
         canvas.setAttribute("aria-label", `Spatial score, ${view.from.toFixed(2)}–${view.to.toFixed(2)} seconds. ${score?.tracks.length || 0} tracks. ${help}`);
         renderer.render(scene, camera);
@@ -219,7 +234,7 @@ export function scoreSpace(canvas, message, pick, fail) {
         const rect = canvas.getBoundingClientRect();
         pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
         ray.setFromCamera(pointer, camera);
-        const found = ray.intersectObjects(targets)[0];
+        const found = ray.intersectObjects(targets).find(h => !h.object.isInstancedMesh || Math.abs(h.point.x) <= length / 2);
         if (!found) return;
         if (found.instanceId === undefined) return found.object.userData.hit;
         const track = found.object.userData.track, entry = found.object.userData.entries[found.instanceId];

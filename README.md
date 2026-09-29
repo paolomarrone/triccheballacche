@@ -142,11 +142,11 @@ functions. Editing suspends tracking until the buffer matches the running score
 or is rerun. The timeline shows tracks, effect chains and MIDI notes from the last
 successful run; it remains after Stop or a failed preparation. Drag or Shift+wheel
 to pan, wheel to zoom in time, and Ctrl/Command+wheel to resize all tracks together.
-**Follow** keeps playback in view; wheel over track names or use the scrollbar to
-move vertically between tracks. Cached notes
-remain visible during navigation, with density replacing individual notes when
-needed. Clicking a note selects its source when available. Seeking restores
-automation and retriggers notes spanning the destination; envelopes start anew
+**Follow** scrolls the score under the playhead; wheel over track names or use the
+scrollbar to move vertically between tracks. Notes and automation are prefetched
+beyond the viewport and remain visible during navigation, with density replacing
+individual notes when needed. Clicking a note selects its source when available.
+Seeking restores automation and retriggers notes spanning the destination; envelopes start anew
 and delay/reverb history is cleared. It never renders the intervening audio,
 including for unbounded scores. Timing follows
 rendered audio, without compensating for device latency or plugin release tails.
@@ -155,9 +155,10 @@ The **Tracks** and **Score** tabs share the time window, playback, source select
 automation choices and mute/solo state. Score projects time, MIDI pitch and tracks
 into three dimensions, using the same bounded queries even for unbounded pieces.
 Drag to orbit, right-drag to pan the camera, and wheel to zoom. Shift+wheel pans
-time; Alt+wheel or `+`/`-` zooms time. **Flatten** provides a top view; **↺** resets
-the camera. Click a note for its source or a track number for its plugins. Each tab
-remembers its panel height; drag the divider to resize it.
+time; Alt+wheel or `+`/`-` zooms time. **Flatten** provides a top view with time
+running from left to right; **↺** resets the camera. Click a note for its source
+or a track number for its plugins. Each tab remembers its panel height; drag the
+divider to resize it.
 Note flashes follow scheduled events, with a minimum pulse for short notes;
 they do not measure audio levels or effect tails. Automation height uses each
 parameter's range, independently of pitch. Three.js is served locally and loaded
