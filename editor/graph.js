@@ -109,15 +109,19 @@ export function routeRows(rows, graph, width, row) {
         const x = a.x + a.width, y = a.y + (out - .5) * 14, target = b.y + (input - .5) * 14;
         edge.points = [[x, y]];
         if (!edge.direct) {
-            const leave = x + a.gap * (.15 + (1 - out) * .3);
             const enter = b.x - (b.column ? b.gap : 18) * (.15 + input * .3);
-            const bottom = between(a.y + 11, (a.track + 1) * row - 1, fraction(departures[a.track], edge));
-            edge.points.push([leave, y], [leave, bottom]);
+            let exit = y;
+            // Only bypass blocks when there are more of them to the right.
+            if (a.column + 1 < rows.columns[a.track]) {
+                const leave = x + a.gap * (.15 + (1 - out) * .3);
+                exit = between(a.y + 11, (a.track + 1) * row - 1, fraction(departures[a.track], edge));
+                edge.points.push([leave, y], [leave, exit]);
+            }
             if (edge.rail !== undefined) {
                 const rail = width - 66 - edge.rail * railWidth / Math.max(1, ends.length);
                 const top = between(b.track * row + 18, b.y - 11, fraction(arrivals[b.track], edge));
-                edge.points.push([rail, bottom], [rail, top], [enter, top]);
-            } else edge.points.push([enter, bottom]);
+                edge.points.push([rail, exit], [rail, top], [enter, top]);
+            } else edge.points.push([enter, exit]);
             edge.points.push([enter, target]);
         }
         edge.points.push([b.x, target]);

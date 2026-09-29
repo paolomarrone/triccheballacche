@@ -73,6 +73,11 @@ for (const inputs of [
     for (const width of [140, 380]) for (const height of [44, 60]) {
         const layout = routeRows(rows, graph, width, height);
         assert.deepEqual(routeRows(rows, graph, width, height), layout, "Compact routing is deterministic");
+        for (const edge of layout.edges) {
+            assert.equal(edge.points[0][1], edge.points[1][1], "The last block's output leaves horizontally");
+            assert.equal(Math.floor(edge.points[2][1] / height), layout.nodes.get(edge.to).track,
+                "The next bend is in the destination lane, without a step below the source block");
+        }
         const segments = layout.edges.flatMap(e => e.points.slice(1).map((p, i) => [e.points[i], p]));
         for (const node of layout.nodes.values()) {
             assert.equal(node.x, inputs[node.id / 2].length ? 26 : 8, "Processing lanes have an 18px indent; instruments stay aligned");
