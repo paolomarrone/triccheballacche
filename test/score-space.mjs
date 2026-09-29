@@ -33,6 +33,13 @@ try {
             await call("Page.navigate", {url});
             await wait('document.querySelector("#run")?.disabled === false');
             assert(!await evaluate('performance.getEntriesByType("resource").some(r => r.name.includes("three.module"))'), "Tracks does not load Three.js");
+            await click("#tab-score");
+            await wait('document.querySelector("#score-canvas").dataset.projection === "3d"');
+            await click("#score-flat");
+            await click("#score-canvas");
+            assert.deepEqual(diagnostics, [], "An empty 2D score remains interactive before Run");
+            await click("#score-flat");
+            await click("#tab-tracks");
             await click("#run");
             await wait('Number(document.querySelector("#notes").dataset.notes) > 0');
             await click("#tab-score");
@@ -45,19 +52,94 @@ try {
             assert.equal(await evaluate('document.querySelector("#score-message").hidden'), true);
             await click("#score-flat");
             assert.equal(await evaluate('document.querySelector("#score-flat").getAttribute("aria-pressed")'), "true");
-            await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
-            const direction = await evaluate(`(() => {
-                const c = document.querySelector('#score-canvas'), r = c.getBoundingClientRect(), notes = new Map();
-                for (let y = r.top + 20; y < r.bottom - 20; y += 4) for (let x = r.left + 20; x < r.right - 20; x += 4) {
+            const painted = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+            const hoverNote = async (track, late = false) => {
+                await painted();
+                const hit = await evaluate(`(() => {
+                    const c = document.querySelector('#score-canvas'), r = c.getBoundingClientRect(), d = c.dataset;
+                    const lane = document.querySelectorAll('#track-list .track')[${track}].getBoundingClientRect();
+                    const height = Math.max(2, Math.min(9, (lane.height - 16) / 17));
+                    const x = r.left + (${late ? 7.25 : 2} - Number(d.from)) / (Number(d.to) - Number(d.from)) * r.width;
+                    const y = lane.top + lane.height - 8 - ${late ? 14 : 2} * (lane.height - 16) / 17 - height / 2;
                     c.dispatchEvent(new PointerEvent('pointermove', {clientX: x, clientY: y}));
-                    const hit = c.title.match(/^Track 1 · MIDI [0-9]+ · ([0-9.]+)–/);
-                    if (hit) notes.set(Number(hit[1]), x);
-                    if (notes.has(0) && notes.has(7)) return [notes.get(0), notes.get(7)];
-                }
+                    return {x, y, title: c.title};
+                })()`);
+                assert.match(hit.title, new RegExp(`Track ${track + 1} · .*MIDI ${60 + track + (late ? 12 : 0)}`),
+                    "2D note coordinates must align exactly with the DOM track rows");
+                return {x: hit.x, y: hit.y};
+            };
+            const wheel = (deltaY, modifiers = {}, target = "#score-canvas") => evaluate(`(() => {
+                const c = document.querySelector(${JSON.stringify(target)}), r = c.getBoundingClientRect();
+                c.dispatchEvent(new WheelEvent('wheel', {bubbles: true, cancelable: true, clientX: r.left + 100,
+                    clientY: r.top + 24, deltaY: ${deltaY}, ...${JSON.stringify(modifiers)}}));
             })()`);
-            assert(direction && direction[0] < direction[1], "Flatten must read earlier notes to the left of later notes");
+            const flatView = () => evaluate(`(() => {
+                const d = document.querySelector('#score-canvas').dataset;
+                return {span: Number(d.to) - Number(d.from), from: Number(d.from), scroll: document.querySelector('#roll').scrollTop,
+                    row: document.querySelector('#track-list .track').getBoundingClientRect().height};
+            })()`);
+            const early = await hoverNote(0), late = await hoverNote(0, true);
+            assert(early.x < late.x, "2D time runs from left to right");
+            await hoverNote(2);
+            await hoverNote(5);
+            const initial = await flatView();
+            await wheel(-100);
+            await painted();
+            const zoomed = await flatView();
+            assert(zoomed.span < initial.span && zoomed.row === initial.row, "Wheel zooms time without resizing tracks");
+            await wheel(-100, {ctrlKey: true});
+            await painted();
+            const taller = await flatView();
+            assert(taller.row > initial.row && Math.abs(taller.span - zoomed.span) < 1e-6, "Ctrl+wheel expands tracks without changing time");
+            await hoverNote(2);
+            await wheel(180, {}, "#track-headers");
+            await painted();
+            assert((await flatView()).scroll > 0, "The track names scroll both labels and the 2D score");
+            await hoverNote(3);
+            await wheel(100, {metaKey: true});
+            await painted();
+            assert(Math.abs((await flatView()).row - initial.row) < 1, "Command+wheel can shrink the tracks again");
+            await hoverNote(3);
+            const panStart = await hoverNote(3), beforePan = await flatView();
+            await call("Input.dispatchMouseEvent", {type: "mousePressed", ...panStart, button: "left", clickCount: 1});
+            await call("Input.dispatchMouseEvent", {type: "mouseMoved", x: panStart.x - 40, y: panStart.y - 40, buttons: 1});
+            await call("Input.dispatchMouseEvent", {type: "mouseReleased", x: panStart.x - 40, y: panStart.y - 40, button: "left", clickCount: 1});
+            await painted();
+            const panned = await flatView();
+            assert(panned.from > beforePan.from && panned.scroll > beforePan.scroll, "Dragging pans both axes in 2D");
+            await wheel(100);
+            await evaluate('document.querySelector("#roll").scrollTop = 0');
+            await wheel(1000, {ctrlKey: true});
+            await painted();
+            assert.equal((await flatView()).row, 44, "Compact tracks keep their controls usable");
+            await wait('document.querySelector("#score-canvas").dataset.automation === "10"');
+            await hoverNote(9);
+            const selectedNote = await hoverNote(0);
+            for (const type of ["mousePressed", "mouseReleased"])
+                await call("Input.dispatchMouseEvent", {type, ...selectedNote, button: "left", clickCount: 1});
+            await wait('document.querySelector("#note-info").title.length > 0');
+            assert.match(await evaluate('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd)'), /\[:note/);
+            const curve = await evaluate(`(() => {
+                const c = document.querySelector('#score-canvas'), r = c.getBoundingClientRect(), d = c.dataset;
+                const lane = document.querySelector('#track-list .track').getBoundingClientRect();
+                return {x: r.left + (2 - Number(d.from)) / (Number(d.to) - Number(d.from)) * r.width,
+                    y: lane.bottom - 8 - .002 * (lane.height - 16)};
+            })()`);
+            await call("Input.dispatchMouseEvent", {type: "mouseMoved", ...curve});
+            assert.match(await evaluate('document.querySelector("#score-canvas").title'), /Intensity .*0[.,]002/);
+            for (const type of ["mousePressed", "mouseReleased"])
+                await call("Input.dispatchMouseEvent", {type, ...curve, button: "left", clickCount: 1});
+            await wait('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd).includes("[:param")');
+            await writeFile(`build/test/score-flat-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
+            const rulerPoint = {...curve, y: await evaluate('document.querySelector("#score-canvas").getBoundingClientRect().top + 10')};
+            for (const type of ["mousePressed", "mouseReleased"])
+                await call("Input.dispatchMouseEvent", {type, ...rulerPoint, button: "left", clickCount: 1});
+            await wait('Math.abs(Number(document.querySelector("#score-canvas").dataset.time) - 2) < .05');
+            await click("#follow");
             await click("#score-flat");
             await click("#score-reset");
+            await painted();
+            await wait('document.querySelector("#score-canvas").dataset.automation === "10"');
             // Find a rendered note through real ray casting, then select its Janet origin.
             const point = await evaluate(`(() => {
                 const c = document.querySelector('#score-canvas'), r = c.getBoundingClientRect();
@@ -69,8 +151,7 @@ try {
             assert(point, "Spatial notes must be pickable");
             for (const type of ["mousePressed", "mouseReleased"])
                 await call("Input.dispatchMouseEvent", {type, ...point, button: "left", clickCount: 1});
-            await wait('document.querySelector("#note-info").title.length > 0');
-            assert.match(await evaluate('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd)'), /\[:note/);
+            await wait('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd).includes("[:note")');
             await click('#track-list [data-listen="1"]');
             await wait('document.querySelector("#track-list .track-listen button").getAttribute("aria-pressed") === "true"');
             await click("#show-automation");
@@ -201,7 +282,7 @@ try {
             assert.deepEqual(diagnostics, []);
             await evaluate("window.onbeforeunload = null");
             await call("Page.navigate", {url: "about:blank"});
-            console.log(`OK: ${mode} spatial score, source picking, shared automation/mute, seek, live revisions, recovery and context restoration`);
+            console.log(`OK: ${mode} 2D/3D score, aligned/scalable tracks, navigation, sources, automation, follow, live revisions and context restoration`);
         }, {graphics: true});
         if (app) { await app.close(); app = undefined; }
     }

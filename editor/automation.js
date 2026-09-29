@@ -18,7 +18,7 @@ export function automationRatio({minimum: min, maximum: max, map}, value) {
 // Selection and one bounded window of immutable score automation, independent of DSP/UI readings.
 export function automation(request, changed) {
     const toggle = document.getElementById("show-automation"), menu = document.getElementById("automation-parameters");
-    let score, choices = [], selected = [], data = [], hits = [];
+    let score, choices = [], selected = [], data = [];
     let visible = true, anchor;
     toggle.onclick = () => {
         visible = !visible;
@@ -143,7 +143,6 @@ export function automation(request, changed) {
                 visible && !result.stale && result.revision === score.revision && selected[index].has(key));
         },
         draw(context, view, {label, scale, row, scroll, ruler, width, dark}) {
-            hits = [];
             let curves = 0, dense = false;
             if (!visible) return {curves, dense};
             context.save();
@@ -167,19 +166,15 @@ export function automation(request, changed) {
                             context.globalAlpha = .17;
                             context.fillRect(x(a), y(high), Math.max(1, x(b) - x(a)), Math.max(1, y(low) - y(high)));
                             context.moveTo(x(a), y(previous)); context.lineTo(x(b), y(last));
-                            hits.push({x: x(a), y: y(high) - 4, w: x(b) - x(a), h: y(low) - y(high) + 8,
-                                node: p.node, order: -1, text: `${p.name} · ${valueText(p.p, low)}–${valueText(p.p, high)} · zoom in for individual changes`});
                         }
                         previous = last;
                     });
                 } else {
-                    result.points.forEach(([a, value, order], i) => {
+                    result.points.forEach(([a, value], i) => {
                         const b = result.points[i + 1]?.[0] ?? result.to;
                         if (b <= view.from || a >= view.to) return;
                         context.moveTo(x(a), y(value)); context.lineTo(x(b), y(value));
                         if (result.points[i + 1] && b < view.to) context.lineTo(x(b), y(result.points[i + 1][1]));
-                        hits.push({x: x(a), y: y(value) - 4, w: x(b) - x(a), h: 8,
-                            node: p.node, order, text: `${p.name} · ${valueText(p.p, value)}`});
                     });
                 }
                 context.globalAlpha = .85;
@@ -188,9 +183,22 @@ export function automation(request, changed) {
             context.restore();
             return {curves, dense};
         },
-        hit(x, y, time) {
-            const found = hits.findLast(h => x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h);
-            return found ? {...found, text: `${found.text} · ${time.toFixed(3)} s`} : null;
+        hit(view, {row, ruler, scroll}, y, time) {
+            const lane = Math.floor((y - ruler + scroll) / row);
+            for (const {index, parameter: p, result} of visibleCurves(view).reverse()) {
+                if (index !== lane || time < result.from || time >= result.to) continue;
+                const point = result.points?.findLast(([t]) => t <= time);
+                const bin = result.bins?.[Math.min(result.bins.length - 1, Math.floor((time - result.from) / (result.to - result.from) * result.bins.length))];
+                if (!point && !bin) continue;
+                const [low, high] = bin || [point[1], point[1]];
+                const top = ruler + index * row - scroll;
+                const a = top + row - 8 - automationRatio(p.p, low) * (row - 16);
+                const b = top + row - 8 - automationRatio(p.p, high) * (row - 16);
+                if (y < Math.min(a, b) - 4 || y > Math.max(a, b) + 4) continue;
+                const value = bin ? `${valueText(p.p, low)}–${valueText(p.p, high)} · zoom in for individual changes` : valueText(p.p, low);
+                return {node: p.node, order: point?.[2] ?? -1, text: `${p.name} · ${value} · ${time.toFixed(3)} s`};
+            }
+            return null;
         }
     };
 }

@@ -3,9 +3,12 @@ import {OrbitControls} from "./vendor/three/OrbitControls.js";
 import {automationRatio} from "./automation.js";
 
 // A renderer of the shared viewport. It owns no score queries, transport or audition state.
-export function scoreSpace(canvas, message, pick, fail) {
+export function scoreSpace(canvas, message, fail) {
+    const length = 80, spacing = 5;
     const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
     const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(38, 1, 0.1, 2000);
+    const plan = new THREE.OrthographicCamera(-length / 2, length / 2, 1, -1, .1, 2000);
+    plan.position.z = 100;
     scene.add(new THREE.HemisphereLight("#ffffff", "#455166", 2));
     const light = new THREE.DirectionalLight("#ffffff", 2);
     light.position.set(-30, 80, 40); scene.add(light);
@@ -14,12 +17,13 @@ export function scoreSpace(canvas, message, pick, fail) {
     controls.minDistance = 8;
     controls.maxDistance = 800;
     const ray = new THREE.Raycaster(), pointer = new THREE.Vector2(), transform = new THREE.Object3D(), tint = new THREE.Color();
-    let world = new THREE.Group(), content = new THREE.Group(), head;
+    let world = new THREE.Group(), content = new THREE.Group(), head, rulerBand;
     let meshes = [], targets = [], ticks = [], state, previous, visible = false, flat = false;
-    let frame = 0, lost = false, reset = true, down, origin = 0;
-    const length = 80, spacing = 5;
-    const clip = [new THREE.Plane(new THREE.Vector3(1, 0, 0), length / 2),
+    let frame = 0, lost = false, reset = true, origin = 0, trackCount;
+    const sides = [new THREE.Plane(new THREE.Vector3(1, 0, 0), length / 2),
         new THREE.Plane(new THREE.Vector3(-1, 0, 0), length / 2)];
+    const ceiling = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+    let clip = sides;
     renderer.localClippingEnabled = true;
     scene.add(world); world.add(content);
     const help = "Drag to orbit · right-drag to pan · wheel to zoom · Shift+wheel to pan time · Alt+wheel to zoom time";
@@ -38,7 +42,7 @@ export function scoreSpace(canvas, message, pick, fail) {
         });
         scene.remove(world);
         world = new THREE.Group(); content = new THREE.Group(); scene.add(world); world.add(content);
-        meshes = []; targets = []; ticks = []; head = undefined;
+        meshes = []; targets = []; ticks = []; head = rulerBand = undefined;
     }
 
     function line(points, color, opacity = 1, parent = content) {
@@ -58,14 +62,18 @@ export function scoreSpace(canvas, message, pick, fail) {
         const texture = new THREE.CanvasTexture(image);
         texture.colorSpace = THREE.SRGBColorSpace;
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: texture, depthTest: false}));
-        sprite.position.set(x, y, z); sprite.scale.set(image.width / image.height * 3, 3, 1);
+        const size = flat ? 24 * length / state.layout.width : 3;
+        sprite.position.set(x, y, z); sprite.scale.set(image.width / image.height * size, size, 1);
+        if (flat) sprite.renderOrder = 4;
         parent.add(sprite);
         return sprite;
     }
 
     function build() {
         clear();
-        const {score, data, view, curves, dark} = state;
+        const {score, data, view, curves, dark, layout, pitchRange} = state;
+        const {row, ruler, width} = layout, pixel = length / width;
+        clip = flat ? [...sides, ceiling] : sides;
         renderer.setClearColor(dark ? "#171b20" : "#f5f7f9");
         if (!score) return;
         const depth = Math.max(spacing, score.tracks.length * spacing);
@@ -77,20 +85,29 @@ export function scoreSpace(canvas, message, pick, fail) {
         const base = Math.floor(Math.min(...sources.map(n => n.low), 48) / 12) * 12;
         const top = Math.max(...sources.map(n => n.high), base + 12);
         const pitchY = pitch => 1 + (pitch - base) * .25;
+        const ranges = score.tracks.map(pitchRange);
+        const rowPitch = (i, pitch) => {
+            const [low, high] = ranges[i];
+            return row - 8 - (pitch - low) * (row - 16) / (high - low + 1);
+        };
         const ink = dark ? "#adb3ba" : "#59616a", grid = dark ? "#45515d" : "#bac7d0";
-        const rawStep = Math.max(view.span / 8, (end - origin) / 24);
+        const rawStep = Math.max(flat ? view.span * 85 / width : view.span / 8, (end - origin) / (flat ? 64 : 24));
         const power = 10 ** Math.floor(Math.log10(rawStep));
         const step = [1, 2, 5, 10].find(n => n * power >= rawStep) * power;
         const digits = Math.max(0, -Math.floor(Math.log10(step)));
         for (let j = Math.ceil(origin / step); j * step <= end; ++j) {
             const t = j * step;
-            line([[x(t), 0, -depth / 2], [x(t), 0, depth / 2]], grid, .4);
-            ticks.push(label(`${Number(t.toFixed(digits))}s`, x(t), 0, depth / 2 + 4, ink, content));
+            line(flat ? [[x(t), 0, 0], [x(t), -score.tracks.length * row * pixel, 0]] :
+                [[x(t), 0, -depth / 2], [x(t), 0, depth / 2]], grid, .4);
+            ticks.push(label(`${Number(t.toFixed(digits))}s`, x(t), 0, flat ? 0 : depth / 2 + 4, ink, content));
         }
         score.tracks.forEach((_, i) => {
-            line([[-length / 2, 0, z(i)], [length / 2, 0, z(i)]], color(i), .35, world);
-            const title = label(String(i + 1), -length / 2 - 3, 0, z(i), color(i));
-            title.userData.hit = {track: i, revision: score.revision}; targets.push(title);
+            if (flat) line([[-length / 2, -(i + 1) * row * pixel, 0], [length / 2, -(i + 1) * row * pixel, 0]], grid, .6, world);
+            else {
+                line([[-length / 2, 0, z(i)], [length / 2, 0, z(i)]], color(i), .35, world);
+                const title = label(String(i + 1), -length / 2 - 3, 0, z(i), color(i));
+                title.userData.hit = {track: i, revision: score.revision}; targets.push(title);
+            }
             const lane = data?.lanes[i - data.first];
             const events = lane?.notes || [];
             // Dense windows retain pitch extents and counts rather than inventing individual notes.
@@ -99,14 +116,23 @@ export function scoreSpace(canvas, message, pick, fail) {
                 return count ? [{a, b, low, high, count}] : [];
             }) || [];
             if (!events.length && !bins.length) return;
-            const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1),
-                new THREE.MeshStandardMaterial({color: color(i), transparent: true, roughness: .5, metalness: .1, clippingPlanes: clip}), events.length + bins.length);
+            const material = {color: color(i), transparent: true, clippingPlanes: clip};
+            const mesh = new THREE.InstancedMesh(flat ? new THREE.PlaneGeometry(1, 1) : new THREE.BoxGeometry(1, 1, 1),
+                flat ? new THREE.MeshBasicMaterial({...material, depthTest: false, depthWrite: false}) :
+                    new THREE.MeshStandardMaterial({...material, roughness: .5, metalness: .1}), events.length + bins.length);
+            if (flat) mesh.renderOrder = 1;
             const entries = [...events.map(note => ({a: note[1], b: note[2], low: note[3], high: note[3], note})), ...bins];
             entries.forEach((entry, index) => {
-                const {a, b, low, high, note} = entry, pitch = (low + high) / 2;
-                transform.position.set((x(a) + x(b)) / 2, flat ? .4 : (pitchY(low) + pitchY(high)) / 2,
-                    z(i) + (flat ? (pitch - 64) / 127 * 3.2 : 0));
-                transform.scale.set(Math.max(.12, x(b) - x(a)), flat ? .3 : Math.max(.4, pitchY(high) - pitchY(low)), .85);
+                const {a, b, low, high, note} = entry;
+                if (flat) {
+                    const height = Math.max(2, Math.min(9, (row - 16) / (ranges[i][1] - ranges[i][0] + 1)));
+                    const bottom = rowPitch(i, low), top = rowPitch(i, high) - height;
+                    transform.position.set((x(a) + x(b)) / 2, -(i * row + (top + bottom) / 2) * pixel, 0);
+                    transform.scale.set(Math.max(pixel, x(b) - x(a)), (bottom - top) * pixel, 1);
+                } else {
+                    transform.position.set((x(a) + x(b)) / 2, (pitchY(low) + pitchY(high)) / 2, z(i));
+                    transform.scale.set(Math.max(.12, x(b) - x(a)), Math.max(.4, pitchY(high) - pitchY(low)), .85);
+                }
                 transform.updateMatrix(); mesh.setMatrixAt(index, transform.matrix);
                 mesh.setColorAt(index, tint.setScalar(note ? .45 + note[4] / 127 * .55 : .65));
             });
@@ -114,44 +140,53 @@ export function scoreSpace(canvas, message, pick, fail) {
             content.add(mesh); meshes.push(mesh); targets.push(mesh);
         });
         for (const {index, parameter: p, result} of curves) {
-            const y = value => .6 + automationRatio(p.p, value) * (flat ? 2 : 5);
+            const point = (t, value) => {
+                const ratio = automationRatio(p.p, value);
+                return flat ? [x(t), -(index * row + row - 8 - ratio * (row - 16)) * pixel, 0] :
+                    [x(t), .6 + ratio * 5, z(index) + 1.6];
+            };
             const points = result.points || [[result.from, result.initial], ...result.bins.map((bin, j, bins) =>
                 [result.from + (result.to - result.from) * (j + 1) / bins.length, bin[2]])];
             const path = [];
             for (let j = 0; j < points.length; ++j) {
                 const [a, value] = points[j], b = points[j + 1]?.[0] ?? result.to;
                 if (b <= origin || a >= end) continue;
-                path.push([x(a), flat ? .6 : y(value), z(index) + (flat ? y(value) : 1.6)],
-                    [x(b), flat ? .6 : y(value), z(index) + (flat ? y(value) : 1.6)]);
+                path.push(point(a, value), point(b, value));
             }
-            if (path.length) line(path, `hsl(${p.hue}, 65%, ${dark ? 70 : 38}%)`, .65);
+            if (path.length) line(path, `hsl(${p.hue}, 65%, ${dark ? 70 : 38}%)`, flat ? .85 : .65).renderOrder = 2;
             if (result.bins) {
                 const extents = [];
                 result.bins.forEach(([low, high], j, bins) => {
                     const a = result.from + (result.to - result.from) * j / bins.length;
                     const b = a + (result.to - result.from) / bins.length;
                     if (b <= origin || a >= end) return;
-                    const t = (x(a) + x(b)) / 2;
-                    extents.push(new THREE.Vector3(t, flat ? .6 : y(low), z(index) + (flat ? y(low) : 1.6)),
-                        new THREE.Vector3(t, flat ? .6 : y(high), z(index) + (flat ? y(high) : 1.6)));
+                    const t = (a + b) / 2;
+                    extents.push(new THREE.Vector3(...point(t, low)), new THREE.Vector3(...point(t, high)));
                 });
                 content.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(extents),
                     new THREE.LineBasicMaterial({color: `hsl(${p.hue}, 65%, ${dark ? 70 : 38}%)`, transparent: true, opacity: .25, clippingPlanes: clip})));
             }
         }
-        if (!flat) {
+        if (flat) {
+            rulerBand = new THREE.Mesh(new THREE.PlaneGeometry(length, ruler * pixel), new THREE.MeshBasicMaterial({
+                color: dark ? "#171b20" : "#f5f7f9", transparent: true, depthTest: false, depthWrite: false
+            }));
+            rulerBand.renderOrder = 3; world.add(rulerBand);
+            head = line([[0, 0, 0], [0, -1, 0]], dark ? "#ffd377" : "#995b00", 1, world);
+            head.material.depthTest = false; head.renderOrder = 5;
+        } else {
             line([[-length / 2 - 6, 0, depth / 2], [-length / 2 - 6, pitchY(top), depth / 2]], grid, .6, world);
             for (let pitch = base; pitch <= top; pitch += 12)
                 label(`C${pitch / 12 - 1}`, -length / 2 - 9, pitchY(pitch), depth / 2, ink);
+            head = new THREE.Group();
+            const headHeight = Math.max(10, pitchY(top) + 2);
+            const plane = new THREE.Mesh(new THREE.PlaneGeometry(depth, headHeight), new THREE.MeshBasicMaterial({
+                color: dark ? "#ffd377" : "#995b00", opacity: .06, transparent: true, side: THREE.DoubleSide, depthWrite: false
+            }));
+            plane.rotation.y = Math.PI / 2; plane.position.y = headHeight / 2; head.add(plane);
+            line([[0, .1, -depth / 2], [0, .1, depth / 2]], dark ? "#ffd377" : "#995b00", 1, head);
+            world.add(head);
         }
-        head = new THREE.Group();
-        const headHeight = Math.max(10, pitchY(top) + 2);
-        const plane = new THREE.Mesh(new THREE.PlaneGeometry(depth, headHeight), new THREE.MeshBasicMaterial({
-            color: dark ? "#ffd377" : "#995b00", opacity: .06, transparent: true, side: THREE.DoubleSide, depthWrite: false
-        }));
-        plane.rotation.y = Math.PI / 2; plane.position.y = headHeight / 2; head.add(plane);
-        line([[0, .1, -depth / 2], [0, .1, depth / 2]], dark ? "#ffd377" : "#995b00", 1, head);
-        world.add(head);
         if (reset) home();
     }
 
@@ -160,7 +195,7 @@ export function scoreSpace(canvas, message, pick, fail) {
         const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
         const extent = Math.max(length + 12, depth + 15) * Math.max(1, 1 / Math.max(.25, aspect));
         controls.target.set(0, 0, depth * .09);
-        camera.position.set(flat ? 0 : -extent * .56, extent * (flat ? 1.65 : 1.12), flat ? controls.target.z + .01 : extent * 1.17);
+        camera.position.set(-extent * .56, extent * 1.12, extent * 1.17);
         camera.lookAt(controls.target); controls.update();
         reset = false;
         schedule();
@@ -176,25 +211,40 @@ export function scoreSpace(canvas, message, pick, fail) {
             renderer.setPixelRatio(ratio); renderer.setSize(width, height, false);
             camera.aspect = width / height; camera.updateProjectionMatrix();
         }
-        const {score, data, view, curves, dark, time, playing, selected, audible} = state;
+        const {score, data, view, curves, dark, time, playing, selected, audible, layout} = state;
+        const pixel = length / width;
+        if (flat) {
+            // Screen pixels and DOM track rows share one scale. Vertical scrolling
+            // moves the orthographic camera, not the note geometry.
+            plan.top = (layout.ruler - layout.scroll) * pixel;
+            plan.bottom = plan.top - height * pixel;
+            plan.updateProjectionMatrix();
+            ceiling.constant = -layout.scroll * pixel;
+        }
+        reset ||= trackCount !== score?.tracks.length;
+        trackCount = score?.tracks.length;
         if (!previous || previous.score !== score || previous.data !== data || previous.dark !== dark ||
             previous.view.span !== view.span ||
+            flat && (previous.layout.row !== layout.row || previous.layout.width !== layout.width) ||
             previous.curves.length !== curves.length || curves.some((c, i) => c.result !== previous.curves[i].result || c.parameter !== previous.curves[i].parameter)) {
-            reset ||= previous?.score?.tracks.length !== score?.tracks.length;
             build();
         }
         previous = state;
         // Geometry is anchored to the buffer. Follow moves it under a stationary
         // playhead; clipping keeps the prefetched edges outside the visible score.
         content.position.x = (origin - view.from) / view.span * length;
-        for (const tick of ticks) tick.visible = Math.abs(tick.position.x + content.position.x) <= length / 2;
+        for (const tick of ticks) {
+            tick.visible = Math.abs(tick.position.x + content.position.x) <= length / 2;
+            if (flat) tick.position.y = (layout.ruler / 2 - layout.scroll) * pixel;
+        }
+        if (rulerBand) rulerBand.position.y = (layout.ruler / 2 - layout.scroll) * pixel;
         let count = 0, active = 0;
         for (const mesh of meshes) {
             const track = mesh.userData.track;
             mesh.material.opacity = audible(track) ? 1 : .2;
             mesh.userData.entries.forEach(({note}, i) => {
                 if (!note) return;
-                if (note[2] > view.from && note[1] < view.to) ++count;
+                if (note[2] > view.from && note[1] < view.to && (!flat || track >= view.first && track < view.first + view.count)) ++count;
                 const sounding = playing && time >= note[1] && time < Math.max(note[2], note[1] + .1);
                 if (sounding) ++active;
                 const chosen = selected?.node === score.tracks[track][0] && selected.order === note[0] && selected.start === note[1];
@@ -206,9 +256,11 @@ export function scoreSpace(canvas, message, pick, fail) {
         if (head) {
             head.position.x = (time - view.from) / view.span * length - length / 2;
             head.visible = time >= view.from && time <= view.to;
+            if (flat) { head.position.y = plan.top; head.scale.y = height * pixel; }
         }
         message.hidden = !!score;
         canvas.dataset.notes = count;
+        canvas.dataset.projection = flat ? "2d" : "3d";
         canvas.dataset.active = active;
         canvas.dataset.dense = Boolean(data?.lanes.some(lane => lane.density));
         canvas.dataset.automation = curves.length;
@@ -219,8 +271,8 @@ export function scoreSpace(canvas, message, pick, fail) {
         canvas.dataset.bufferFrom = data?.from ?? view.from;
         canvas.dataset.bufferTo = data?.to ?? view.to;
         canvas.dataset.time = time;
-        canvas.setAttribute("aria-label", `Spatial score, ${view.from.toFixed(2)}–${view.to.toFixed(2)} seconds. ${score?.tracks.length || 0} tracks. ${help}`);
-        renderer.render(scene, camera);
+        canvas.setAttribute("aria-label", `${flat ? "2D" : "Spatial"} score, ${view.from.toFixed(2)}–${view.to.toFixed(2)} seconds. ${score?.tracks.length || 0} tracks.`);
+        renderer.render(scene, flat ? plan : camera);
     }
 
     function schedule() {
@@ -231,47 +283,41 @@ export function scoreSpace(canvas, message, pick, fail) {
     }
 
     function hit(event) {
+        if (!visible || lost || !state) return;
         const rect = canvas.getBoundingClientRect();
         pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
-        ray.setFromCamera(pointer, camera);
-        const found = ray.intersectObjects(targets).find(h => !h.object.isInstancedMesh || Math.abs(h.point.x) <= length / 2);
+        ray.setFromCamera(pointer, flat ? plan : camera);
+        const found = ray.intersectObjects(targets).find(h => !h.object.isInstancedMesh ||
+            Math.abs(h.point.x) <= length / 2 && (!flat || ceiling.distanceToPoint(h.point) >= 0));
         if (!found) return;
         if (found.instanceId === undefined) return found.object.userData.hit;
         const track = found.object.userData.track, entry = found.object.userData.entries[found.instanceId];
         return {track, revision: found.object.userData.revision, ...entry};
     }
-    canvas.addEventListener("pointerdown", event => { down = {x: event.clientX, y: event.clientY, button: event.button}; });
-    canvas.addEventListener("pointermove", event => {
-        if (!visible || lost) return;
-        if (down && Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) down = undefined;
-        const found = hit(event);
-        canvas.title = found?.note ? `Track ${found.track + 1} · MIDI ${found.note[3]} · ${found.a.toFixed(3)}–${found.b.toFixed(3)} s` :
-            found?.count ? `${found.count} notes · MIDI ${found.low}–${found.high} · zoom in for individual notes` :
-            found ? `Track ${found.track + 1} · click to open plugins` : help;
-    });
-    canvas.addEventListener("pointerup", event => {
-        if (down && !down.button && visible && !lost) { const found = hit(event); if (found) pick(found); }
-        down = undefined;
-    });
-    canvas.addEventListener("pointercancel", () => { down = undefined; });
     canvas.addEventListener("webglcontextlost", event => {
         event.preventDefault(); lost = true; controls.enabled = false;
         message.hidden = false; message.textContent = "Graphics context lost. Tracks remains available.";
     });
     canvas.addEventListener("webglcontextrestored", () => {
-        lost = false; controls.enabled = visible; previous = undefined;
+        lost = false; controls.enabled = visible && !flat; previous = undefined;
         message.textContent = "Run a score to see its notes"; schedule();
     });
     controls.addEventListener("change", schedule);
     const observer = new ResizeObserver(schedule); observer.observe(canvas);
     return {
-        update(value) { state = value; schedule(); },
+        update(value) {
+            if (flat !== value.flat) previous = undefined;
+            state = value; flat = value.flat;
+            controls.enabled = visible && !flat && !lost;
+            schedule();
+        },
         visible(value) {
-            visible = value; controls.enabled = value && !lost;
-            if (!value) { cancelAnimationFrame(frame); frame = 0; down = undefined; }
+            visible = value; controls.enabled = value && !flat && !lost;
+            if (!value) { cancelAnimationFrame(frame); frame = 0; }
             else schedule();
         },
-        flat(value) { flat = value; controls.enableRotate = !value; reset = true; previous = undefined; schedule(); },
+        hit,
+        help,
         home,
         dispose() {
             visible = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); clear(); renderer.dispose();
