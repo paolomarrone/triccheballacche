@@ -14,6 +14,27 @@ export function trackNodes(score, track) {
     return nodes;
 }
 
+// Ancestors and descendants of one node, in signal order. Following a signal
+// through a merge must not pull in the other inputs of that downstream merge.
+export function graphPath(nodes, id) {
+    const up = new Set(), down = new Set(), seen = new Set(), ids = [];
+    if (id === undefined) return {up, down, ids};
+    function visit(id, direction, found) {
+        if (found.has(id)) return;
+        found.add(id);
+        for (const next of nodes.get(id)[direction]) visit(next, direction, found);
+    }
+    visit(id, "inputs", up); visit(id, "outputs", down);
+    function order(id) {
+        if (seen.has(id) || (!up.has(id) && !down.has(id))) return;
+        seen.add(id);
+        for (const input of nodes.get(id).inputs) order(input);
+        ids.push(id);
+    }
+    for (const id of nodes.keys()) order(id);
+    return {up, down, ids};
+}
+
 // Start every source in the first rank, regardless of its downstream chain length.
 function rankFromSources(graph) {
     const ranks = new Map();

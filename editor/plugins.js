@@ -6,6 +6,7 @@ export function plugins(request, adapter, fail) {
     const panel = document.getElementById("plugins"), list = document.getElementById("plugin-list");
     const entries = new Map();
     let score, availableProject = false, busy = false, visible = false, track = 0, node;
+    let chain = [];
     let available = new Set(), native = new Set();
 
     function detach(entry) {
@@ -57,14 +58,13 @@ export function plugins(request, adapter, fail) {
     }
 
     function render() {
-        dispose();
-        entries.clear();
-        list.replaceChildren();
         panel.hidden = !visible;
         if (!score) return;
-        const chain = score.tracks[track];
-        const ids = node !== undefined ? [node] : chain ? trackNodes(score, chain).filter(id => score.nodes[id].product) : [];
-        for (const id of ids) {
+        for (const [id, entry] of entries) if (!chain.includes(id)) {
+            detach(entry); entry.details.remove(); entries.delete(id);
+        }
+        for (const id of chain) {
+            if (entries.has(id)) continue;
             const details = document.createElement("details"), summary = document.createElement("summary");
             const name = document.createElement("span"), body = document.createElement("div");
             const entry = {id, details, body, generic: false};
@@ -73,10 +73,9 @@ export function plugins(request, adapter, fail) {
             name.className = "plugin-name"; name.textContent = name.title = score.nodes[id].name;
             body.className = "plugin-body";
             summary.onclick = event => { if (entry.pending || busy) event.preventDefault(); };
-            summary.append(name); details.append(summary, body); list.append(details);
+            summary.append(name); details.append(summary, body);
             if (!score.nodes[id].product) {
                 body.textContent = `Inputs: ${score.nodes[id].inputs.map(input => score.nodes[input].label || score.nodes[input].name).join(", ") || "none"}`;
-                details.open = true;
                 continue;
             }
             const button = (text, title, action) => {
@@ -92,14 +91,24 @@ export function plugins(request, adapter, fail) {
                 mount(entry).catch(fail); buttons(entry);
             });
             if (available.has(id)) entry.window = button("↗", "Toggle native UI", () => windowView(entry));
-            details.open = id === ids[0] && !native.has(id);
             details.ontoggle = () => {
                 if (!details.open) detach(entry);
                 else if (!entry.token) mount(entry).catch(fail);
             };
             buttons(entry);
-            if (details.open) mount(entry).catch(fail);
         }
+        chain.forEach((id, index) => {
+            const entry = entries.get(id);
+            if (list.children[index] !== entry.details) list.insertBefore(entry.details, list.children[index] || null);
+            entry.details.open = id === (node ?? chain[0]) && (node !== undefined || !native.has(id));
+            if (!entry.details.open) detach(entry);
+            else if (!entry.token) mount(entry).catch(fail);
+        });
+    }
+
+    function trackChain(index) {
+        const track = score.tracks[index];
+        return track ? trackNodes(score, track).filter(id => id !== track[1]) : [];
     }
 
     async function mount(entry) {
@@ -115,7 +124,8 @@ export function plugins(request, adapter, fail) {
         }
         const host = document.createElement("div"), shadow = host.attachShadow({mode: "open"});
         const style = document.createElement("style");
-        style.textContent = `:host { display: block; font: inherit; }
+        style.textContent = `:host { display: block; font: inherit; -webkit-user-select: none; user-select: none; }
+            input, textarea, [contenteditable=true] { -webkit-user-select: text; user-select: text; }
             .perone-controls { display: grid; gap: 8px; }
             .perone-controls label { display: grid; grid-template-columns: minmax(5em, 1fr) minmax(4em, 1fr) 6em; gap: 6px; align-items: center; }
             .perone-controls input, .perone-controls select, .perone-controls meter { width: 100%; min-width: 0; }
@@ -208,10 +218,12 @@ export function plugins(request, adapter, fail) {
 
     return {
         score(next, nativeAvailable = []) {
+            dispose(); entries.clear(); list.replaceChildren();
             score = next;
             node = undefined;
             available = new Set(nativeAvailable); native.clear();
-            track = Math.min(track, Math.max(0, next.tracks.length - 1));
+            track = Math.max(0, Math.min(track, next.tracks.length - 1));
+            chain = trackChain(track);
             render();
         },
         revise(next) {
@@ -219,13 +231,14 @@ export function plugins(request, adapter, fail) {
         },
         track(index) {
             if (index === track && node === undefined) show(true);
-            else { track = index; node = undefined; visible = true; render(); }
+            else { track = index; node = undefined; chain = trackChain(index); visible = true; render(); }
         },
-        node(id) {
+        node(id, path) {
             if (!score?.nodes[id]) return;
-            if (id === node) show(true);
-            else { node = id; visible = true; render(); }
-            entries.get(id).details.open = true;
+            node = id; chain = path;
+            render();
+            show(true);
+            entries.get(id).details.scrollIntoView({block: "nearest", inline: "nearest"});
         },
         show,
         windows(ids) {

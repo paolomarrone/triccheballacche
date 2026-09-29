@@ -133,8 +133,10 @@ and updates the session's files. Reloading the page restores the published files
   Source highlights and note/curve picking connect the view to the code.
 - **Graph** shows plugins and explicit mixes; track/master gain stages are folded
   into connections, with track names on their sources.
-  Click a node to highlight its paths and open it in the side panel; drag the
-  background to pan, wheel to zoom, or use Home to fit. Routing is read-only.
+  Click a node to highlight its signal paths and list those nodes in the side
+  panel, including downstream group/master effects; only the selected node opens.
+  Drag to pan, wheel to zoom, or Home to fit.
+  Routing is read-only.
 - **Track names** open the plugin panel. Mute/solo affects audition, including
   routed groups. Plugin sections collapse; the window icon toggles a native UI
   where available. Manual parameter edits are temporary, not written to Janet.

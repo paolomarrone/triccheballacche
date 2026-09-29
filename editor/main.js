@@ -176,7 +176,7 @@ const projection = timeline(request, origins => {
     update();
 }, {
     track(index) { views.checked = true; controls?.track(index); },
-    node(id) { views.checked = true; controls?.node(id); }
+    node(id, path) { views.checked = true; controls?.node(id, path); }
 }, time => action("seek", time), showError);
 new ResizeObserver(paint).observe(code);
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
 import {once} from "node:events";
 import {mkdtemp, writeFile, rm} from "node:fs/promises";
-import {graphLayout} from "../editor/graph.js";
+import {graphLayout, graphPath} from "../editor/graph.js";
 import {serve} from "./server.mjs";
 import {withBrowser} from "./chromium.mjs";
 import {nativeEditor} from "./native.mjs";
@@ -40,6 +40,14 @@ assert.deepEqual([...compact.nodes.values()].map(n => n.inputs), [[], [0], [0], 
 assert.deepEqual([...compact.nodes.values()].map(n => n.tracks), [[1], [4], [], [6, 7]]);
 assert.equal(compact.output, 5);
 assert.deepEqual(score, original, "Visual folding does not change the prepared audio graph");
+assert.deepEqual(graphPath(compact.nodes, 2).ids, [0, 2, 5], "A parallel effect excludes the dry branch");
+assert.deepEqual(graphPath(compact.nodes, 5).ids, [0, 2, 3, 5], "Selecting a merge includes its own inputs");
+const master = graphLayout({
+    nodes: [[3], [0], [], [], [1, 2], [4], [5], [6]].map(inputs => ({inputs})),
+    tracks: [[3, 1], [-1, 7]], output: 7
+});
+assert.deepEqual(graphPath(master.nodes, 0).ids, [3, 0, 4, 5, 6],
+    "A track effect follows its source and both master effects, without the other instrument");
 
 // Reversed declarations should not force crossings. Long cables must follow a
 // route around intermediate nodes, and parallel inputs must stay distinct.
@@ -135,9 +143,17 @@ try {
             const effectUI = `document.querySelector('.plugin[data-node="0"] .plugin-body > div')?.shadowRoot`;
             await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
             assert(await evaluate('document.querySelector("#views").checked && !document.querySelector("#plugins").hidden'));
-            assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 1, "A graph node opens its own controls");
+            const openNodes = () => evaluate('Array.from(document.querySelectorAll(".plugin[open]"), p => Number(p.dataset.node))');
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [1, 0, 5],
+                "The sidebar follows the effect's upstream and downstream paths, excluding the parallel dry branch");
+            assert.deepEqual(await openNodes(), [0]);
+            const sidebarWidth = () => evaluate('document.querySelector("#plugins").getBoundingClientRect().width');
+            assert.equal(await sidebarWidth(), 360);
+            assert.deepEqual(await evaluate(`['#graph-tab', '.graph-node', '.plugin summary', '#code', '#path'].map(s => getComputedStyle(document.querySelector(s)).userSelect)`),
+                ['none', 'none', 'none', 'text', 'text']);
             await evaluate(`globalThis.retainedGraphUI = ${effectUI}`);
             await click('.graph-node[data-node="0"]');
+            assert.deepEqual(await openNodes(), [0]);
             assert(await evaluate(`retainedGraphUI === ${effectUI}`), "Reselecting a node preserves its UI");
             await evaluate(`(() => {
                 const gain = ${effectUI}.querySelector('input');
@@ -146,7 +162,18 @@ try {
             await wait(`${effectUI}.querySelectorAll('output')[1].textContent === '0.3'`);
             await evaluate('new Promise(requestAnimationFrame)');
             await click('.graph-node[data-node="3"]');
-            await wait(`document.querySelector('.plugin[data-node="3"] .plugin-body')?.textContent === 'Inputs: Source <&>'`);
+            await wait(`document.querySelector('.plugin[data-node="3"]').open`);
+            assert.deepEqual(await openNodes(), [3]);
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [1, 3, 5],
+                "The dry path includes its source and output, without the parallel effect");
+            assert.equal(await sidebarWidth(), 360, "Changing nodes does not resize the sidebar");
+            await evaluate(`globalThis.retainedGraphEntry = document.querySelector('.plugin[data-node="3"]')`);
+            await click('.graph-node[data-node="5"]');
+            assert.deepEqual(await openNodes(), [5]);
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [1, 0, 3, 5],
+                "Selecting the output merge includes both branches");
+            assert(await evaluate(`retainedGraphEntry === document.querySelector('.plugin[data-node="3"]')`), "Selecting within a chain preserves its list");
+            await click('.graph-node[data-node="3"]');
             await click('#views'); await click('#views');
             assert.equal(await evaluate(`document.querySelector('.plugin[data-node="3"] .plugin-body').textContent`), 'Inputs: Source <&>');
             assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 0, "Mix inspection opens no plugin UI");
@@ -202,6 +229,22 @@ try {
             assert.equal(await evaluate('document.querySelectorAll(".graph-node[aria-pressed=true]").length'), 0);
             assert.equal(await evaluate('document.querySelectorAll(".graph-node").length'), 4);
             assert(await evaluate('document.querySelector("#errors").hidden'));
+            await click("#stop");
+            const masterSource = source.replace('(daw/master (daw/mix [dry wet dry] {:id :output}))',
+                `(daw/master (daw/mix [dry wet dry] {:id :output}) {:effects
+                  [(daw/plugin :master1 "build/test/effect.perone")
+                   (daw/plugin :master2 "build/test/effect.perone")]})`);
+            await set("#code", masterSource);
+            await click("#play");
+            await wait('document.querySelectorAll(".graph-node").length === 6');
+            await click("#graph-fit");
+            await click('.graph-node[data-node="0"]');
+            await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [1, 0, 5, 6, 7],
+                "The sidebar includes both downstream master effects");
+            assert.deepEqual(await openNodes(), [0]);
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".graph-node:not(.dim)"), p => Number(p.dataset.node)).sort((a,b) => a-b)'), [0, 1, 5, 6, 7],
+                "Graph highlighting and the sidebar describe the same path");
             await click("#stop");
             assert.deepEqual(diagnostics, []);
             console.log(`OK: ${mode} routing graph, shared branches, repeated inputs, navigation, live revisions and errors`);

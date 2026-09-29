@@ -1,5 +1,6 @@
-:root { color-scheme: light dark; font-family: system-ui, sans-serif; font-size: 13px; --muted: light-dark(#666, #aaa); --border: light-dark(#ccc, #444); --active: light-dark(#fff0ba, #493d20); --accent: light-dark(#946000, #edc56c); }
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; font-size: 13px; -webkit-user-select: none; user-select: none; --muted: light-dark(#666, #aaa); --border: light-dark(#ccc, #444); --active: light-dark(#fff0ba, #493d20); --accent: light-dark(#946000, #edc56c); }
 * { box-sizing: border-box; }
+input, textarea, [contenteditable=true], #errors, #file-error { -webkit-user-select: text; user-select: text; }
 body { margin: 0; padding: 6px; height: 100dvh; display: flex; flex-direction: column; gap: 5px; }
 nav, footer { display: flex; align-items: center; gap: 5px; }
 body > nav { flex-wrap: wrap; }
@@ -11,7 +12,7 @@ button { cursor: pointer; }
 button:disabled { cursor: default; }
 main { display: flex; gap: 5px; flex: 1; min-height: 0; }
 #sheet { --row: 20px; --inset: 8px; display: flex; flex: 1; min-height: 0; border: 1px solid var(--border); font: 14px/var(--row) monospace; }
-#gutter { position: relative; flex: 0 0 3.5em; overflow: hidden; color: var(--muted); border-right: 1px solid var(--border); user-select: none; }
+#gutter { position: relative; flex: 0 0 3.5em; overflow: hidden; color: var(--muted); border-right: 1px solid var(--border); }
 #numbers { position: absolute; top: var(--inset); width: 100%; margin: 0; font: inherit; text-align: right; }
 #numbers span { position: absolute; left: 0; width: 100%; height: var(--row); padding-right: .6em; }
 #numbers .active { color: var(--accent); background: var(--active); }
@@ -64,7 +65,7 @@ footer { color: var(--muted); font-size: 12px; }
 .graph-message { position: absolute; top: 8px; left: 12px; margin: 0; color: var(--muted); pointer-events: none; }
 
 #workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; gap: 5px; }
-#plugins { display: flex; flex-direction: column; flex: 0 1 auto; width: max-content; max-width: 65%; min-width: min(330px, 45%); border: 1px solid var(--border); }
+#plugins { display: flex; flex-direction: column; flex: 0 0 360px; min-width: 0; max-width: 65%; border: 1px solid var(--border); }
 #plugin-list { overflow: auto; min-height: 0; }
 .plugin { border-bottom: 1px solid var(--border); }
 .plugin summary { display: flex; align-items: center; gap: 4px; padding: 5px; cursor: pointer; list-style: none; }

@@ -97,7 +97,25 @@ try {
             await wait(`${fixture}?.dataset.helper === "7"`);
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .2) < .0001`);
             assert.equal(await evaluate(`getComputedStyle(${fixture}).display`), "grid");
+            await evaluate(`${fixture}.style.setProperty('width', '720px')`);
+            assert.equal(await evaluate('document.querySelector("#plugins").getBoundingClientRect().width'), 360,
+                "A wide custom UI scrolls inside the fixed sidebar");
+            assert(await evaluate(`(() => { const body = document.querySelector('.plugin[data-node="1"] .plugin-body'); return body.scrollWidth > body.clientWidth; })()`));
+            assert.equal(await evaluate(`getComputedStyle(${fixture}.querySelector('button')).userSelect`), "none");
+            await evaluate(`${fixture}.style.removeProperty('width')`);
             assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 2, "Expanded plugins stay attached together");
+            await evaluate(`globalThis.selectedChainUI = ${fixture}`);
+            await click('#graph-tab');
+            await click('#graph-fit');
+            await click('.graph-node[data-node="1"]');
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [0, 1, 5],
+                "Graph selection follows the synth and effect to the master mix, without the other synth");
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin[open]"), p => Number(p.dataset.node))'), [1],
+                "Only the selected node expands");
+            assert(await evaluate(`${fixture} === selectedChainUI`), "Selecting the effect preserves its UI");
+            await click('#score-tab');
+            await evaluate(`document.querySelector('.plugin[data-node="0"]').open = true`);
+            await wait(`${synthRoot}?.querySelectorAll('.perone-controls label').length === 3`);
             await evaluate(`(() => {
                 const gain = ${synthRoot}.querySelectorAll("input")[0]; gain.value = .03;
                 gain.dispatchEvent(new Event("input")); gain.dispatchEvent(new Event("change"));
@@ -254,9 +272,11 @@ try {
             await toggle(0, 2, true);
             assert.deepEqual(await inaudible(), [false, true, false, false], "Source solo retains its group and effects");
             await evaluate(`document.querySelector('#track-list [data-track="2"]').click()`);
-            await wait('document.querySelectorAll(".plugin").length === 0');
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [5],
+                "The group exposes its explicit mix, without the plugins owned by its input tracks");
+            assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 0);
             await evaluate(`document.querySelector('#track-list [data-track="3"]').click()`);
-            await wait('document.querySelectorAll(".plugin").length === 1');
+            assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [7]);
             await click("#stop");
             await wait('document.querySelector("#stop").disabled');
             assert.deepEqual(diagnostics, []);

@@ -1,4 +1,4 @@
-import {graphLayout} from "./graph.js";
+import {graphLayout, graphPath} from "./graph.js";
 
 // Read-only routing: cards for plugins and explicit mixes, tracks as annotations.
 // No transport queries, DSP state or musical time belong to this view.
@@ -46,15 +46,7 @@ export function graphView(panel, fit, select) {
 
     function choose(id) {
         selected = id;
-        const up = new Set(), down = new Set();
-        function visit(id, direction, seen) {
-            if (seen.has(id)) return;
-            seen.add(id);
-            for (const next of layout.nodes.get(id)[direction]) visit(next, direction, seen);
-        }
-        if (id !== undefined) {
-            visit(id, "inputs", up); visit(id, "outputs", down);
-        }
+        const {up, down, ids} = graphPath(layout?.nodes, id);
         cards.forEach((card, i) => {
             card.setAttribute("aria-pressed", i === id);
             card.classList.toggle("dim", id !== undefined && !up.has(i) && !down.has(i));
@@ -64,6 +56,7 @@ export function graphView(panel, fit, select) {
             path.classList.toggle("highlighted", connected);
             path.classList.toggle("dim", id !== undefined && !connected);
         }
+        return ids;
     }
 
     panel.onwheel = event => {
@@ -143,7 +136,7 @@ export function graphView(panel, fit, select) {
                 card.title = `${name(id)}\n${detail.textContent}\nInputs: ${model.inputs.map(route).join(", ") || "none"}`;
                 if (node.tracks.length) card.title += `\nTracks: ${node.tracks.map(name).join(", ")}`;
                 card.append(title, detail);
-                card.onclick = () => { choose(id); select(id); };
+                card.onclick = () => select(id, choose(id));
                 card.onfocus = () => {
                     panel.scrollTop = panel.scrollLeft = 0;
                     if (node.x * scale + x < 0 || (node.x + node.width) * scale + x > width ||
