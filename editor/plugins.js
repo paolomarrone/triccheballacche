@@ -5,16 +5,17 @@ import {trackNodes} from "./graph.js";
 export function plugins(request, adapter, fail) {
     const panel = document.getElementById("plugins"), list = document.getElementById("plugin-list");
     const entries = new Map();
-    let score, availableProject = false, busy = false, visible = false, track = 0;
+    let score, availableProject = false, busy = false, visible = false, track = 0, node;
     let available = new Set(), native = new Set();
 
     function detach(entry) {
         const old = entry.token;
+        if (!old) return;
         entry.token = undefined; // Ignore callbacks from free() and factories that finish after disposal.
-        try { old?.ui?.free(); }
+        try { old.ui?.free(); }
         catch (error) { fail(error); }
         entry.body.replaceChildren();
-        if (old && availableProject) request("watch", old.revision, entry.id, "off").catch(() => {});
+        if (availableProject) request("watch", old.revision, entry.id, "off").catch(() => {});
     }
 
     function dispose() {
@@ -62,8 +63,7 @@ export function plugins(request, adapter, fail) {
         panel.hidden = !visible;
         if (!score) return;
         const chain = score.tracks[track];
-        if (!chain) return;
-        const ids = trackNodes(score, chain).filter(id => score.nodes[id].product);
+        const ids = node !== undefined ? [node] : chain ? trackNodes(score, chain).filter(id => score.nodes[id].product) : [];
         for (const id of ids) {
             const details = document.createElement("details"), summary = document.createElement("summary");
             const name = document.createElement("span"), body = document.createElement("div");
@@ -74,6 +74,11 @@ export function plugins(request, adapter, fail) {
             body.className = "plugin-body";
             summary.onclick = event => { if (entry.pending || busy) event.preventDefault(); };
             summary.append(name); details.append(summary, body); list.append(details);
+            if (!score.nodes[id].product) {
+                body.textContent = `Inputs: ${score.nodes[id].inputs.map(input => score.nodes[input].label || score.nodes[input].name).join(", ") || "none"}`;
+                details.open = true;
+                continue;
+            }
             const button = (text, title, action) => {
                 const control = document.createElement("button");
                 control.textContent = text; control.setAttribute("aria-label", title);
@@ -98,7 +103,7 @@ export function plugins(request, adapter, fail) {
     }
 
     async function mount(entry) {
-        if (entries.get(entry.id) !== entry || !availableProject || busy || !visible || !entry.details.open || entry.pending) return;
+        if (entries.get(entry.id) !== entry || !score.nodes[entry.id].product || !availableProject || busy || !visible || !entry.details.open || entry.pending) return;
         detach(entry);
         fail("");
         const id = entry.id, node = score.nodes[id];
@@ -204,6 +209,7 @@ export function plugins(request, adapter, fail) {
     return {
         score(next, nativeAvailable = []) {
             score = next;
+            node = undefined;
             available = new Set(nativeAvailable); native.clear();
             track = Math.min(track, Math.max(0, next.tracks.length - 1));
             render();
@@ -212,8 +218,14 @@ export function plugins(request, adapter, fail) {
             score = next;
         },
         track(index) {
-            if (index === track) show(true);
-            else { track = index; visible = true; render(); }
+            if (index === track && node === undefined) show(true);
+            else { track = index; node = undefined; visible = true; render(); }
+        },
+        node(id) {
+            if (!score?.nodes[id]) return;
+            if (id === node) show(true);
+            else { node = id; visible = true; render(); }
+            entries.get(id).details.open = true;
         },
         show,
         windows(ids) {

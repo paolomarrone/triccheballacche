@@ -2,7 +2,7 @@ import {graphLayout} from "./graph.js";
 
 // Read-only routing: cards for plugins and explicit mixes, tracks as annotations.
 // No transport queries, DSP state or musical time belong to this view.
-export function graphView(panel, fit) {
+export function graphView(panel, fit, select) {
     const world = document.createElement("div"), message = document.createElement("p");
     world.className = "graph-world"; message.className = "graph-message";
     message.textContent = "Press Play to see the graph";
@@ -143,7 +143,7 @@ export function graphView(panel, fit) {
                 card.title = `${name(id)}\n${detail.textContent}\nInputs: ${model.inputs.map(route).join(", ") || "none"}`;
                 if (node.tracks.length) card.title += `\nTracks: ${node.tracks.map(name).join(", ")}`;
                 card.append(title, detail);
-                card.onclick = () => choose(selected === id ? undefined : id);
+                card.onclick = () => { choose(id); select(id); };
                 card.onfocus = () => {
                     panel.scrollTop = panel.scrollLeft = 0;
                     if (node.x * scale + x < 0 || (node.x + node.width) * scale + x > width ||
@@ -159,17 +159,20 @@ export function graphView(panel, fit) {
                     dot.style.top = `${top}px`; dot.title = label;
                     card.append(dot);
                 }
-                inputs.forEach((from, slot) => {
-                    const inputY = node.height / 2 + (slot - (inputs.length - 1) / 2) * 14;
-                    port(inputY, false, `From ${route(model.inputs[slot])}`);
-                    const source = layout.nodes.get(from), a = source.x + source.width + 5, b = node.x - 5;
-                    const c = Math.max(32, (b - a) / 2), sy = source.y + source.height / 2, ty = node.y + inputY;
-                    const path = svg("path", {d: `M${a} ${sy}C${a + c} ${sy} ${b - c} ${ty} ${b} ${ty}`,
-                        class: "graph-cable", "marker-end": "url(#graph-arrow)", "data-from": from, "data-to": id});
-                    wires.append(path); cables.push({from, to: id, path});
-                });
+                for (const edge of node.incoming)
+                    port(edge.points.at(-1).y - node.y, false, `From ${route(model.inputs[edge.slot])}`);
                 port(node.height / 2, true, id === layout.output ? `${route(score.output)} → Audio output` : `To ${node.outputs.map(name).join(", ")}`);
                 world.append(card); cards.set(id, card);
+            }
+            for (const {from, to, points} of layout.edges) {
+                let d = `M${points[0].x} ${points[0].y}`;
+                for (let i = 1; i < points.length; ++i) {
+                    const a = points[i - 1], b = points[i], mid = (a.x + b.x) / 2;
+                    d += `C${mid} ${a.y} ${mid} ${b.y} ${b.x} ${b.y}`;
+                }
+                const path = svg("path", {d, class: "graph-cable", "marker-end": "url(#graph-arrow)",
+                    "data-from": from, "data-to": to});
+                wires.append(path); cables.push({from, to, path});
             }
             message.hidden = true; fit.disabled = false;
             panel.dataset.revision = score.revision;

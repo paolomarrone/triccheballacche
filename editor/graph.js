@@ -1,3 +1,5 @@
+import {Graph, layout} from "./vendor/dagre/dagre.esm.js";
+
 // Nodes owned by this track, in signal order. Other track mixers are boundaries.
 export function trackNodes(score, track) {
     const nodes = [], seen = new Set();
@@ -10,6 +12,16 @@ export function trackNodes(score, track) {
     }
     visit(track[1]);
     return nodes;
+}
+
+// Start every source in the first rank, regardless of its downstream chain length.
+function rankFromSources(graph) {
+    const ranks = new Map();
+    function rank(id) {
+        if (!ranks.has(id)) ranks.set(id, Math.max(0, ...graph.inEdges(id).map(edge => rank(edge.v) + graph.edge(edge).minlen)));
+        return graph.node(id).rank = ranks.get(id);
+    }
+    for (const id of graph.nodes()) rank(id);
 }
 
 // Fold track/master gain stages into their source, but keep explicit mixes.
@@ -26,45 +38,31 @@ export function graphLayout(score) {
             width: 192, height: Math.max(68, node.inputs.length * 14 + 20)});
     });
     for (const id of implicit) nodes.get(resolve(id)).tracks.push(id);
-    const layers = [];
-    function depth(node) {
-        if (node.layer !== undefined) return node.layer;
-        node.layer = node.inputs.length ? 1 + Math.max(...node.inputs.map(id => depth(nodes.get(id)))) : 0;
-        (layers[node.layer] ||= []).push(node);
-        return node.layer;
-    }
+    // Sugiyama layout: ranking, crossing reduction, then coordinates and edge routes.
+    const graph = new Graph({multigraph: true}).setGraph({rankdir: "LR", ranker: rankFromSources,
+        nodesep: 28, edgesep: 14, ranksep: 96});
+    for (const node of nodes.values()) graph.setNode(String(node.id), node);
+    const edges = [];
     for (const node of nodes.values()) {
-        depth(node);
-        for (const id of node.inputs) nodes.get(id).outputs.push(node.id);
+        node.incoming = [];
+        node.inputs.forEach((from, slot) => {
+            const edge = {from, to: node.id, slot};
+            graph.setEdge(String(from), String(node.id), edge, String(slot));
+            nodes.get(from).outputs.push(node.id);
+            node.incoming.push(edge); edges.push(edge);
+        });
     }
-    for (const [column, layer] of layers.entries()) {
-        let y = 0;
-        for (const node of layer) {
-            node.x = column * 288; node.y = y;
-            y += node.height + 28;
-        }
+    if (nodes.size) layout(graph);
+    for (const node of nodes.values()) {
+        node.x -= node.width / 2; node.y -= node.height / 2;
+        // Visual port order follows the routed cables; audio input indices stay intact.
+        node.incoming.sort((a, b) => a.points.at(-2).y - b.points.at(-2).y || a.slot - b.slot);
     }
-    function align(layer, direction) {
-        const desired = node => {
-            const neighbors = node[direction].map(id => nodes.get(id));
-            return neighbors.length ? neighbors.reduce((sum, n) => sum + n.y + n.height / 2, 0) / neighbors.length : node.y + node.height / 2;
-        };
-        const centers = new Map(layer.map(node => [node.id, desired(node)]));
-        layer.sort((a, b) => centers.get(a.id) - centers.get(b.id) || a.id - b.id);
-        let bottom = -Infinity, shift = 0;
-        for (const node of layer) {
-            node.y = Math.max(bottom, centers.get(node.id) - node.height / 2);
-            bottom = node.y + node.height + 28;
-            shift += centers.get(node.id) - node.y - node.height / 2;
-        }
-        for (const node of layer) node.y += shift / layer.length;
-    }
-    for (let pass = 0; pass < 2; ++pass) {
-        for (const layer of layers) align(layer, "inputs");
-        for (const layer of [...layers].reverse()) align(layer, "outputs");
-    }
-    const placed = [...nodes.values()], top = nodes.size ? Math.min(...placed.map(node => node.y)) : 0;
-    for (const node of placed) node.y -= top;
-    return {nodes, output: resolve(score.output), width: Math.max(0, ...placed.map(n => n.x + n.width)),
-        height: Math.max(0, ...placed.map(n => n.y + n.height))};
+    for (const node of nodes.values()) node.incoming.forEach((edge, i) => {
+        const source = nodes.get(edge.from);
+        edge.points[0] = {x: source.x + source.width + 5, y: source.y + source.height / 2};
+        edge.points[edge.points.length - 1] = {x: node.x - 5,
+            y: node.y + node.height / 2 + (i - (node.inputs.length - 1) / 2) * 14};
+    });
+    return {nodes, edges, output: resolve(score.output), width: graph.graph().width || 0, height: graph.graph().height || 0};
 }

@@ -10,12 +10,15 @@ import {nativeEditor} from "./native.mjs";
 // Shared branches, forward references, repeated inputs and both extreme DAG shapes.
 for (const inputs of [
     [[2], [], [1], [2], [0], [3, 4, 3]],
+    [[], [0], [1], [], [2, 3], [], [5]],
     Array.from({length: 128}, (_, i) => i < 127 ? [] : Array.from({length: 127}, (_, j) => j)),
     Array.from({length: 128}, (_, i) => i < 127 ? [i + 1] : [])
 ]) {
     const {nodes, width, height} = graphLayout({nodes: inputs.map(inputs => ({inputs})), tracks: [], output: 0});
     assert.equal(nodes.size, inputs.length);
+    const left = Math.min(...[...nodes.values()].map(node => node.x));
     for (const node of nodes.values()) {
+        if (!node.inputs.length) assert.equal(node.x, left, "All sources align, including short and disconnected chains");
         assert(Number.isFinite(node.x) && Number.isFinite(node.y));
         assert(node.x >= 0 && node.y >= 0 && node.x + node.width <= width && node.y + node.height <= height);
         assert.deepEqual(node.inputs, inputs[node.id]);
@@ -37,6 +40,42 @@ assert.deepEqual([...compact.nodes.values()].map(n => n.inputs), [[], [0], [0], 
 assert.deepEqual([...compact.nodes.values()].map(n => n.tracks), [[1], [4], [], [6, 7]]);
 assert.equal(compact.output, 5);
 assert.deepEqual(score, original, "Visual folding does not change the prepared audio graph");
+
+// Reversed declarations should not force crossings. Long cables must follow a
+// route around intermediate nodes, and parallel inputs must stay distinct.
+for (const inputs of [
+    [[], [], [], [], [3], [2], [1], [0]],
+    [[], [0], [0, 1, 0]],
+    [[], [], [1], [0], [0, 2, 3]]
+]) {
+    const score = {nodes: inputs.map(inputs => ({inputs})), tracks: [], output: inputs.length - 1};
+    const graph = graphLayout(score);
+    assert.deepEqual(graphLayout(score), graph, "Layout is deterministic");
+    const segments = [];
+    for (const edge of graph.edges) {
+        assert.equal(edge.from, inputs[edge.to][edge.slot]);
+        for (let i = 1; i < edge.points.length; ++i) {
+            const a = edge.points[i - 1], b = edge.points[i];
+            segments.push([a, b]);
+            assert(a.x < b.x, "Cables run left to right");
+            // Sample the same cubic geometry rendered by the view.
+            for (let step = 0; step <= 20; ++step) {
+                const t = step / 20, u = 1 - t, mid = (a.x + b.x) / 2;
+                const x = u ** 3 * a.x + 3 * u * t * mid + t ** 3 * b.x;
+                const y = (u ** 3 + 3 * u * u * t) * a.y + (3 * u * t * t + t ** 3) * b.y;
+                for (const node of graph.nodes.values())
+                    assert(x <= node.x || x >= node.x + node.width || y <= node.y || y >= node.y + node.height,
+                        "Cables avoid node interiors");
+            }
+        }
+    }
+    const side = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    for (let i = 0; i < segments.length; ++i) for (let j = i + 1; j < segments.length; ++j) {
+        const [a, b] = segments[i], [c, d] = segments[j];
+        assert(!(side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0),
+            "These planar examples need no crossings");
+    }
+}
 
 const directory = await mkdtemp("build/test/graph-"), entry = `${directory}/score.janet`;
 const source = `(import ../../../lib/pattern :as p)
@@ -93,6 +132,26 @@ try {
                 });
             })()`), "Fit includes the complete graph");
             await click('.graph-node[data-node="0"]');
+            const effectUI = `document.querySelector('.plugin[data-node="0"] .plugin-body > div')?.shadowRoot`;
+            await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
+            assert(await evaluate('document.querySelector("#views").checked && !document.querySelector("#plugins").hidden'));
+            assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 1, "A graph node opens its own controls");
+            await evaluate(`globalThis.retainedGraphUI = ${effectUI}`);
+            await click('.graph-node[data-node="0"]');
+            assert(await evaluate(`retainedGraphUI === ${effectUI}`), "Reselecting a node preserves its UI");
+            await evaluate(`(() => {
+                const gain = ${effectUI}.querySelector('input');
+                gain.value = .3; gain.dispatchEvent(new Event('input')); gain.dispatchEvent(new Event('change'));
+            })()`);
+            await wait(`${effectUI}.querySelectorAll('output')[1].textContent === '0.3'`);
+            await evaluate('new Promise(requestAnimationFrame)');
+            await click('.graph-node[data-node="3"]');
+            await wait(`document.querySelector('.plugin[data-node="3"] .plugin-body')?.textContent === 'Inputs: Source <&>'`);
+            await click('#views'); await click('#views');
+            assert.equal(await evaluate(`document.querySelector('.plugin[data-node="3"] .plugin-body').textContent`), 'Inputs: Source <&>');
+            assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 0, "Mix inspection opens no plugin UI");
+            await click('.graph-node[data-node="0"]');
+            await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
             assert.equal(await evaluate('document.querySelectorAll(".graph-cable.highlighted").length'), 2);
             assert.equal(await evaluate('document.querySelector(".graph-node.dim").dataset.node'), "3", "A parallel dry branch is outside the effect's path");
             const transform = () => evaluate('document.querySelector(".graph-world").style.transform');
@@ -117,6 +176,11 @@ try {
             assert.equal(await transform(), moved, "Switching projections preserves graph navigation");
             assert.equal(await evaluate('document.querySelector(".graph-node[aria-pressed=true]").dataset.node'), "0");
             assert.deepEqual(await edges(), expected);
+            await click("#score-tab");
+            await click('.track-select[data-track="0"]');
+            await wait(`document.querySelector('.plugin[data-node="1"] .plugin-body > div')?.shadowRoot?.querySelectorAll('.perone-controls label').length === 3`);
+            assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 1, "Track selection restores its plugin chain");
+            await click("#graph-tab");
             const revision = await evaluate('Number(document.querySelector("#graph-view").dataset.revision)');
             await set("#code", source.replace(":gain 0.001", ":gain 0.002"));
             await click("#play");

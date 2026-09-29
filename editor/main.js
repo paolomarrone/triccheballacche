@@ -174,7 +174,10 @@ const projection = timeline(request, origins => {
     code.focus(); code.setSelectionRange(offset, offset + (rows[line]?.length || 0));
     code.scrollTop = Math.max(0, line * parseFloat(getComputedStyle(code).lineHeight) - code.clientHeight / 2);
     update();
-}, index => { views.checked = true; controls?.track(index); }, time => action("seek", time), showError);
+}, {
+    track(index) { views.checked = true; controls?.track(index); },
+    node(id) { views.checked = true; controls?.node(id); }
+}, time => action("seek", time), showError);
 new ResizeObserver(paint).observe(code);
 
 for (const op of ["save", "play", "stop"]) byId(op).addEventListener("click", () => action(op));

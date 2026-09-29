@@ -193,6 +193,17 @@ Copyright © 2010-2025 three.js authors.
 The vendored modules are unmodified. The full MIT notice is preserved in
 editor/vendor/three/LICENSE and must accompany copies of those modules.
 
+Dagre 3.1.1 (includes Graphlib 4.0.5)
+------------------------------------
+https://github.com/dagrejs/dagre
+https://github.com/dagrejs/graphlib
+https://registry.npmjs.org/@dagrejs/dagre/-/dagre-3.1.1.tgz
+
+Copyright (c) 2012-2014 Chris Pettitt.
+The unmodified dist/dagre.esm.js bundle is vendored in editor/vendor/dagre/.
+Its full MIT notice is preserved alongside it in dagre.esm.js.LEGAL.txt.
+Bundle SHA-256: 93f5f23d1bee1217531900366798277689400850a5560f238d4f213c8d552a63
+
 Florestan piano samples (optional download)
 ------------------------------------------
 https://dev.nando.audio/pages/soundfonts.html

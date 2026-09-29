@@ -2,7 +2,7 @@
 import {automation} from "./automation.js";
 import {graphView} from "./graph-view.js";
 
-export function timeline(request, select, selectTrack, seek, error) {
+export function timeline(request, select, inspect, seek, error) {
     const get = id => document.getElementById(id);
     const panel = get("timeline"), roll = get("roll");
     const headers = get("track-headers"), tracks = get("track-list"), follow = get("follow"), detail = get("note-info");
@@ -15,7 +15,7 @@ export function timeline(request, select, selectTrack, seek, error) {
     const changing = new Set();
     const ruler = 24;
     const envelopes = automation(request, changed);
-    const routing = graphView(get("graph-view"), get("graph-fit"));
+    const routing = graphView(get("graph-view"), get("graph-fit"), inspect.node);
     let graphMode = false, scroll = 0;
     let renderer, flat = true, disposed = false;
 
@@ -328,7 +328,7 @@ export function timeline(request, select, selectTrack, seek, error) {
     function chooseTrack(index) {
         trackIndex = index;
         for (const button of tracks.querySelectorAll(".track-select")) button.setAttribute("aria-pressed", Number(button.dataset.track) === index);
-        selectTrack(index);
+        inspect.track(index);
     }
 
     canvas.onpointerup = event => {
