@@ -54,7 +54,75 @@ export function graphRows(score, graph) {
         return node;
     }
     for (const id of graph.keys()) visit(id);
-    return {nodes, columns: next};
+    const indents = [];
+    for (const node of nodes.values()) if (!node.column)
+        indents[node.track] = !(score.nodes[node.id].product && !graph.get(node.id).inputs.length);
+    return {nodes, columns: next, indents};
+}
+
+// Route within fixed score lanes. Interval partitioning reuses a vertical rail
+// only after its previous cable ends; fan-in/out also gets separate ports.
+export function routeRows(rows, graph, width, row) {
+    const nodes = new Map([...rows.nodes].map(([id, node]) => [id, {...node, incoming: [], outgoing: []}]));
+    const edges = graph.edges.map(({from, to, slot}) => {
+        const a = nodes.get(from), b = nodes.get(to);
+        const edge = {from, to, slot, direct: a.track === b.track && b.column === a.column + 1};
+        a.outgoing.push(edge); b.incoming.push(edge);
+        return edge;
+    });
+    const cross = edges.filter(e => nodes.get(e.from).track !== nodes.get(e.to).track);
+    const bounds = e => [Math.min(nodes.get(e.from).track, nodes.get(e.to).track),
+        Math.max(nodes.get(e.from).track, nodes.get(e.to).track)];
+    cross.sort((a, b) => bounds(a)[0] - bounds(b)[0] || bounds(b)[1] - bounds(a)[1] || a.from - b.from || a.slot - b.slot);
+    const ends = [];
+    for (const edge of cross) {
+        const [start, end] = bounds(edge);
+        let rail = ends.findIndex(last => last < start);
+        if (rail < 0) rail = ends.length;
+        ends[rail] = end; edge.rail = rail;
+    }
+    const railWidth = Math.min(56, width * .2, ends.length * 4);
+    for (const node of nodes.values()) {
+        const inset = 8 + (rows.indents[node.track] ? 18 : 0);
+        const available = Math.max(1, width - 70 - railWidth - inset), count = rows.columns[node.track];
+        node.gap = Math.min(12, available / count * .25);
+        node.width = Math.min(96, available / count - node.gap);
+        node.x = inset + node.column * (node.width + node.gap);
+        node.y = node.track * row + (row + 18) / 2;
+        // Nest long branches outside short ones. Visual port order is independent
+        // of the original audio input slot, including repeated connections.
+        node.outgoing.sort((a, b) => nodes.get(b.to).track - nodes.get(a.to).track ||
+            nodes.get(b.to).column - nodes.get(a.to).column || a.slot - b.slot);
+        node.incoming.sort((a, b) => nodes.get(a.from).track - nodes.get(b.from).track ||
+            nodes.get(a.from).column - nodes.get(b.from).column || a.slot - b.slot);
+    }
+    const departures = [], arrivals = [];
+    for (const node of nodes.values()) {
+        (departures[node.track] ||= []).push(...node.outgoing.filter(e => !e.direct));
+        (arrivals[node.track] ||= []).push(...node.incoming.filter(e => e.rail !== undefined).reverse());
+    }
+    const fraction = (list, edge) => (list.indexOf(edge) + 1) / (list.length + 1);
+    const between = (a, b, t) => a + (b - a) * t;
+    for (const edge of edges) {
+        const a = nodes.get(edge.from), b = nodes.get(edge.to);
+        const out = fraction(a.outgoing, edge), input = fraction(b.incoming, edge);
+        const x = a.x + a.width, y = a.y + (out - .5) * 14, target = b.y + (input - .5) * 14;
+        edge.points = [[x, y]];
+        if (!edge.direct) {
+            const leave = x + a.gap * (.15 + (1 - out) * .3);
+            const enter = b.x - (b.column ? b.gap : 18) * (.15 + input * .3);
+            const bottom = between(a.y + 11, (a.track + 1) * row - 1, fraction(departures[a.track], edge));
+            edge.points.push([leave, y], [leave, bottom]);
+            if (edge.rail !== undefined) {
+                const rail = width - 66 - edge.rail * railWidth / Math.max(1, ends.length);
+                const top = between(b.track * row + 18, b.y - 11, fraction(arrivals[b.track], edge));
+                edge.points.push([rail, bottom], [rail, top], [enter, top]);
+            } else edge.points.push([enter, bottom]);
+            edge.points.push([enter, target]);
+        }
+        edge.points.push([b.x, target]);
+    }
+    return {nodes, edges};
 }
 
 // Start every source in the first rank, regardless of its downstream chain length.

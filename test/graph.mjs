@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
 import {once} from "node:events";
 import {mkdtemp, writeFile, rm} from "node:fs/promises";
-import {graphLayout, graphPath, graphRows} from "../editor/graph.js";
+import {graphLayout, graphPath, graphRows, routeRows} from "../editor/graph.js";
 import {serve} from "./server.mjs";
 import {withBrowser} from "./chromium.mjs";
 import {nativeEditor} from "./native.mjs";
@@ -58,6 +58,52 @@ const master = graphLayout({
 });
 assert.deepEqual(graphPath(master.nodes, 0).ids, [3, 0, 4, 5, 6],
     "A track effect follows its source and both master effects, without the other instrument");
+
+// Fan-in, fan-out, repeated inputs, disjoint spans and upward connections.
+for (const inputs of [
+    [...Array.from({length: 10}, () => []), Array.from({length: 10}, (_, i) => i)],
+    [[], ...Array.from({length: 10}, () => [0])],
+    [[], [0, 0]], [[], [0], [], [2]], [[1, 2], [], []]
+]) {
+    const score = {
+        nodes: inputs.flatMap((inputs, i) => [{inputs: inputs.map(id => id * 2 + 1), product: {}}, {inputs: [i * 2]}]),
+        tracks: inputs.map((_, i) => [i * 2, i * 2 + 1]), output: inputs.length * 2 - 1
+    };
+    const graph = graphLayout(score), rows = graphRows(score, graph.nodes);
+    for (const width of [140, 380]) for (const height of [44, 60]) {
+        const layout = routeRows(rows, graph, width, height);
+        assert.deepEqual(routeRows(rows, graph, width, height), layout, "Compact routing is deterministic");
+        const segments = layout.edges.flatMap(e => e.points.slice(1).map((p, i) => [e.points[i], p]));
+        for (const node of layout.nodes.values()) {
+            assert.equal(node.x, inputs[node.id / 2].length ? 26 : 8, "Processing lanes have an 18px indent; instruments stay aligned");
+            for (const [a, b] of segments) for (let k = 1; k < 10; ++k) {
+                const x = a[0] + (b[0] - a[0]) * k / 10, y = a[1] + (b[1] - a[1]) * k / 10;
+                assert(x <= node.x || x >= node.x + node.width || y <= node.y - 10 || y >= node.y + 10,
+                    "Compact cables stay outside the blocks at both row heights");
+            }
+        }
+        for (let i = 0; i < segments.length; ++i) for (let j = i + 1; j < segments.length; ++j) {
+            const [a, b] = segments[i], [c, d] = segments[j];
+            for (const axis of [0, 1]) {
+                if (a[axis] !== b[axis] || a[axis] !== c[axis] || c[axis] !== d[axis]) continue;
+                const k = 1 - axis;
+                const overlap = Math.min(Math.max(a[k], b[k]), Math.max(c[k], d[k])) - Math.max(Math.min(a[k], b[k]), Math.min(c[k], d[k]));
+                assert(overlap < 1e-7, "Cables do not share horizontal or vertical segments");
+            }
+            if (inputs.length === 11) {
+                const side = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+                assert(!(side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0),
+                    "Ordered ports avoid crossings when ten tracks merge or split");
+            }
+        }
+        if (inputs.length === 4) assert.equal(new Set(layout.edges.map(e => e.rail)).size, 1,
+            "Disjoint connections reuse a rail instead of consuming extra width");
+    }
+}
+const inputlessMix = {nodes: [{inputs: []}], tracks: [], output: 0};
+const mixGraph = graphLayout(inputlessMix);
+assert.equal(routeRows(graphRows(inputlessMix, mixGraph.nodes), mixGraph, 380, 60).nodes.get(0).x, 26,
+    "An inputless mix is not mistaken for an instrument");
 
 // Reversed declarations should not force crossings. Long cables must follow a
 // route around intermediate nodes, and parallel inputs must stay distinct.
@@ -241,6 +287,10 @@ try {
                 });
             })()`);
             assert(await aligned(), "Routing blocks align with their existing score lanes");
+            assert.deepEqual(await evaluate(`(() => {
+                const x = id => document.querySelector('.routing-node[data-node="' + id + '"]').getBoundingClientRect().left;
+                return [x(0) - x(1), x(3) - x(1)];
+            })()`), [18, 18], "Effect and mixer lanes are indented in the shared editor");
             await click('.routing-node[data-node="0"]');
             await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
             assert.deepEqual(await openNodes(), [0]);
