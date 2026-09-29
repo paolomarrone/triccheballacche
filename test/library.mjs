@@ -14,8 +14,11 @@ const expectedExamples = published.filter(path => path.startsWith("examples/") &
     !path.startsWith("examples/sources/")).sort();
 assert(expectedPlugins.includes("plugins/synth_mono/build/plugin.perone"));
 assert(expectedExamples.includes(entry));
+assert(expectedExamples.includes("examples/brickworks.janet"));
 assert(expectedExamples.includes("examples/oculus.janet"));
+assert(expectedExamples.includes("examples/campagnola.janet"));
 assert(published.includes("examples/sources/oculus-non-vidit.janet"), "Imports must be published with their scores");
+assert(published.includes("examples/sources/campagnola-theme.janet"), "Imports must be published with their scores");
 const directory = await mkdtemp(tmpdir() + "/triccheballacche-files-");
 const picked = `${directory}/score "音".janet`;
 const pickedSource = '(import ./helper)\n(error helper/message)\n';
@@ -133,7 +136,7 @@ try {
             await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${revision}`);
             await wait('parseFloat(document.querySelector("#time").value) > 0');
             assert(await evaluate('document.querySelector("#errors").hidden'));
-            assert(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes) > 0'));
+            await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
             await evaluate('(() => { const t = document.querySelector("#time"); t.focus(); t.value = "60"; })()');
             await key("Enter", "Enter");
             await wait('Number(document.querySelector("#time").value) > 60');

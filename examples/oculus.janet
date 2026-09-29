@@ -1,6 +1,6 @@
 # Oculus — two-part techno trance. 150 BPM, 4/4, 100 bars.
 # Both complete MIDI voices are the lead material, including the lower entry.
-# The rhythm section and transformations are new. See oculus.md for the form.
+# New rhythm section: duet, double-time acid, break, build, reprise and cadence.
 # ./build/cli examples/oculus.janet renders/oculus.wav 48000
 (import ../lib/pattern :as p)
 (import ./sources/oculus-non-vidit :as source)

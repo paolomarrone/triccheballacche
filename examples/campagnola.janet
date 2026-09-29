@@ -1,6 +1,6 @@
 # Campagnola Stomp — solo honky-tonk piano, 4/4, 68 bars + decay.
 # 124 BPM, relaxing in the trio and pushing forward in the last refrain.
-# Setup and form: campagnola.md. No drum machine; both hands share one piano.
+# Build the optional sampled piano; both hands share one instrument, without drums.
 (import ../lib/pattern :as p)
 (import ./sources/campagnola-theme :as source)
 

@@ -1,4 +1,4 @@
-# Transcription of the user-supplied Oculus non vidit.mid; 480 ticks/quarter.
+# Transcription of Oculus non vidit.
 # Complete P1 and P2. Entries are [start-beat duration-beats MIDI-pitch].
 # Final MIDI note tails are retained here; the arrangement clips its cells.
 (def parts [
