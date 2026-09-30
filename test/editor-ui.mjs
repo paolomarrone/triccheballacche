@@ -53,8 +53,8 @@ try {
                 {id: 'wave', name: 'Waveform', direction: 'input', minimum: 10, maximum: 90, defaultValue: 20, list: true, scalePoints: {Pulse: 90, Sine: 10, Saw: 20}},
                 {id: 'bypass', name: 'Bypass', direction: 'input', minimum: 0, maximum: 1, defaultValue: 0, isBypass: true}
             );
-            const values = [0, .1, 0, 200, 20, 0], writes = [], replies = [], results = {};
-            let hold = false;
+            const values = [0, null, 0, 200, 20, 0], writes = [], replies = [], results = {};
+            let hold = true;
             const request = async (op, revision, id, index, value) => {
                 if (op === 'parameter') return new Promise(resolve => writes.push(() => { values[index] = value; resolve({}); }));
                 if (op === 'controls') {
@@ -71,11 +71,21 @@ try {
             await new Promise(requestAnimationFrame);
             const root = document.querySelector('.plugin-body > div').shadowRoot;
             const gain = root.querySelector('input');
+            const hidden = () => getComputedStyle(gain).visibility === 'hidden' && root.host.inert;
+            results.initialHidden = hidden();
+            gain.focus();
+            results.initialUnfocused = root.activeElement !== gain;
             const move = value => { gain.value = value; gain.dispatchEvent(new Event('input')); };
             const end = () => gain.dispatchEvent(new Event('change'));
             const ack = async () => { writes.shift()(); await Promise.resolve(); await Promise.resolve(); };
             const feedback = async pending => { replies.shift()(); await pending; };
-            hold = true;
+            await feedback();
+            await new Promise(requestAnimationFrame);
+            results.partialHidden = hidden();
+            values[1] = .1;
+            await feedback(host.poll());
+            results.initialVisible = getComputedStyle(gain).visibility === 'visible' && !root.host.inert;
+            results.initialValue = Number(gain.value);
             let poll = host.poll();
             gain.dispatchEvent(new PointerEvent('pointerdown'));
             for (let i = 1; i <= 80; ++i) move(i / 100);
@@ -109,6 +119,12 @@ try {
             }};
             return results;
         })()`);
+        assert(result.initialHidden, "Default values stay hidden until the initial feedback arrives");
+        assert(result.initialUnfocused, "Pending controls cannot receive keyboard focus");
+        assert(result.partialHidden, "Missing values keep the view hidden until every parameter has been initialized");
+        assert(result.initialVisible, "The synchronized view becomes visible and interactive");
+        assert.equal(result.initialValue, .1, "The first visible value comes from the host, not the metadata default");
+        console.log("OK: initial parameter synchronization hides defaults and waits for pending values");
         assert.equal(result.during, .8, "An older poll cannot overwrite the value being dragged");
         assert.equal(result.queued, 0, "Rapid edits coalesce to the latest value");
         assert.equal(result.held, .8, "Active gestures retain their local value after acknowledgements");

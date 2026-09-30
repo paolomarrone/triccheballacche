@@ -117,13 +117,16 @@ export function plugins(request, adapter, fail) {
         fail("");
         const id = entry.id, node = score.nodes[id];
         const token = entry.token = {revision: score.controlRevision ?? score.revision, ready: false,
-            edits: new Map(), gestures: new Set(), changes: node.product.parameters.map(() => 0)};
+            edits: new Map(), gestures: new Set(), changes: node.product.parameters.map(() => 0),
+            uninitialized: new Set(node.product.parameters.keys())};
         if (native.has(id)) {
             await request("watch", token.revision, id, "off");
             native.delete(id); buttons(entry);
             if (entry.token !== token) return;
         }
-        const host = document.createElement("div"), shadow = host.attachShadow({mode: "open"});
+        const host = token.host = document.createElement("div"), shadow = host.attachShadow({mode: "open"});
+        // Keep layout available to UI factories without exposing their default values.
+        host.style.visibility = "hidden"; host.inert = true;
         const style = document.createElement("style");
         style.textContent = `:host { display: block; font: inherit; -webkit-user-select: none; user-select: none; }
             input, textarea, [contenteditable=true] { -webkit-user-select: text; user-select: text; }
@@ -210,12 +213,17 @@ export function plugins(request, adapter, fail) {
                 // Feedback may predate a gesture or an edit still waiting for the
                 // bridge. Only deliver samples taken after the latest local edit.
                 if (Number.isFinite(value) && !token.gestures.has(index) && !pending.has(index) &&
-                    !token.edits.has(index) && token.changes[index] === changes[index])
+                    !token.edits.has(index) && token.changes[index] === changes[index]) {
                     token.ui.set_parameter?.(index, value);
+                    token.uninitialized.delete(index);
+                }
             }
             for (const bytes of data.messages) {
                 if (entry.token !== token) return;
                 token.ui.msg_in?.(new Uint8Array(bytes));
+            }
+            if (entry.token === token && token.host.inert && !token.uninitialized.size) {
+                token.host.style.visibility = ""; token.host.inert = false;
             }
         } catch (error) { failed(entry, token, error); }
     }
