@@ -57,9 +57,9 @@ async function stop() {
     if (player) await player.stop();
 }
 
-async function run(path, source, state) {
-    if (state.queued) throw Error("Wait for the pending revision to become active");
-    const live = state.playing && state.live;
+async function run(path, source, state, live) {
+    if (live && state.queued) throw Error("Wait for the pending revision to become active");
+    if (live && !(state.playing && state.live)) throw Error("Live updates require a playing live score");
     failure = "";
     log = [];
     let nextScore = 0, replacing = false;
@@ -145,7 +145,7 @@ export async function command(op, ...args) {
             link.href = url; link.download = path.split("/").at(-1);
             link.click();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } else if (op === "run") result = await run(path, checkedText(args[1]), state);
+        } else if (op === "run" || op === "update") result = await run(path, checkedText(args[1]), state, op === "update");
         else if (op === "seek") {
             const seconds = Number(args[0]);
             if (!player) throw Error("Run a score before seeking");

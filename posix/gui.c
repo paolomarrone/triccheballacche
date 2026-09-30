@@ -225,10 +225,12 @@ static void command(Editor *editor, webui_event_t *event) {
 		error = file_read(path, &text);
 	} else if (!strcmp(op, "save")) {
 		error = file_save(path, source);
-	} else if (!strcmp(op, "run")) {
-		int live = editor->transport.playing && transport_live(&editor->transport);
-		if (editor->transport.queued.nnodes)
+	} else if (!strcmp(op, "run") || !strcmp(op, "update")) {
+		int live = !strcmp(op, "update");
+		if (live && editor->transport.queued.nnodes)
 			error = "Wait for the pending revision to become active";
+		else if (live && !(editor->transport.playing && transport_live(&editor->transport)))
+			error = "Live updates require a playing live score";
 		free(editor->error);
 		editor->error = NULL;
 		Score *next = calloc(1, sizeof(*next));

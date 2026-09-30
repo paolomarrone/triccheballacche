@@ -116,7 +116,6 @@ export function plugins(request, adapter, fail) {
     async function mount(entry) {
         if (entries.get(entry.id) !== entry || !score.nodes[entry.id].product || !availableProject || busy || !visible || !entry.details.open || entry.pending) return;
         detach(entry);
-        fail("");
         const id = entry.id, node = score.nodes[id];
         const token = entry.token = {revision: score.controlRevision ?? score.revision};
         token.controls = pluginControls(node.product, (op, ...args) => request(op, token.revision, id, ...args),

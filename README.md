@@ -119,6 +119,7 @@ and updates the session's files. Reloading the page restores the published files
 
 - **Play** (Ctrl/Command+Space) evaluates changed code or resumes the prepared
   score. Ctrl/Command+Enter forces evaluation, including changed imports.
+  Opening another file keeps audio running; Play starts it as a new session.
 - **Stop** (Esc) holds the position and DSP state. Click the ruler or enter
   seconds to seek; seeking resets effect history and retriggers spanning notes.
 - **Live updates** to `daw/score` enter on the next beat grid (`:quantum`, default

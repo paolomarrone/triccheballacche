@@ -84,9 +84,9 @@ function showError(error) {
 function request(op, ...args) {
     const result = queue.then(async () => {
         const response = await backend.command(op, ...args);
-        // Any command may observe the audio boundary, including Stop or another evaluation.
-        // Adopt that revision before its pending source can be replaced by a new submission.
-        if (pending && Number.isInteger(response.revision) && response.revision !== revision) {
+        // Any command may observe a live revision. A successful Run replaces the
+        // whole session; its score must not inherit the old session's queued source.
+        if (pending && (op !== "run" || response.error) && Number.isInteger(response.revision) && response.revision !== revision) {
             const result = response.score ? response : await backend.command("score");
             if (result.error) throw Error(result.error);
             revision = result.score.revision;
@@ -123,6 +123,7 @@ async function action(op, entry = path.value, file) {
     if (!ready || busy) return;
     if (op === "play" && needsEvaluation()) op = "run";
     const opening = op === "open" || op === "import";
+    const updating = op === "run" && live && playing && entry === tracedPath;
     if (opening && dirty() && !confirm("Open another file and discard unsaved changes?")) return;
     if ((opening || ["save", "run"].includes(op)) && !entry.trim()) {
         showError("Enter a score path.");
@@ -133,10 +134,10 @@ async function action(op, entry = path.value, file) {
     showError("");
     update();
     try {
-        if (op === "run" && !(live && playing)) controls.dispose();
+        if (op === "run" && !updating) controls.dispose();
         if (file?.size > 8 * 1024 * 1024) throw Error("Score too large (at most 8 MiB)");
         const source = file ? await file.text() : ["save", "run"].includes(op) ? code.value : "";
-        const result = await request(op, entry, source);
+        const result = await request(updating ? "update" : op, entry, source);
         if (op === "run" && result.queued) {
             pending = {source, path: result.path};
         } else if (op === "run") {

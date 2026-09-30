@@ -1,5 +1,5 @@
-# Change the notes or cutoff and press Run. The next revision enters on a four-beat grid.
-# Play resumes; Stop keeps the position and instruments and cancels a pending revision.
+# Change the notes or cutoff and press Play. The next revision enters on a four-beat grid.
+# Unchanged Play resumes; Stop keeps the position and instruments and cancels a pending revision.
 (import ../lib/pattern :as p)
 
 (def bass (daw/plugin :bass "plugins/synth_mono/build/plugin.perone"

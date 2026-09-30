@@ -13,11 +13,21 @@ const source = `(import ../../../lib/pattern :as p)
 (daw/tempo 120)
 (daw/score (p/loop (p/map |[:note tone $ 100] (p/steps 0.5 [60 64 67 nil]))))
 `;
+const finite = `${directory}/finite.janet`, invalid = `${directory}/invalid.janet`;
+const finiteSource = `(def a (daw/plugin "build/test/fixture.perone" {:gain 0.02}))
+(def b (daw/plugin "build/test/fixture.perone" {:gain 0.02}))
+(daw/output (daw/mix [(daw/track a) (daw/track b)]))
+(daw/note a 0 3 60)
+(daw/note b 0 3 67)
+(daw/end 4.00001)
+`;
 let app, server;
 try {
     await writeFile(entry, source);
+    await writeFile(finite, finiteSource);
+    await writeFile(invalid, '(error "new score error")');
     const catalog = `${directory}/project.json`;
-    execFileSync("node", ["web/catalog.mjs", catalog, "lib", entry, "build/test/fixture.perone"]);
+    execFileSync("node", ["web/catalog.mjs", catalog, "lib", directory, "build/test/fixture.perone"]);
     server = serve(0);
     await once(server, "listening");
     for (const mode of ["native", "web"]) {
@@ -100,13 +110,31 @@ try {
             await seek(20);
             await wait('Number(document.querySelector("#time").value) > 20');
             await wait('document.querySelector("#marks").childElementCount > 0');
-            await click("#stop");
 
-            // A finite score shares the transport, including endpoint restart and invalid-position rejection.
-            await set("#code", '(def tone (daw/plugin "build/test/fixture.perone" {:gain 0.04})) (daw/output (daw/track tone)) (daw/note tone 0 3 60) (daw/end 4.00001)');
+            // Opening another example must replace the playing live session only after successful preparation.
+            await evaluate(`(() => {
+                const examples = document.querySelector('#examples');
+                for (const path of ${JSON.stringify([entry, finite, invalid])}) examples.add(new Option(path, path));
+            })()`);
+            const open = async path => {
+                await set("#examples", path);
+                await wait(`document.querySelector('#path').value === ${JSON.stringify(path)} && !document.querySelector('#play').disabled`);
+            };
+            await open(invalid);
             await click("#play");
+            await wait('document.querySelector("#errors").textContent.includes("new score error")');
+            assert.equal(await evaluate('document.querySelector("#stop").disabled'), false, "A failed new score leaves the old audio running");
+            await open(finite);
+            assert.equal(await evaluate('document.querySelector("#stop").disabled'), false, "Browsing another example keeps audio running");
+            await click("#play");
+            await wait('!document.querySelector("#play").disabled');
+            assert.equal(await evaluate('document.querySelector("#errors").textContent'), "", "A new file starts a session instead of attempting a live update");
+            await wait('document.querySelectorAll("#track-list .track").length === 2');
+            assert.equal(await evaluate('document.querySelector("#code").value'), finiteSource);
+            assert(!await evaluate('window.savedUI === document.querySelector(".plugin-body > div")'), "A new score creates its own plugin UI");
             await wait('!document.querySelector("#stop").disabled');
             await click("#stop");
+            // The finite session retains endpoint restart and invalid-position rejection.
             await seek(2);
             await wait('Number(document.querySelector("#time").value) === 2');
             await seek(10);
@@ -122,9 +150,22 @@ try {
             await click("#play");
             await wait(`Number(document.querySelector('#timeline').dataset.revision) > ${finiteRevision}`);
             assert(await evaluate('document.querySelector("#errors").hidden'), "Changing the path evaluates even when the text is unchanged");
+
+            // A different file also replaces a live session with a revision still queued.
+            await open(entry);
+            await click("#play");
+            await wait('!document.querySelector("#play").disabled');
+            await key("Enter", "Enter", 2);
+            await wait('document.querySelector("#state").textContent.includes("queued")');
+            await open(finite);
+            await click("#play");
+            await wait('!document.querySelector("#play").disabled');
+            assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
+            await wait('document.querySelectorAll("#track-list .track").length === 2');
+            assert(!await evaluate('document.querySelector("#state").textContent.includes("queued")'));
             await click("#stop");
             assert.deepEqual(diagnostics, []);
-            console.log(`OK: ${mode} conditional Play, saved edits, pending revisions, path changes, seek, finite endpoints, UI continuity, errors and timeout`);
+            console.log(`OK: ${mode} conditional Play, live-to-finite file switches, pending revisions, seek, UI continuity, errors and timeout`);
         }, {graphics: true});
         await app?.close();
         app = undefined;
