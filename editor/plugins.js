@@ -127,10 +127,6 @@ export function plugins(request, adapter, fail) {
         const style = document.createElement("style");
         style.textContent = `:host { display: block; font: inherit; -webkit-user-select: none; user-select: none; }
             input, textarea, [contenteditable=true] { -webkit-user-select: text; user-select: text; }
-            .perone-controls { display: grid; gap: 8px; }
-            .perone-controls label { display: grid; grid-template-columns: minmax(5em, 1fr) minmax(4em, 1fr) 6em; gap: 6px; align-items: center; }
-            .perone-controls input, .perone-controls select, .perone-controls meter { width: 100%; min-width: 0; }
-            .perone-controls output { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
             button, input, select { font: inherit; }`;
         const element = document.createElement("div");
         shadow.append(style, element);

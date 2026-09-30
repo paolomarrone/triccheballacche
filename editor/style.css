@@ -43,11 +43,13 @@ footer { color: var(--muted); font-size: 12px; }
 #plugins { display: flex; flex-direction: column; flex: 0 0 360px; min-width: 0; max-width: 65%; border: 1px solid var(--border); }
 #plugin-list { overflow: auto; min-height: 0; }
 .plugin { border-bottom: 1px solid var(--border); }
-.plugin summary { display: flex; align-items: center; gap: 4px; padding: 5px; cursor: pointer; list-style: none; }
+.plugin summary { display: flex; align-items: center; gap: 4px; min-height: 30px; padding: 3px 7px; cursor: pointer; list-style: none; }
+.plugin summary:hover, .plugin[open] summary { background: light-dark(#f4f4f4, #1b1b1b); }
 .plugin summary::before { content: "▸"; color: var(--muted); }
 .plugin[open] summary::before { content: "▾"; }
 .plugin-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plugin summary button { padding: 0 5px; }
+.plugin summary button { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--muted); }
+.plugin summary button:hover { color: var(--accent); background: var(--active); }
 .plugin summary button[aria-pressed=true] { color: var(--accent); background: var(--active); }
 .plugin-body { padding: 6px; overflow: auto; }
 #track-headers { position: sticky; top: 24px; overflow: hidden; background: Canvas; }

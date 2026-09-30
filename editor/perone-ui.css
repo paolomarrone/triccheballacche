@@ -1,0 +1,35 @@
+.perone-controls { display: grid; gap: 1px; font-size: 12px; }
+.perone-controls * { box-sizing: border-box; }
+.parameter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) 62px; align-items: center; gap: 8px; min-height: 32px; padding: 2px 4px; border-radius: 3px; }
+.parameter:hover { background: light-dark(#f4f4f4, #1b1b1b); }
+.parameter:focus-within { background: var(--active); }
+.parameter label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.parameter-control { position: relative; display: flex; align-items: center; min-width: 0; }
+.parameter output { color: var(--muted); text-align: right; white-space: nowrap; font: 11px ui-monospace, monospace; }
+.parameter:focus-within output { color: var(--accent); }
+.perone-controls :focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.perone-controls input { margin: 0; accent-color: var(--accent); }
+.perone-controls input[type=range] { appearance: none; width: 100%; min-width: 0; height: 24px; background: transparent; cursor: ew-resize; }
+.perone-controls input[type=range]::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--fill), var(--border) var(--fill)); }
+.perone-controls input[type=range]::-moz-range-track { height: 3px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--fill), var(--border) var(--fill)); }
+.perone-controls input[type=range]::-webkit-slider-thumb { appearance: none; width: 8px; height: 14px; margin-top: -5.5px; border: 1px solid Canvas; border-radius: 2px; background: var(--accent); }
+.perone-controls input[type=range]::-moz-range-thumb { width: 6px; height: 12px; border: 1px solid Canvas; border-radius: 2px; background: var(--accent); }
+.perone-controls input[type=checkbox] { appearance: none; position: relative; width: 28px; height: 16px; border: 1px solid var(--border); border-radius: 3px; background: transparent; cursor: pointer; }
+.perone-controls input[type=checkbox]::before { content: ""; position: absolute; top: 3px; left: 3px; width: 8px; height: 8px; border-radius: 1px; background: var(--muted); }
+.perone-controls input[type=checkbox]:checked { border-color: var(--accent); background: var(--active); }
+.perone-controls input[type=checkbox]:checked::before { left: 15px; background: var(--accent); }
+.perone-controls meter { appearance: none; width: 100%; min-width: 0; height: 3px; border: 0; border-radius: 2px; background: var(--border); }
+.perone-controls meter::-webkit-meter-bar { height: 3px; border: 0; border-radius: 2px; box-shadow: none; background: var(--border); }
+.perone-controls meter::-webkit-meter-optimum-value { background: var(--accent); }
+.perone-controls meter::-webkit-meter-suboptimum-value { background: var(--accent); }
+.perone-controls meter::-webkit-meter-even-less-good-value { background: var(--accent); }
+.perone-controls meter::-moz-meter-bar { background: var(--accent); }
+.parameter-control:has(.parameter-choice) { grid-column: 2 / -1; }
+.parameter-choice { width: 100%; min-width: 0; height: 26px; padding: 3px 24px 3px 7px; border: 1px solid var(--border); border-radius: 3px; background: transparent; color: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.parameter-choice::after { content: ""; position: absolute; top: 9px; right: 9px; width: 5px; height: 5px; border: solid var(--muted); border-width: 0 1px 1px 0; transform: rotate(45deg); }
+.parameter-choice[aria-expanded=true] { border-color: var(--accent); }
+.parameter-menu { position: fixed; inset: auto; margin: 0; max-height: min(240px, calc(100dvh - 8px)); overflow: auto; padding: 3px; border: 1px solid var(--border); border-radius: 4px; background: Canvas; color: CanvasText; box-shadow: 0 4px 14px #0004; }
+.parameter-menu button { display: block; width: 100%; padding: 5px 7px; border: 0; border-radius: 2px; background: transparent; color: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.parameter-menu button:hover, .parameter-menu button:focus-visible { background: var(--active); outline: 1px solid var(--accent); outline-offset: -1px; }
+.parameter-menu [aria-selected=true] { color: var(--accent); }
+.perone-controls [hidden] { display: none; }

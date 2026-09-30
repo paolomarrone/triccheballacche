@@ -41,13 +41,19 @@ try {
     const wasm = `http://127.0.0.1:${server.address().port}/editor/index.html?score=${entry}&project=../${catalog}`;
     // Hold feedback and edit acknowledgements independently to reproduce delayed
     // polling during a gesture, after release, and across a completed edit.
-    await writeFile(`${directory}/controls.html`, '<!doctype html><aside id="plugins"><div id="plugin-list"></div></aside>');
-    await withBrowser(async ({call, evaluate}) => {
+    await writeFile(`${directory}/controls.html`, '<!doctype html><meta charset="utf-8"><link rel="stylesheet" href="/editor/style.css"><aside id="plugins" style="width:360px;flex:none"><div id="plugin-list"></div></aside>');
+    await withBrowser(async ({call, evaluate, wait, key}) => {
+        await call("Emulation.setDeviceMetricsOverride", {width: 640, height: 520, deviceScaleFactor: 1, mobile: false});
         await call("Page.navigate", {url: `http://127.0.0.1:${server.address().port}/${directory}/controls.html`});
         const result = await evaluate(`(async () => {
             const {plugins} = await import('/editor/plugins.js');
             const {product} = await (await fetch('/build/test/fixture.perone/product.json')).json();
-            const values = [0, .1, 0], writes = [], replies = [], results = {};
+            product.parameters.push(
+                {id: 'cutoff', name: 'Filter cutoff', direction: 'input', minimum: 20, maximum: 20000, defaultValue: 200, map: 'logarithmic', unit: 'hz'},
+                {id: 'wave', name: 'Waveform', direction: 'input', minimum: 10, maximum: 90, defaultValue: 20, list: true, scalePoints: {Pulse: 90, Sine: 10, Saw: 20}},
+                {id: 'bypass', name: 'Bypass', direction: 'input', minimum: 0, maximum: 1, defaultValue: 0, isBypass: true}
+            );
+            const values = [0, .1, 0, 200, 20, 0], writes = [], replies = [], results = {};
             let hold = false;
             const request = async (op, revision, id, index, value) => {
                 if (op === 'parameter') return new Promise(resolve => writes.push(() => { values[index] = value; resolve({}); }));
@@ -96,7 +102,11 @@ try {
             await ack(); await ack();
             await feedback(poll);
             results.completed = Number(gain.value);
-            host.dispose();
+            hold = false;
+            globalThis.controlsTest = {host, root, values, async sync() {
+                while (writes.length) await ack();
+                await host.poll();
+            }};
             return results;
         })()`);
         assert.equal(result.during, .8, "An older poll cannot overwrite the value being dragged");
@@ -109,6 +119,48 @@ try {
         assert.equal(result.resumed, .25, "Fresh DSP feedback resumes after the gesture");
         assert.equal(result.completed, .7, "A completed edit still invalidates an older poll");
         console.log("OK: parameter gestures, delayed feedback, acknowledgements, coalescing and independent controls");
+        await wait('controlsTest.root.querySelector("link").sheet !== null');
+        await evaluate('controlsTest.root.querySelector(".parameter-choice").focus()');
+        await key("ArrowDown");
+        await wait('controlsTest.root.querySelector(".parameter-choice").getAttribute("aria-expanded") === "true"');
+        assert.deepEqual(await evaluate('Array.from(controlsTest.root.querySelectorAll("[role=option]"), option => option.textContent)'),
+            ["Sine", "Saw", "Pulse"], "Choice order follows parameter values, independent of metadata key order");
+        assert.equal(await evaluate('controlsTest.root.activeElement.textContent'), "Saw");
+        await key("End");
+        assert.equal(await evaluate('controlsTest.root.activeElement?.textContent'), "Pulse", "End focuses the last option");
+        assert(await evaluate('controlsTest.root.querySelector(".parameter-menu").matches(":popover-open")'), "Keyboard navigation keeps the menu open");
+        await key("Enter");
+        await evaluate('controlsTest.sync()');
+        assert.equal(await evaluate('controlsTest.values[4]'), 90, "Choice menus send the option value, not its position");
+        assert.equal(await evaluate('controlsTest.root.querySelector(".parameter-choice").textContent'), "Pulse");
+        await key("ArrowDown");
+        await wait('controlsTest.root.activeElement?.getAttribute("role") === "option"');
+        await key("s", "KeyS");
+        assert.equal(await evaluate('controlsTest.root.activeElement.textContent'), "Sine", "Choice menus support type-ahead");
+        await key("Escape");
+        assert.equal(await evaluate('controlsTest.root.querySelector(".parameter-choice").value'), "90", "Escape cancels a pending choice");
+        await evaluate('controlsTest.root.querySelector("input[type=checkbox]").focus()');
+        await key(" ", "Space");
+        await evaluate('controlsTest.sync()');
+        assert.equal(await evaluate('controlsTest.values[5]'), 1, "Switches work from the keyboard");
+        await evaluate(`(() => {
+            const cutoff = controlsTest.root.querySelectorAll('input[type=range]')[2];
+            cutoff.value = .5; cutoff.dispatchEvent(new Event('input')); cutoff.dispatchEvent(new Event('change'));
+        })()`);
+        await evaluate('controlsTest.sync()');
+        assert(Math.abs(await evaluate('controlsTest.values[3]') - Math.sqrt(20 * 20000)) < 1e-6,
+            "Styled sliders preserve logarithmic parameter mapping");
+        for (const theme of ["light", "dark"]) {
+            await call("Emulation.setEmulatedMedia", {features: [{name: "prefers-color-scheme", value: theme}]});
+            await evaluate('controlsTest.root.querySelector(".parameter-choice").click()');
+            await wait('controlsTest.root.querySelector(".parameter-menu").matches(":popover-open")');
+            const shot = await call("Page.captureScreenshot", {format: "png"});
+            await writeFile(`build/test/parameter-controls-${theme}.png`, Buffer.from(shot.data, "base64"));
+            await key("Escape");
+        }
+        await evaluate('controlsTest.host.dispose()');
+        assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 0);
+        console.log("OK: styled parameter controls, keyboard menus, switches, logarithmic mapping and disposal");
     });
     for (const mode of ["web", "native"]) {
         let url = wasm;
