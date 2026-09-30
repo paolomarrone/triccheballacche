@@ -99,7 +99,7 @@ export function scoreSpace(canvas, message, fail) {
             const t = j * step;
             line(flat ? [[x(t), 0, 0], [x(t), -score.tracks.length * row * pixel, 0]] :
                 [[x(t), 0, -depth / 2], [x(t), 0, depth / 2]], grid, .4);
-            ticks.push(label(`${Number(t.toFixed(digits))}s`, x(t), 0, flat ? 0 : depth / 2 + 4, ink, content));
+            if (flat) ticks.push(label(`${Number(t.toFixed(digits))}s`, x(t), 0, 0, ink, content));
         }
         score.tracks.forEach((_, i) => {
             if (flat) line([[-length / 2, -(i + 1) * row * pixel, 0], [length / 2, -(i + 1) * row * pixel, 0]], grid, .6, world);
@@ -176,8 +176,6 @@ export function scoreSpace(canvas, message, fail) {
             head.material.depthTest = false; head.renderOrder = 5;
         } else {
             line([[-length / 2 - 6, 0, depth / 2], [-length / 2 - 6, pitchY(top), depth / 2]], grid, .6, world);
-            for (let pitch = base; pitch <= top; pitch += 12)
-                label(`C${pitch / 12 - 1}`, -length / 2 - 9, pitchY(pitch), depth / 2, ink);
             head = new THREE.Group();
             const headHeight = Math.max(10, pitchY(top) + 2);
             const plane = new THREE.Mesh(new THREE.PlaneGeometry(depth, headHeight), new THREE.MeshBasicMaterial({
@@ -235,7 +233,7 @@ export function scoreSpace(canvas, message, fail) {
         content.position.x = (origin - view.from) / view.span * length;
         for (const tick of ticks) {
             tick.visible = Math.abs(tick.position.x + content.position.x) <= length / 2;
-            if (flat) tick.position.y = (layout.ruler / 2 - layout.scroll) * pixel;
+            tick.position.y = (layout.ruler / 2 - layout.scroll) * pixel;
         }
         if (rulerBand) rulerBand.position.y = (layout.ruler / 2 - layout.scroll) * pixel;
         let count = 0, active = 0;

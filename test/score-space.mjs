@@ -140,6 +140,9 @@ try {
             await click("#score-reset");
             await painted();
             await wait('document.querySelector("#score-canvas").dataset.automation === "10"');
+            const resetView = await flatView();
+            assert.equal(resetView.row, initial.row, "Reset restores the default track height");
+            assert(Math.abs(resetView.span - initial.span) < 1e-6, "Reset restores the default time scale");
             // Find a rendered note through real ray casting, then select its Janet origin.
             const point = await evaluate(`(() => {
                 const c = document.querySelector('#score-canvas'), r = c.getBoundingClientRect();
@@ -149,6 +152,23 @@ try {
                 }
             })()`);
             assert(point, "Spatial notes must be pickable");
+            const noteBeforeZoom = await evaluate('document.querySelector("#score-canvas").title');
+            const timeBeforeZoom = await evaluate('Number(document.querySelector("#time").value)');
+            await wheel(-200);
+            await wheel(-200, {altKey: true});
+            await wheel(-100, {ctrlKey: true}, "#track-headers");
+            await painted();
+            const spatialZoom = await flatView();
+            assert(spatialZoom.span < resetView.span && spatialZoom.row > resetView.row);
+            await click("#score-reset");
+            await painted();
+            assert.deepEqual(await flatView(), resetView, "Reset restores time zoom, track zoom and viewport together");
+            assert.equal(await evaluate('Number(document.querySelector("#time").value)'), timeBeforeZoom, "Reset never seeks the transport");
+            await evaluate(`document.querySelector('#score-canvas').dispatchEvent(new PointerEvent('pointermove', {clientX: ${point.x}, clientY: ${point.y}}))`);
+            assert.equal(await evaluate('document.querySelector("#score-canvas").title'), noteBeforeZoom,
+                "Reset restores the camera zoom: the same screen position picks the same note");
+            assert.equal(await evaluate('document.querySelector("#follow").checked'), false, "Reset preserves the Follow setting");
+            await click("#follow");
             for (const type of ["mousePressed", "mouseReleased"])
                 await call("Input.dispatchMouseEvent", {type, ...point, button: "left", clickCount: 1});
             await wait('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd).includes("[:note")');
@@ -156,6 +176,7 @@ try {
             await wait('document.querySelector("#track-list .track-listen button").getAttribute("aria-pressed") === "true"');
             await click("#show-automation");
             await wait('document.querySelector("#score-canvas").dataset.automation === "0"');
+            await wheel(1000, {ctrlKey: true}, "#track-headers");
             await click("#score-3d");
             await wait('document.querySelector("#score-canvas").dataset.projection === "2d" && document.querySelector("#score-canvas").dataset.automation === "0"');
             assert.equal(await evaluate('document.querySelector("#track-list .track-listen button").getAttribute("aria-pressed")'), "true");

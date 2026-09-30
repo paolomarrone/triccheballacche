@@ -131,13 +131,15 @@ and updates the session's files. Reloading the page restores the published files
   click a block to inspect its signal path. Drag the divider to resize the map:
   more width spreads nodes along the signal flow and shortens connections.
   Follow keeps the playhead in view. The 3D toggle changes the projection;
-  drag then orbits, right-drag pans and Alt+wheel zooms time.
+  drag then orbits, right-drag pans and Alt+wheel zooms time. Reset view restores
+  the camera and zoom around the current playback position.
 - **Automation** toggles visibility only. Each track's checklist selects curves.
   Source highlights and note/curve picking connect the view to the code.
 - **Routing blocks** show plugins and explicit mixes, folding track/master gain
   stages into connections. Click a node to highlight its signal path and list
   it in the side panel, including downstream group/master effects; only the
-  selected node opens. Routing is read-only.
+  selected node opens. Click the background or press Escape to clear the highlight.
+  Routing is read-only.
 - **Track names** open the plugin panel. Mute/solo affects audition, including
   routed groups. Plugin sections collapse; the window icon toggles a native UI
   where available. Manual parameter edits are temporary, not written to Janet.

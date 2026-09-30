@@ -7,13 +7,13 @@ export function timeline(request, select, inspect, seek, error) {
     const panel = get("timeline"), roll = get("roll");
     const headers = get("track-headers"), tracks = get("track-list"), follow = get("follow"), detail = get("note-info");
     const space = get("score-view"), canvas = get("score-canvas"), message = get("score-message");
-    let score, data, from = 0, scale = 0.02, time = 0, playing = false;
-    let width = 0, height = 0, row = 60, label = 220, version = 0, pending = false, scheduled = false;
+    const ruler = 24, defaultScale = 0.02, defaultRow = 60;
+    let score, data, from = 0, scale = defaultScale, time = 0, playing = false;
+    let width = 0, height = 0, row = defaultRow, label = 220, version = 0, pending = false, scheduled = false;
     let loaded, latency = 0, position = 0, stamp = 0, animation = 0;
     let drag, selected, trackIndex = 0;
     let listening = [], outputs = [], enabled = false;
     const changing = new Set();
-    const ruler = 24;
     const envelopes = automation(request, changed);
     const map = trackGraph(get("track-routing"), (id, path, index) => {
         highlightTrack(index);
@@ -35,7 +35,16 @@ export function timeline(request, select, inspect, seek, error) {
         drag = undefined;
         changed();
     };
-    get("score-reset").onclick = () => renderer?.home();
+    get("score-reset").onclick = () => {
+        scale = defaultScale; row = defaultRow;
+        from = Math.max(0, time - viewport().span * .15);
+        roll.scrollTop = 0;
+        resize();
+        renderer?.home();
+    };
+    headers.onclick = event => {
+        if (!event.target.closest("button")) map.clear();
+    };
     space.addEventListener("wheel", event => {
         if (flat) {
             event.stopImmediatePropagation();

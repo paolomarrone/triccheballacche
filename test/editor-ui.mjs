@@ -39,6 +39,77 @@ try {
     server = serve(0);
     await once(server, "listening");
     const wasm = `http://127.0.0.1:${server.address().port}/editor/index.html?score=${entry}&project=../${catalog}`;
+    // Hold feedback and edit acknowledgements independently to reproduce delayed
+    // polling during a gesture, after release, and across a completed edit.
+    await writeFile(`${directory}/controls.html`, '<!doctype html><aside id="plugins"><div id="plugin-list"></div></aside>');
+    await withBrowser(async ({call, evaluate}) => {
+        await call("Page.navigate", {url: `http://127.0.0.1:${server.address().port}/${directory}/controls.html`});
+        const result = await evaluate(`(async () => {
+            const {plugins} = await import('/editor/plugins.js');
+            const {product} = await (await fetch('/build/test/fixture.perone/product.json')).json();
+            const values = [0, .1, 0], writes = [], replies = [], results = {};
+            let hold = false;
+            const request = async (op, revision, id, index, value) => {
+                if (op === 'parameter') return new Promise(resolve => writes.push(() => { values[index] = value; resolve({}); }));
+                if (op === 'controls') {
+                    const data = {values: [...values], messages: []};
+                    if (hold) return new Promise(resolve => replies.push(() => resolve(data)));
+                    return data;
+                }
+                return {};
+            };
+            const host = plugins(request, {}, error => { if (error) throw error; });
+            host.status(true, false);
+            host.score({revision: 1, nodes: [{name: 'Synth', inputs: [], product}, {inputs: [0]}], tracks: [[0, 1]]});
+            host.show(true);
+            await new Promise(requestAnimationFrame);
+            const root = document.querySelector('.plugin-body > div').shadowRoot;
+            const gain = root.querySelector('input');
+            const move = value => { gain.value = value; gain.dispatchEvent(new Event('input')); };
+            const end = () => gain.dispatchEvent(new Event('change'));
+            const ack = async () => { writes.shift()(); await Promise.resolve(); await Promise.resolve(); };
+            const feedback = async pending => { replies.shift()(); await pending; };
+            hold = true;
+            let poll = host.poll();
+            gain.dispatchEvent(new PointerEvent('pointerdown'));
+            for (let i = 1; i <= 80; ++i) move(i / 100);
+            await feedback(poll);
+            results.during = Number(gain.value);
+            await ack(); await ack();
+            results.queued = writes.length;
+            values[0] = .6; values[1] = .3; values[2] = 2;
+            await feedback(host.poll());
+            results.held = Number(gain.value);
+            results.meter = root.querySelector('meter').value;
+            results.other = Number(root.querySelectorAll('input')[1].value);
+            end();
+            poll = host.poll();
+            await ack();
+            await feedback(poll);
+            results.released = Number(gain.value);
+            results.sent = values[1];
+            values[1] = .25;
+            await feedback(host.poll());
+            results.resumed = Number(gain.value);
+            poll = host.poll();
+            move(.7); end();
+            await ack(); await ack();
+            await feedback(poll);
+            results.completed = Number(gain.value);
+            host.dispose();
+            return results;
+        })()`);
+        assert.equal(result.during, .8, "An older poll cannot overwrite the value being dragged");
+        assert.equal(result.queued, 0, "Rapid edits coalesce to the latest value");
+        assert.equal(result.held, .8, "Active gestures retain their local value after acknowledgements");
+        assert.equal(result.meter, .6, "Output meters keep receiving feedback during a gesture");
+        assert(Math.abs(result.other - 2 / 3) < 1e-12, "Other input parameters keep receiving feedback during a gesture");
+        assert.equal(result.released, .8, "A poll started before acknowledgement cannot overwrite the released value");
+        assert.equal(result.sent, .8, "Releasing the slider sends the final local value");
+        assert.equal(result.resumed, .25, "Fresh DSP feedback resumes after the gesture");
+        assert.equal(result.completed, .7, "A completed edit still invalidates an older poll");
+        console.log("OK: parameter gestures, delayed feedback, acknowledgements, coalescing and independent controls");
+    });
     for (const mode of ["web", "native"]) {
         let url = wasm;
         if (mode === "native") {

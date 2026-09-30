@@ -261,6 +261,21 @@ try {
             await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
             assert.equal(await evaluate('document.querySelectorAll(".routing-cable.highlighted").length'), 2);
             assert.equal(await evaluate('document.querySelector(".routing-node.dim").dataset.node'), "3", "A parallel dry branch is outside the effect's path");
+            await evaluate(`globalThis.inspectedUI = ${effectUI}`);
+            const background = await evaluate(`(() => {
+                const row = document.querySelector('#track-list .track').getBoundingClientRect();
+                return {x: row.left + 200, y: row.bottom - 3};
+            })()`);
+            for (const type of ["mousePressed", "mouseReleased"])
+                await call("Input.dispatchMouseEvent", {type, ...background, button: "left", clickCount: 1});
+            assert.equal(await evaluate('document.querySelectorAll(".routing-node[aria-pressed=true], #track-routing .dim, .routing-cable.highlighted").length'), 0,
+                "Clicking the routing background clears selection and restores all paths");
+            assert(await evaluate(`inspectedUI === ${effectUI}`), "Clearing the highlight preserves the inspector UI");
+            await click('.routing-node[data-node="0"]');
+            await click('#track-list [data-listen="1"]');
+            assert.equal(await evaluate('document.querySelector(".routing-node[aria-pressed=true]").dataset.node'), "0",
+                "Track controls do not clear the selected node");
+            await click('#track-list [data-listen="1"]');
             await click('.track-select[data-track="0"]');
             await wait(`document.querySelector('.plugin[data-node="1"] .plugin-body > div')?.shadowRoot?.querySelectorAll('.perone-controls label').length === 3`);
             assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 1, "Track selection restores its plugin chain");

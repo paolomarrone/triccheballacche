@@ -116,7 +116,8 @@ export function plugins(request, adapter, fail) {
         detach(entry);
         fail("");
         const id = entry.id, node = score.nodes[id];
-        const token = entry.token = {revision: score.controlRevision ?? score.revision, ready: false};
+        const token = entry.token = {revision: score.controlRevision ?? score.revision, ready: false,
+            edits: new Map(), gestures: new Set(), changes: node.product.parameters.map(() => 0)};
         if (native.has(id)) {
             await request("watch", token.revision, id, "off");
             native.delete(id); buttons(entry);
@@ -134,7 +135,7 @@ export function plugins(request, adapter, fail) {
         const element = document.createElement("div");
         shadow.append(style, element);
         entry.body.append(host);
-        const edits = new Map(), messages = [];
+        const {edits} = token, messages = [];
         let sending = false;
         async function flush() {
             sending = true;
@@ -142,10 +143,10 @@ export function plugins(request, adapter, fail) {
                 while (entry.token === token && (edits.size || messages.length)) {
                     for (const index of [...edits.keys()]) {
                         if (entry.token !== token) return;
-                        const value = edits.get(index);
-                        edits.delete(index);
+                        const value = edits.get(index), change = token.changes[index];
                         // One request in flight leaves room for status and DSP feedback between edits.
                         await request("parameter", token.revision, id, index, value);
+                        if (token.changes[index] === change) edits.delete(index);
                     }
                     if (entry.token === token && messages.length)
                         await request("message", token.revision, id, messages.shift());
@@ -155,7 +156,7 @@ export function plugins(request, adapter, fail) {
         }
         const send = (op, ...args) => {
             if (entry.token !== token) return;
-            if (op === "parameter") edits.set(args[0], args[1]);
+            if (op === "parameter") { ++token.changes[args[0]]; edits.set(args[0], args[1]); }
             else if (messages.length < 64) messages.push(args[0]);
             else { failed(entry, token, Error("UI message queue full")); return; }
             if (token.ready && !sending) flush();
@@ -171,8 +172,10 @@ export function plugins(request, adapter, fail) {
             value = integer ? Math.max(Math.ceil(low), Math.min(Math.floor(high), Math.round(value))) : Math.max(low, Math.min(high, value));
             send("parameter", index, value);
         };
-        const callbacks = {product: node.product, set_parameter_begin: parameter,
-            set_parameter: parameter, set_parameter_end: parameter,
+        const callbacks = {product: node.product,
+            set_parameter_begin(index, value) { token.gestures.add(index); parameter(index, value); },
+            set_parameter: parameter,
+            set_parameter_end(index, value) { parameter(index, value); token.gestures.delete(index); },
             msg_write(bytes) {
                 if (entry.token !== token) return;
                 const limit = node.product.messaging?.uiToDspSize;
@@ -202,12 +205,17 @@ export function plugins(request, adapter, fail) {
     async function pollEntry(entry) {
         const token = entry.token;
         if (!token?.ready) return;
+        const changes = token.changes.slice(), pending = new Set(token.edits.keys());
         try {
             const data = await request("controls", token.revision, entry.id);
             if (entry.token !== token) return;
             for (const [index, value] of data.values.entries()) {
                 if (entry.token !== token) return;
-                if (Number.isFinite(value)) token.ui.set_parameter?.(index, value);
+                // Feedback may predate a gesture or an edit still waiting for the
+                // bridge. Only deliver samples taken after the latest local edit.
+                if (Number.isFinite(value) && !token.gestures.has(index) && !pending.has(index) &&
+                    !token.edits.has(index) && token.changes[index] === changes[index])
+                    token.ui.set_parameter?.(index, value);
             }
             for (const bytes of data.messages) {
                 if (entry.token !== token) return;
