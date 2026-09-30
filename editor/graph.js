@@ -1,5 +1,3 @@
-import {Graph, layout} from "./vendor/dagre/dagre.esm.js";
-
 // Nodes owned by this track, in signal order. Other track mixers are boundaries.
 export function trackNodes(score, track) {
     const nodes = [], seen = new Set();
@@ -204,19 +202,9 @@ export function routeRows(rows, graph, width, row) {
     return {nodes, edges};
 }
 
-// Start every source in the first rank, regardless of its downstream chain length.
-function rankFromSources(graph) {
-    const ranks = new Map();
-    function rank(id) {
-        if (!ranks.has(id)) ranks.set(id, Math.max(0, ...graph.inEdges(id).map(edge => rank(edge.v) + graph.edge(edge).minlen)));
-        return graph.node(id).rank = ranks.get(id);
-    }
-    for (const id of graph.nodes()) rank(id);
-}
-
 // Fold track/master gain stages into their source, but keep explicit mixes.
-// Layer by signal depth; shared nodes and repeated inputs retain their identity.
-export function graphLayout(score) {
+// Shared nodes and repeated inputs retain their identity.
+export function signalGraph(score) {
     const implicit = new Set(score.tracks.map(track => track[1]));
     function resolve(id) {
         while (implicit.has(id)) id = score.nodes[id].inputs[0];
@@ -224,35 +212,13 @@ export function graphLayout(score) {
     }
     const nodes = new Map();
     score.nodes.forEach((node, id) => {
-        if (!implicit.has(id)) nodes.set(id, {id, inputs: node.inputs.map(resolve), outputs: [], tracks: [],
-            width: 192, height: Math.max(68, node.inputs.length * 14 + 20)});
+        if (!implicit.has(id)) nodes.set(id, {id, inputs: node.inputs.map(resolve), outputs: []});
     });
-    for (const id of implicit) nodes.get(resolve(id)).tracks.push(id);
-    // Sugiyama layout: ranking, crossing reduction, then coordinates and edge routes.
-    const graph = new Graph({multigraph: true}).setGraph({rankdir: "LR", ranker: rankFromSources,
-        nodesep: 28, edgesep: 14, ranksep: 96});
-    for (const node of nodes.values()) graph.setNode(String(node.id), node);
     const edges = [];
-    for (const node of nodes.values()) {
-        node.incoming = [];
+    for (const node of nodes.values())
         node.inputs.forEach((from, slot) => {
-            const edge = {from, to: node.id, slot};
-            graph.setEdge(String(from), String(node.id), edge, String(slot));
             nodes.get(from).outputs.push(node.id);
-            node.incoming.push(edge); edges.push(edge);
+            edges.push({from, to: node.id, slot});
         });
-    }
-    if (nodes.size) layout(graph);
-    for (const node of nodes.values()) {
-        node.x -= node.width / 2; node.y -= node.height / 2;
-        // Visual port order follows the routed cables; audio input indices stay intact.
-        node.incoming.sort((a, b) => a.points.at(-2).y - b.points.at(-2).y || a.slot - b.slot);
-    }
-    for (const node of nodes.values()) node.incoming.forEach((edge, i) => {
-        const source = nodes.get(edge.from);
-        edge.points[0] = {x: source.x + source.width + 5, y: source.y + source.height / 2};
-        edge.points[edge.points.length - 1] = {x: node.x - 5,
-            y: node.y + node.height / 2 + (i - (node.inputs.length - 1) / 2) * 14};
-    });
-    return {nodes, edges, output: resolve(score.output), width: graph.graph().width || 0, height: graph.graph().height || 0};
+    return {nodes, edges};
 }

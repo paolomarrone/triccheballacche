@@ -105,15 +105,12 @@ try {
             await evaluate(`${fixture}.style.removeProperty('width')`);
             assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 2, "Expanded plugins stay attached together");
             await evaluate(`globalThis.selectedChainUI = ${fixture}`);
-            await click('#graph-tab');
-            await click('#graph-fit');
-            await click('.graph-node[data-node="1"]');
+            await click('.routing-node[data-node="1"]');
             assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [0, 1, 5],
-                "Graph selection follows the synth and effect to the master mix, without the other synth");
+                "Node selection follows the synth and effect to the master mix, without the other synth");
             assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin[open]"), p => Number(p.dataset.node))'), [1],
                 "Only the selected node expands");
             assert(await evaluate(`${fixture} === selectedChainUI`), "Selecting the effect preserves its UI");
-            await click('#score-tab');
             await evaluate(`document.querySelector('.plugin[data-node="0"]').open = true`);
             await wait(`${synthRoot}?.querySelectorAll('.perone-controls label').length === 3`);
             await evaluate(`(() => {

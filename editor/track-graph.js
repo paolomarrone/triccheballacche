@@ -1,4 +1,4 @@
-import {graphPath, graphRows, routeRows} from "./graph.js";
+import {signalGraph, graphPath, graphRows, routeRows} from "./graph.js";
 
 // A compact routing map pinned to score lanes. Musical time stays in the score;
 // this view only lays out the prepared graph and opens the existing inspector.
@@ -41,8 +41,8 @@ export function trackGraph(panel, select) {
     return {
         resize,
         clear() { if (graph) choose(undefined); },
-        score(score, layout, preserve = false) {
-            graph = layout; rows = graphRows(score, graph.nodes);
+        score(score, preserve = false) {
+            graph = signalGraph(score); rows = graphRows(score, graph.nodes);
             if (!preserve || !graph.nodes.has(selected)) selected = undefined;
             cards.clear(); cables = [];
             svg.replaceChildren(); panel.replaceChildren(svg);
