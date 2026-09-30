@@ -1,20 +1,7 @@
+import {parameterRatio, parameterText} from "./parameters.js";
 import {trackNodes} from "./graph.js";
 
 const mixer = [{name: "Gain", minimum: 0, maximum: 4}, {name: "Pan", minimum: -1, maximum: 1}];
-const units = {db: "dB", hz: "Hz", khz: "kHz", pc: "%"};
-const format = new Intl.NumberFormat(undefined, {maximumFractionDigits: 3});
-const valueText = (p, value) => {
-    const label = Object.entries(p.scalePoints || {}).find(([, number]) => number === value)?.[0];
-    return label || format.format(value) + (p.unit ? ` ${units[p.unit] || p.unit}` : "");
-};
-
-export function automationRatio({minimum: min, maximum: max, map}, value) {
-    value = Math.max(Math.min(min, max), Math.min(Math.max(min, max), value));
-    const ratio = map === "logarithmic" && min * max > 0 && min !== max ?
-        Math.log(value / min) / Math.log(max / min) : (value - min) / (max - min || 1);
-    return Math.max(0, Math.min(1, ratio));
-}
-
 // Selection and one bounded window of immutable score automation, independent of DSP/UI readings.
 export function automation(request, changed) {
     const toggle = document.getElementById("show-automation"), menu = document.getElementById("automation-parameters");
@@ -148,10 +135,10 @@ export function automation(request, changed) {
                 if (!point && !bin) continue;
                 const [low, high] = bin || [point[1], point[1]];
                 const top = ruler + index * row - scroll;
-                const a = top + row - 8 - automationRatio(p.p, low) * (row - 16);
-                const b = top + row - 8 - automationRatio(p.p, high) * (row - 16);
+                const a = top + row - 8 - parameterRatio(p.p, low) * (row - 16);
+                const b = top + row - 8 - parameterRatio(p.p, high) * (row - 16);
                 if (y < Math.min(a, b) - 4 || y > Math.max(a, b) + 4) continue;
-                const value = bin ? `${valueText(p.p, low)}–${valueText(p.p, high)} · zoom in for individual changes` : valueText(p.p, low);
+                const value = bin ? `${parameterText(p.p, low)}–${parameterText(p.p, high)} · zoom in for individual changes` : parameterText(p.p, low);
                 return {node: p.node, order: point?.[2] ?? -1, text: `${p.name} · ${value} · ${time.toFixed(3)} s`};
             }
             return null;

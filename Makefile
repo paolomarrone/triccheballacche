@@ -291,7 +291,7 @@ $(TEST_EFFECT)/wasm32/fixture.wasm: test/perone/plugin.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(WEB_FIXTURE_FLAGS) -DPERONE_TEST_EFFECT $< -o $@
 
-.PHONY: test-web test-browser test-polpo-web test-trace test-editor-web test-editor-ui test-library test-live
+.PHONY: test-web test-browser test-polpo-web test-trace test-editor-web test-editor-ui test-parameter-ui test-library test-live
 .PHONY: test-build test-build-web
 test-build: $(MINIAUDIO) | build/test
 	node test/build.mjs "$(MAKE)" "$(CC)" "$(MINIAUDIO)"
@@ -327,9 +327,14 @@ test-library: gui web | build/test
 	node test/library.mjs
 
 # Self-contained UI fixture: the exact same ES module drives native and Wasm DSPs.
-test-editor-ui: gui test-web
+test-editor-ui: gui test-web test-parameter-ui
 	node test/editor-ui.mjs
 	node test/automation.mjs
+
+# Shared parameter controls can be checked without compiling either audio backend.
+test-parameter-ui:
+	node test/parameters.mjs
+	node test/parameter-ui.mjs
 
 .PHONY: test-score-space test-graph
 test-score-space: gui build/web/player.mjs $(NATIVE_FIXTURES) $(WEB_FIXTURES) | build/test

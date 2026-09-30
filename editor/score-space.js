@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import {OrbitControls} from "./vendor/three/OrbitControls.js";
-import {automationRatio} from "./automation.js";
+import {parameterRatio} from "./parameters.js";
 
 // A renderer of the shared viewport. It owns no score queries, transport or audition state.
 export function scoreSpace(canvas, message, fail) {
@@ -141,7 +141,7 @@ export function scoreSpace(canvas, message, fail) {
         });
         for (const {index, parameter: p, result} of curves) {
             const point = (t, value) => {
-                const ratio = automationRatio(p.p, value);
+                const ratio = parameterRatio(p.p, value);
                 return flat ? [x(t), -(index * row + row - 8 - ratio * (row - 16)) * pixel, 0] :
                     [x(t), .6 + ratio * 5, z(index) + 1.6];
             };

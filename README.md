@@ -212,6 +212,7 @@ musical names keep their spelling. Formatting is in `.editorconfig` and
 | `make test-library-build` | Node.js/npm; builds and checks the canonical library. |
 | `make test-web` / `make test-browser` | Emscripten/Node.js; Chromium for browser. |
 | `make test-editor` | Native GUI build, Node.js, Chromium and an audio device. |
+| `make test-parameter-ui` | Node.js and Chromium; no audio build. |
 | `make test-live test-editor-ui test-score-space test-graph` | Native and browser prerequisites. |
 | `make test-library` | Native and Wasm production bundles, plus editor prerequisites. |
 | `make -C plugins/piano test` | Downloaded bank and Tibia; `test-web` also needs Emscripten/Node.js. |

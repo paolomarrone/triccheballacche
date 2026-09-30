@@ -386,7 +386,9 @@ export function timeline(request, select, inspect, seek, error) {
 
     return {
         status(prepared, busy) {
-            enabled = prepared && !busy;
+            const value = prepared && !busy;
+            if (enabled === value) return;
+            enabled = value;
             buttons();
         },
         score(value) {

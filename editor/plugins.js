@@ -1,4 +1,5 @@
 import {create as generic} from "./perone-ui.js";
+import {pluginControls} from "./plugin-controls.js";
 import {trackNodes} from "./graph.js";
 
 // Views belong to the prepared project and survive transport stop/restart.
@@ -13,6 +14,7 @@ export function plugins(request, adapter, fail) {
         const old = entry.token;
         if (!old) return;
         entry.token = undefined; // Ignore callbacks from free() and factories that finish after disposal.
+        old.controls.close();
         try { old.ui?.free(); }
         catch (error) { fail(error); }
         entry.body.replaceChildren();
@@ -116,116 +118,46 @@ export function plugins(request, adapter, fail) {
         detach(entry);
         fail("");
         const id = entry.id, node = score.nodes[id];
-        const token = entry.token = {revision: score.controlRevision ?? score.revision, ready: false,
-            edits: new Map(), gestures: new Set(), changes: node.product.parameters.map(() => 0),
-            uninitialized: new Set(node.product.parameters.keys())};
-        if (native.has(id)) {
-            await request("watch", token.revision, id, "off");
-            native.delete(id); buttons(entry);
-            if (entry.token !== token) return;
-        }
-        const host = token.host = document.createElement("div"), shadow = host.attachShadow({mode: "open"});
-        // Keep layout available to UI factories without exposing their default values.
-        host.style.visibility = "hidden"; host.inert = true;
-        const style = document.createElement("style");
-        style.textContent = `:host { display: block; font: inherit; -webkit-user-select: none; user-select: none; }
-            input, textarea, [contenteditable=true] { -webkit-user-select: text; user-select: text; }
-            button, input, select { font: inherit; }`;
-        const element = document.createElement("div");
-        shadow.append(style, element);
-        entry.body.append(host);
-        const {edits} = token, messages = [];
-        let sending = false;
-        async function flush() {
-            sending = true;
-            try {
-                while (entry.token === token && (edits.size || messages.length)) {
-                    for (const index of [...edits.keys()]) {
-                        if (entry.token !== token) return;
-                        const value = edits.get(index), change = token.changes[index];
-                        // One request in flight leaves room for status and DSP feedback between edits.
-                        await request("parameter", token.revision, id, index, value);
-                        if (token.changes[index] === change) edits.delete(index);
-                    }
-                    if (entry.token === token && messages.length)
-                        await request("message", token.revision, id, messages.shift());
-                }
-            } catch (error) { failed(entry, token, error); }
-            finally { sending = false; }
-        }
-        const send = (op, ...args) => {
-            if (entry.token !== token) return;
-            if (op === "parameter") { ++token.changes[args[0]]; edits.set(args[0], args[1]); }
-            else if (messages.length < 64) messages.push(args[0]);
-            else { failed(entry, token, Error("UI message queue full")); return; }
-            if (token.ready && !sending) flush();
-        };
-        const parameter = (index, value) => {
-            if (entry.token !== token) return;
-            const p = node.product.parameters[index];
-            if (!Number.isInteger(index) || !p || p.direction !== "input" || !Number.isFinite(value)) {
-                failed(entry, token, Error("Invalid UI parameter")); return;
-            }
-            const low = p.isBypass ? 0 : p.minimum, high = p.isBypass ? 1 : p.maximum;
-            const integer = p.integer || p.toggled || p.isBypass;
-            value = integer ? Math.max(Math.ceil(low), Math.min(Math.floor(high), Math.round(value))) : Math.max(low, Math.min(high, value));
-            send("parameter", index, value);
-        };
-        const callbacks = {product: node.product,
-            set_parameter_begin(index, value) { token.gestures.add(index); parameter(index, value); },
-            set_parameter: parameter,
-            set_parameter_end(index, value) { parameter(index, value); token.gestures.delete(index); },
-            msg_write(bytes) {
-                if (entry.token !== token) return;
-                const limit = node.product.messaging?.uiToDspSize;
-                if (!(bytes instanceof Uint8Array) || !limit || bytes.length > limit) {
-                    failed(entry, token, Error("Invalid UI message")); return;
-                }
-                send("message", Array.from(bytes));
-            }};
+        const token = entry.token = {revision: score.controlRevision ?? score.revision};
+        token.controls = pluginControls(node.product, (op, ...args) => request(op, token.revision, id, ...args),
+            error => failed(entry, token, error));
         try {
+            if (native.has(id)) {
+                await request("watch", token.revision, id, "off");
+                if (entry.token !== token) return;
+                native.delete(id); buttons(entry);
+            }
+            const host = token.host = document.createElement("div"), shadow = host.attachShadow({mode: "open"});
+            // Keep layout available to UI factories without exposing their default values.
+            host.style.visibility = "hidden"; host.inert = true;
+            const style = document.createElement("style");
+            style.textContent = `:host { display: block; font: inherit; -webkit-user-select: none; user-select: none; }
+                input, textarea, [contenteditable=true] { -webkit-user-select: text; user-select: text; }
+                button, input, select { font: inherit; }`;
+            const element = document.createElement("div");
+            shadow.append(style, element);
+            entry.body.append(host);
             const create = !entry.generic && node.product.ui?.web ?
                 (await import(adapter.uiUrl(node, token.revision, id))).create : generic;
             if (entry.token !== token) return;
-            const ui = await create(element, callbacks);
+            const ui = await create(element, token.controls.callbacks);
             if (!ui || typeof ui.free !== "function") throw Error("Perone UI must return free()");
             if (entry.token !== token) { ui.free(); return; }
             token.ui = ui;
             // No DSP stream until the factory is ready to receive it. Creation-time gestures stay queued.
             await request("watch", token.revision, id, "web");
             if (entry.token !== token) return;
-            token.ready = true;
-            if (edits.size || messages.length) flush();
-            // The first poll supplies current values, including initial host overrides.
+            token.controls.attach(ui);
+            // Reveal only after current values, including host overrides, have arrived.
             await pollEntry(entry);
         } catch (error) { failed(entry, token, error); }
     }
 
     async function pollEntry(entry) {
         const token = entry.token;
-        if (!token?.ready) return;
-        const changes = token.changes.slice(), pending = new Set(token.edits.keys());
-        try {
-            const data = await request("controls", token.revision, entry.id);
-            if (entry.token !== token) return;
-            for (const [index, value] of data.values.entries()) {
-                if (entry.token !== token) return;
-                // Feedback may predate a gesture or an edit still waiting for the
-                // bridge. Only deliver samples taken after the latest local edit.
-                if (Number.isFinite(value) && !token.gestures.has(index) && !pending.has(index) &&
-                    !token.edits.has(index) && token.changes[index] === changes[index]) {
-                    token.ui.set_parameter?.(index, value);
-                    token.uninitialized.delete(index);
-                }
-            }
-            for (const bytes of data.messages) {
-                if (entry.token !== token) return;
-                token.ui.msg_in?.(new Uint8Array(bytes));
-            }
-            if (entry.token === token && token.host.inert && !token.uninitialized.size) {
-                token.host.style.visibility = ""; token.host.inert = false;
-            }
-        } catch (error) { failed(entry, token, error); }
+        if (token && await token.controls.poll() && entry.token === token && token.host.inert) {
+            token.host.style.visibility = ""; token.host.inert = false;
+        }
     }
 
     return {
@@ -258,6 +190,7 @@ export function plugins(request, adapter, fail) {
             for (const entry of entries.values()) buttons(entry);
         },
         status(value, pending) {
+            if (availableProject === value && busy === pending) return;
             const resumed = busy && !pending;
             availableProject = value; busy = pending;
             if (!availableProject) { dispose(); native.clear(); }

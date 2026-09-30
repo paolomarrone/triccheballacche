@@ -1,4 +1,6 @@
 // Parameter controls adapted from tibia/templates/perone-web/ui.js (GPL-3.0-or-later).
+import {parameterRatio, parameterValue, parameterText} from "./parameters.js";
+
 let serial = 0;
 export function create(element, callbacks) {
     const style = document.createElement("link");
@@ -7,8 +9,6 @@ export function create(element, callbacks) {
     root.className = "perone-controls";
     const prefix = "perone-" + serial++ + "-", controls = [];
     const events = new AbortController();
-    const format = new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 });
-    const units = { db: "dB", hz: "Hz", khz: "kHz", pc: "%" };
     for (const [index, p] of callbacks.product.parameters.entries()) {
         const row = document.createElement("div"), name = document.createElement("label"), value = document.createElement("output");
         const field = document.createElement("div");
@@ -21,9 +21,6 @@ export function create(element, callbacks) {
         control.id = prefix + index; name.htmlFor = control.id;
         field.append(control);
         let current = p.defaultValue, active = false;
-        const logarithmic = p.map == "logarithmic" && p.minimum * p.maximum > 0;
-        const map = x => logarithmic ? p.minimum * Math.pow(p.maximum / p.minimum, x) : p.minimum + (p.maximum - p.minimum) * x;
-        const unmap = x => logarithmic ? Math.log(x / p.minimum) / Math.log(p.maximum / p.minimum) : (x - p.minimum) / (p.maximum - p.minimum || 1);
         if (output) { control.min = p.minimum; control.max = p.maximum; }
         else if (choices) {
             field.append(choiceMenu(control, choices, name.textContent));
@@ -32,17 +29,17 @@ export function create(element, callbacks) {
         else { control.type = "range"; control.min = 0; control.max = 1; control.step = "any"; }
         function set(next) {
             current = next;
+            const ratio = parameterRatio(p, next), text = parameterText(p, next);
             if (toggle && !output) control.checked = next >= .5;
-            else control.value = output || choices ? next : unmap(next);
+            else control.value = output || choices ? next : ratio;
             if (choices && !output) {
-                control.textContent = choices.find(([, number]) => Number(number) === next)?.[0] ?? format.format(next);
+                control.textContent = text;
                 control.setAttribute("aria-label", `${name.textContent}: ${control.textContent}`);
                 for (const option of field.querySelectorAll('[role="option"]'))
                     option.setAttribute("aria-selected", Number(option.value) === next);
             }
-            control.style.setProperty("--fill", `${Math.max(0, Math.min(1, unmap(next))) * 100}%`);
-            value.textContent = toggle && !output ? next >= .5 ? "On" : "Off" :
-                format.format(next) + (p.unit ? " " + (units[p.unit] || p.unit) : "");
+            control.style.setProperty("--fill", `${ratio * 100}%`);
+            value.textContent = text;
             if (!output && !choices && !toggle) control.setAttribute("aria-valuetext", value.textContent);
         }
         if (!output) {
@@ -53,7 +50,7 @@ export function create(element, callbacks) {
                 control.addEventListener("keydown", event => { if (!event.repeat && event.key != "Tab") begin(); });
             }
             control.addEventListener("input", () => {
-                let next = choices ? Number(control.value) : toggle ? (control.checked ? 1 : 0) : map(Number(control.value));
+                let next = choices ? Number(control.value) : toggle ? (control.checked ? 1 : 0) : parameterValue(p, Number(control.value));
                 begin();
                 if (p.integer) next = Math.round(next);
                 set(next); callbacks.set_parameter(index, next);
