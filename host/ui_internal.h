@@ -7,5 +7,5 @@ typedef struct {
 	int (*poll)(void *view);
 	void (*close)(void *view);
 } UIOps;
-extern const UIOps perone_ui_ops, clap_ui_ops, lv2_ui_ops;
+extern const UIOps perone_ui_ops, clap_ui_ops, lv2_ui_ops, vst3_ui_ops;
 #endif

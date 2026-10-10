@@ -1,5 +1,6 @@
 #include "host/clap.h"
 #include "host/lv2.h"
+#include "host/vst3.h"
 #include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,7 +49,7 @@ fail:
 
 int main(int argc, char **argv) {
 	if (argc != 2) {
-		fputs("Usage: plugin-scan module.clap|bundle.lv2\n", stderr);
+		fputs("Usage: plugin-scan module.clap|bundle.lv2|bundle.vst3\n", stderr);
 		return 1;
 	}
 	// Plugin diagnostics must not corrupt the scanner's JSON stream.
@@ -61,7 +62,9 @@ int main(int argc, char **argv) {
 	int result = 1;
 	if (!path || stat(path, &info))
 		goto done;
-	if (S_ISDIR(info.st_mode) ? lv2_scan(&json, path) : clap_scan(&json, path))
+	size_t length = strlen(path);
+	int vst3 = length > 5 && !strcmp(path + length - 5, ".vst3");
+	if (vst3 ? vst_scan(&json, path) : S_ISDIR(info.st_mode) ? lv2_scan(&json, path) : clap_scan(&json, path))
 		goto done;
 	FILE *file = fdopen(output, "w");
 	if (file) {

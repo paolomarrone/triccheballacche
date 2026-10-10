@@ -4,7 +4,7 @@ import {withBrowser} from "./chromium.mjs";
 import {nativeEditor} from "./native.mjs";
 
 const format = process.argv[2];
-assert(["clap", "lv2"].includes(format), "Usage: plugin-editor.mjs clap|lv2");
+assert(["clap", "lv2", "vst3"].includes(format), "Usage: plugin-editor.mjs clap|lv2|vst3");
 const variable = `${format.toUpperCase()}_PATH`, title = format.toUpperCase();
 const directory = await mkdtemp(`build/test/${format}-editor-`);
 const entry = `${directory}/score.janet`, previous = process.env[variable];
@@ -25,7 +25,13 @@ try {
         await click("#views");
         await click("#play");
         const root = `document.querySelector('.plugin[data-node="0"] .plugin-body > div')?.shadowRoot`;
-        await wait(`${root}?.querySelectorAll('.parameter-controls input').length === ${format === 'clap' ? 130 : 3}`);
+        const inputs = {clap: 130, lv2: 3, vst3: 2};
+        await wait(`${root}?.querySelectorAll('.parameter-controls input').length === ${inputs[format]}`);
+        if (format === "vst3") {
+            assert.equal(await evaluate(`${root}.querySelectorAll('meter').length`), 1);
+            assert.deepEqual(await evaluate(`Array.from(${root}.querySelectorAll('[role=option]'), e => e.textContent)`),
+                ["Mode 0", "Mode 1", "Mode 2", "Mode 3"]);
+        }
         const slider = `${root}.querySelector('input')`, value = `${root}.querySelector('output')`;
         await wait(`${value}.textContent === '0.75'`);
         await evaluate(`(() => { const s = ${slider}; for (let i = 1; i <= 400; i++) { s.value = i / 1000; s.dispatchEvent(new Event('input')); } s.dispatchEvent(new Event('change')); })()`);

@@ -1,6 +1,6 @@
 # triccheballacche
 
-A minimal scriptable DAW: Janet scores, C audio, Perone, CLAP and LV2 plugins.
+A minimal scriptable DAW: Janet scores, C audio, Perone, CLAP, LV2 and VST3 plugins.
 The native and browser editors share the same interface, audio engine and 2D/3D score view.
 Music can be finite or repeat indefinitely, with quantized live updates.
 
@@ -224,15 +224,41 @@ are 64 KiB; worker messages and individual UI transfers are limited to 4 KiB
 (including the host's port index for UI transfers).
 `build/tools/plugin-scan /path/to/plugin.lv2` lists supported IDs and parameters.
 
-For CLAP and LV2, the audio graph routes the main mono/stereo buses. Additional inputs
+**VST3** works natively on Linux, including original X11 windows. The adapter uses
+Steinberg's pinned C API header; it does not compile or link the C++ SDK.
+Settings searches `VST3_PATH` (colon-separated), `~/.vst3`, `/usr/local/lib/vst3`
+and `/usr/lib/vst3`. References identify the processor class by its 32-digit ID:
+
+```janet
+(def synth (daw/plugin :synth
+  {:format :vst3 :id "ABCDEF019182FAEB566D624153675854"}))
+# Or {:format :vst3 :path "/path/to/plugin.vst3" :id "processor-class-id"}.
+```
+
+`build/tools/plugin-scan /path/to/plugin.vst3` lists classes and parameters.
+Run `VST3_PATH=/path/to/bundles ./build/gui examples/vst3.janet` with separately
+installed Surge XT and Surge XT Effects. Both original GUIs and DSPs were tested
+with version 1.3.4; A-SID's Tibia-generated VST3 was also checked.
+Parameter keywords are native numeric IDs. Continuous values use VST3's normalized
+`0..1` range; discrete values use integer step indices and expose the plugin's
+labels. MIDI notes, pressure and mapped controllers, sample-accurate automation,
+transport, latency, and separate or combined controllers are supported.
+Controller metadata updates preserve playing voices. Changes to the graph,
+parameter identity or a request to reload the component require preparing the score again.
+WAV export uses prefetch processing at realtime quality; VST3's separate offline
+quality mode is not selected.
+Native VST3 binaries do not run in the Wasm editor.
+
+For CLAP, LV2 and VST3, the audio graph routes the main mono/stereo buses. Additional inputs
 receive silence; additional outputs and note outputs are not routed. Plugins
 with note outputs or more than one note input are currently rejected. Mono
 effects are not duplicated implicitly on stereo signals. Parallel paths are
 latency-compensated with buffers allocated before rendering; total output latency
 and effect tails still need room in the score's duration. Per-note expression,
 plugin-driven note routing and project/preset persistence are not implemented.
-The CLAP adapter has an opaque-state stream operation, tested independently from score
-snapshots; parameter arrays are never used as a substitute for plugin state.
+CLAP and VST3 have opaque-state operations, tested independently from score
+snapshots. VST3 stores processor and controller state together in a host-owned file
+(not a `.vstpreset`); parameter arrays are never used as a substitute for plugin state.
 
 The canonical library build is self-contained. Local plugin projects instead
 default to sibling `../tibia` and `../brickworks` checkouts. Tibia must provide
@@ -277,7 +303,7 @@ repository was changed; this is a shutdown result issue, not a C ABI failure.
 
 Root C files own scores, sequencing, sessions and projection. `dsp.h` is the
 engine's plugin contract. `host/` implements native DSP instances, module caching
-and Perone/CLAP/LV2 adapters; each format owns its module resources. `posix/`
+and Perone/CLAP/LV2/VST3 adapters; each format owns its module resources. `posix/`
 provides system services and native applications; `x11/` embeds plugin windows.
 `web/` supplies the browser backend, `lib/` Janet composition, and `editor/` the
 shared editor. Keep system calls and platform headers out of core and `host/`.
@@ -292,6 +318,8 @@ Formatting is in `.editorconfig` and
 | `make test-clap-ui` / `make test-clap-editor` | X11 display; Node.js/Chromium and audio for the editor. |
 | `make test-lv2` | X11 headers/library for the fixture; no display needed. |
 | `make test-lv2-ui` / `make test-lv2-editor` | X11 display; Node.js/Chromium and audio for the editor. |
+| `make test-vst3` | X11 headers/library for the fixture; no display needed. |
+| `make test-vst3-ui` / `make test-vst3-editor` | X11 display; Node.js/Chromium and audio for the editor. |
 | `make format-check` | clang-format 21. |
 | `make test-build` / `make test-build-web` | Node.js; also Emscripten for web. |
 | `make test-plugins` / `make test-brickworks` | Corresponding prebuilt bundles. |
@@ -311,7 +339,7 @@ Use one `make -j` invocation for concurrent targets sharing a build directory.
 
 Dependency versions are pinned in [Makefile](Makefile),
 [plugins/library.mk](plugins/library.mk) and [tools/lv2-deps.sh](tools/lv2-deps.sh).
-`MINIAUDIO`, `JANET`, `SPORK`, `WEBUI`, `CLAP` and `LV2_DEPS` accept explicit paths.
+`MINIAUDIO`, `JANET`, `SPORK`, `WEBUI`, `CLAP`, `VST3` and `LV2_DEPS` accept explicit paths.
 Fixes live in [patches/](patches/); the build applies them
 to generated copies, leaving downloaded sources intact.
 

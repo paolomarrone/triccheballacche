@@ -44,7 +44,7 @@
 (def- plugin/cache @{})
 
 (defn plugin/paths [format]
-  (def variable (case format :clap "CLAP_PATH" :lv2 "LV2_PATH" (error "unsupported plugin format")))
+  (def variable (case format :clap "CLAP_PATH" :lv2 "LV2_PATH" :vst3 "VST3_PATH" (error "unsupported plugin format")))
   (def custom (os/getenv variable))
   (def suffix (string format))
   (def defaults [(string (or (os/getenv "HOME") "") "/." suffix)
@@ -62,7 +62,8 @@
         (def path (string root "/" name))
         (def kind (os/stat path :mode))
         (cond
-          (and (= format :lv2) (= kind :directory) (string/has-suffix? ".lv2" name))
+          (and (or (= format :lv2) (= format :vst3)) (= kind :directory)
+               (string/has-suffix? (string "." format) name))
           (array/push files path)
           (and (= format :clap) (= kind :file) (string/has-suffix? ".clap" name))
           (array/push files path)
@@ -107,7 +108,7 @@
               (perone/read reference)
               (do
                 (def format (reference :format))
-                (assert (or (= format :clap) (= format :lv2)) "unsupported plugin format")
+                (assert (or (= format :clap) (= format :lv2) (= format :vst3)) "unsupported plugin format")
                 (def path (reference :path))
                 (def id (reference :id))
                 (def entry

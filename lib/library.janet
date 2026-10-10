@@ -36,7 +36,7 @@
 (bundle tibia)
 (def paths @[])
 (def seen @{})
-(each format [:clap :lv2]
+(each format [:clap :lv2 :vst3]
   (def roots (plugin/paths format))
   (array/concat paths roots)
   (each root roots

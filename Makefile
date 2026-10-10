@@ -17,6 +17,8 @@ SPORK_REV = 0667f96b74de52747ffe5e19e185563ebf53816b
 WEBUI_REV = 52f9e75b92faf9a23fd150b3c60051c4ec85fc69
 CLAP_VERSION = 1.2.10
 CLAP ?= .deps/clap-$(CLAP_VERSION)
+VST3_REV = 93a116f7c6c52a317ec3aaee9b13789068b5234e
+VST3 ?= .deps/vst3-c-api-$(VST3_REV)
 LV2_DEPS ?= .deps/lv2
 LV2_INCLUDES = -I$(LV2_DEPS)/include -I$(LV2_DEPS)/include/lilv-0
 LV2_LIBS = $(addprefix $(LV2_DEPS)/lib/,liblilv-0.a libsratom-0.a libsord-0.a libserd-0.a libzix-0.a)
@@ -27,16 +29,16 @@ SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_P
 PLUGIN_SOURCES = plugin.c script.c trace.c
 SCORE_SOURCES = score_janet.c score.c score_view.c score_automation.c session.c sequence.c $(PLUGIN_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c transport.c
-HOST_SOURCES = host/dsp.c host/module.c host/perone.c host/clap.c host/clap_info.c host/lv2.c host/lv2_info.c
-HOST_PLATFORM_SOURCES = posix/host.c posix/clap.c posix/lv2.c x11/info.c
+HOST_SOURCES = host/dsp.c host/module.c host/perone.c host/clap.c host/clap_info.c host/lv2.c host/lv2_info.c host/vst3.c host/vst3_info.c host/vst3_host.c
+HOST_PLATFORM_SOURCES = posix/host.c posix/clap.c posix/lv2.c posix/vst3.c x11/info.c
 HOST_OBJECTS = $(addprefix build/obj/native/,$(HOST_SOURCES:.c=.o) $(HOST_PLATFORM_SOURCES:.c=.o))
-UI_OBJECTS = $(addprefix build/obj/native/,x11/ui.o x11/perone_ui.o x11/clap_ui.o x11/lv2_ui.o x11/window.o)
+UI_OBJECTS = $(addprefix build/obj/native/,x11/ui.o x11/perone_ui.o x11/clap_ui.o x11/lv2_ui.o x11/vst3_ui.o x11/window.o)
 PLUGIN_OBJECTS = $(HOST_OBJECTS) $(addprefix build/obj/native/,plugin.o posix/discovery.o json_write.o script.o trace.o json.o janet.o)
 SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o score_automation.o session.o sequence.o) $(PLUGIN_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host build/tools/plugin-scan
-NATIVE_TESTS = $(addprefix build/test/,dsp daw player routing score_view plugins ui view_json sequence clap lv2)
-FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h host/*.c host/*.h posix/*.c posix/*.h x11/*.c x11/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
+NATIVE_TESTS = $(addprefix build/test/,dsp daw player routing score_view plugins ui view_json sequence clap lv2 vst3)
+FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h host/*.c host/*.h posix/*.c posix/*.h x11/*.c x11/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c test/vst3/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
 
 .PHONY: all cli gui tools clean format format-check
 all: cli
@@ -102,6 +104,15 @@ CLAP_OBJECTS = $(addprefix build/obj/native/,host/clap.o host/clap_info.o posix/
 $(CLAP_OBJECTS): override CPPFLAGS += -I$(CLAP)/include
 $(CLAP_OBJECTS): $(CLAP)/include/clap/clap.h
 
+# The official C ABI header is sufficient; no C++ SDK sources or libraries.
+$(VST3)/vst3_c_api.h $(VST3)/LICENSE.txt:
+	mkdir -p $(VST3)
+	curl -fL --retry 2 https://raw.githubusercontent.com/steinbergmedia/vst3_c_api/$(VST3_REV)/$(notdir $@) -o $@.tmp
+	mv $@.tmp $@
+VST3_OBJECTS = $(addprefix build/obj/native/,host/vst3.o host/vst3_info.o host/vst3_host.o posix/vst3.o x11/vst3_ui.o x11/info.o tools/plugin-scan.o test/vst3.o)
+$(VST3_OBJECTS): override CPPFLAGS += -I$(VST3)
+$(VST3_OBJECTS): $(VST3)/vst3_c_api.h $(VST3)/LICENSE.txt
+
 $(LV2_DEPS)/.ready: tools/lv2-deps.sh
 	CC="$(CC)" sh tools/lv2-deps.sh "$(LV2_DEPS)"
 
@@ -127,7 +138,7 @@ $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
 build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
 build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS) $(UI_OBJECTS)
 build/tools/perone-host: build/obj/native/tools/perone-host.o $(PLUGIN_OBJECTS) build/obj/native/audio.o
-build/gui build/test/ui build/test/clap build/test/lv2: private LDLIBS += -lX11
+build/gui build/test/ui build/test/clap build/test/lv2 build/test/vst3: private LDLIBS += -lX11
 
 build/tools/plugin-scan: build/obj/native/tools/plugin-scan.o $(HOST_OBJECTS) build/obj/native/json_write.o
 $(filter-out build/tools/plugin-scan,$(NATIVE_PROGRAMS)) $(filter-out build/test/score_view,$(NATIVE_TESTS)): | build/tools/plugin-scan
@@ -221,6 +232,19 @@ test-lv2: build/test/lv2 $(LV2_FIXTURE)
 	./build/test/lv2
 test-lv2-ui: build/test/lv2 $(LV2_FIXTURE)
 	./build/test/lv2 --ui
+
+VST3_FIXTURE = build/test/fixture.vst3/Contents/$(shell uname -m)-linux/fixture.so
+$(VST3_FIXTURE): test/vst3/plugin.c $(VST3)/vst3_c_api.h Makefile build/config/native.compile
+	mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I$(VST3) -fPIC -shared $< -lX11 -lm -o $@
+build/test/vst3: $(SCORE_OBJECTS) $(UI_OBJECTS)
+.PHONY: test-vst3 test-vst3-ui test-vst3-editor
+test-vst3: build/test/vst3 $(VST3_FIXTURE)
+	./build/test/vst3
+test-vst3-ui: build/test/vst3 $(VST3_FIXTURE)
+	./build/test/vst3 --ui
+test-vst3-editor: gui $(VST3_FIXTURE)
+	node test/plugin-editor.mjs vst3
 
 .PHONY: test test-plugins test-ui test-editor test-prog test-brickworks check-plugins prog
 test: $(addprefix build/test/,dsp daw player routing score_view sequence) $(NATIVE_FIXTURES) $(MIXER_FIXTURE)
@@ -411,7 +435,7 @@ clean:
 
 # Recheck configuration on each invocation; unchanged files keep their timestamps.
 # Capture global flags here so per-target additions cannot leak through prerequisites.
-build/config/native.compile: private CONFIG := $(CC) | $(CPPFLAGS) | $(CFLAGS) | $(SCRIPT_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(WEBUI) | $(CLAP) | $(LV2_DEPS) | $(BW_SOURCE)
+build/config/native.compile: private CONFIG := $(CC) | $(CPPFLAGS) | $(CFLAGS) | $(SCRIPT_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(WEBUI) | $(CLAP) | $(VST3) | $(LV2_DEPS) | $(BW_SOURCE)
 build/config/native.link: private CONFIG := $(CC) | $(CFLAGS) | $(LDFLAGS) | $(LDLIBS) | $(TARGET_OS)
 build/config/web-offline.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(SPORK) | $(BW_SOURCE)
 build/config/web-player.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(PLAYER_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(BW_SOURCE)

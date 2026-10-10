@@ -101,7 +101,7 @@ DSP *open_dsp(Modules *modules, const char *path, const PluginConfig *config, un
 	dsp->module = module_open(modules, path, config->format);
 	if (!dsp->module)
 		goto fail;
-	int (*const openers[])(DSP *, unsigned, size_t) = {perone_open, clap_open, lv2_open};
+	int (*const openers[])(DSP *, unsigned, size_t) = {perone_open, clap_open, lv2_open, vst3_open};
 	if (config->format < 0 || config->format >= PLUGIN_FORMATS || openers[config->format](dsp, rate, capacity))
 		goto fail;
 	return dsp;

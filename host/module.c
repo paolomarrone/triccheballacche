@@ -30,7 +30,7 @@ void modules_free(Modules *modules) {
 }
 
 Module *module_open(Modules *modules, const char *path, int format) {
-	const ModuleOps *const formats[] = {&perone_module_ops, &clap_module_ops, &lv2_module_ops};
+	const ModuleOps *const formats[] = {&perone_module_ops, &clap_module_ops, &lv2_module_ops, &vst3_module_ops};
 	if (format < 0 || format >= PLUGIN_FORMATS)
 		return NULL;
 	const ModuleOps *ops = formats[format];

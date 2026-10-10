@@ -75,7 +75,10 @@ void script_config(Janet bundle, Janet defaults, PluginConfig *config) {
 		Janet product = janet_get(bundle, janet_ckeywordv("product"));
 		Janet format = janet_get(product, janet_ckeywordv("format"));
 		const char *name = janet_getcstring(&format, 0);
-		config->format = !strcmp(name, "clap") ? PLUGIN_CLAP : !strcmp(name, "lv2") ? PLUGIN_LV2 : -1;
+		config->format = !strcmp(name, "clap") ? PLUGIN_CLAP
+		    : !strcmp(name, "lv2")             ? PLUGIN_LV2
+		    : !strcmp(name, "vst3")            ? PLUGIN_VST3
+		                                       : -1;
 		config->id = copy_string(janet_getcstring(&id, 0));
 		if (!config->id)
 			janet_panic("out of memory");

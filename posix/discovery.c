@@ -141,7 +141,7 @@ char *scan_plugins(const char *path) {
 		free(resolved);
 		return NULL;
 	}
-	// RDF bundles may refer to several changing files. Read their metadata afresh.
+	// Bundles contain multiple metadata/resources/binaries. Read their metadata afresh.
 	if (S_ISDIR(info.st_mode)) {
 		char *result = scan(resolved);
 		free(resolved);

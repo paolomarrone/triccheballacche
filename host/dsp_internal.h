@@ -47,4 +47,5 @@ struct DSP {
 int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity);
 int clap_open(DSP *dsp, unsigned sample_rate, size_t capacity);
 int lv2_open(DSP *dsp, unsigned sample_rate, size_t capacity);
+int vst3_open(DSP *dsp, unsigned sample_rate, size_t capacity);
 #endif
