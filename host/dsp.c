@@ -1,4 +1,4 @@
-#include "module.h"
+#include "dsp_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

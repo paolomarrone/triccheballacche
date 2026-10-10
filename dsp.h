@@ -1,5 +1,5 @@
-#ifndef LOADER_H
-#define LOADER_H
+#ifndef DSP_H
+#define DSP_H
 #include <stddef.h>
 #include <stdint.h>
 
@@ -40,7 +40,7 @@ typedef struct {
 // A DAW-owned cache. Instances retain their module independently of the cache.
 void modules_free(Modules *modules);
 
-// Optional cache keeps the binary loaded. A failed open releases instance resources and returns NULL.
+// Optional cache retains format resources for reuse. A failed open releases instance resources and returns NULL.
 DSP *open_dsp(Modules *modules, const char *path, const PluginConfig *config, unsigned sample_rate, size_t capacity);
 void close_dsp(DSP *dsp); // NULL is allowed.
 void set_dsp(DSP *dsp, size_t parameter, double value);

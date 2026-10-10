@@ -266,10 +266,14 @@ keep them out of the examples dropdown.
 
 ## Development
 
-Core C owns scores, sequencing, DSP sessions and projection. `lib/` owns Janet
-composition; `posix/` and `web/` adapt the platform; `editor/` is shared UI.
-Keep platform calls out of core files. Prose and code comments use English;
-musical names keep their spelling. Formatting is in `.editorconfig` and
+Root C files own scores, sequencing, sessions and projection. `dsp.h` is the
+engine's plugin contract. `host/` implements native DSP instances, module caching
+and Perone/CLAP/LV2 adapters; each format owns its module resources. `posix/`
+provides system services and native applications; `x11/` embeds plugin windows.
+`web/` supplies the browser backend, `lib/` Janet composition, and `editor/` the
+shared editor. Keep system calls and platform headers out of core and `host/`.
+Prose and code comments use English; musical names keep their spelling.
+Formatting is in `.editorconfig` and
 `.clang-format` (clang-format 21).
 
 | Check | Requirements beyond the host build |

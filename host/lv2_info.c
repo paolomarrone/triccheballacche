@@ -34,6 +34,14 @@ LilvWorld *lv2_world_open(const char *path) {
 	lilv_node_free(uri);
 	return world;
 }
+static void *open_module(const char *path) {
+	return lv2_world_open(path);
+}
+static void close_module(void *data) {
+	lilv_world_free(data);
+}
+const ModuleOps lv2_module_ops = {open_module, close_module};
+
 static int required(LilvWorld *world, const LilvNode *subject, const char *property, const char *const *supported,
     const char *const *extra) {
 	LilvNode *predicate = lilv_new_uri(world, property);
@@ -77,7 +85,7 @@ int lv2_ui_fixed(Lv2Description *d, const LilvUI *ui) {
 }
 LilvUIs *lv2_uis(Lv2Description *d, const LilvUI **selected) {
 	LilvUIs *uis = lilv_plugin_get_uis(d->plugin);
-	LilvNode *type = lilv_new_uri(d->world, LV2_UI__X11UI);
+	LilvNode *type = lilv_new_uri(d->world, lv2_ui_type);
 	*selected = NULL;
 	LILV_FOREACH(uis, i, uis) {
 		const LilvUI *ui = lilv_uis_get(uis, i);

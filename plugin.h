@@ -1,6 +1,6 @@
 #ifndef PLUGIN_H
 #define PLUGIN_H
-#include "loader.h"
+#include "dsp.h"
 
 enum { DEFAULT_SAMPLE_RATE = 44100, BLOCK = 512 };
 

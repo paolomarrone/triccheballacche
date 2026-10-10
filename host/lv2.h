@@ -1,6 +1,6 @@
 #ifndef HOST_LV2_H
 #define HOST_LV2_H
-#include "module.h"
+#include "dsp_internal.h"
 #include "json_write.h"
 #include <lilv/lilv.h>
 #include <lv2/atom/forge.h>
@@ -20,8 +20,6 @@
 #include <lv2/urid/urid.h>
 #include <lv2/worker/worker.h>
 #include <lv2/state/state.h>
-#include <pthread.h>
-#include <semaphore.h>
 
 enum { LV2_PORT_LIMIT = 4096, LV2_ATOM_CAPACITY = 65536 };
 enum { LV2_PORT_CONTROL = 1, LV2_PORT_AUDIO, LV2_PORT_ATOM };
@@ -37,26 +35,13 @@ typedef struct {
 	uint32_t count;
 	int inputs, outputs, main_inputs, main_outputs, midi, latency, nparams;
 } Lv2Description;
-typedef struct {
-	const LV2_Worker_Interface *api;
-	LV2_Worker_Schedule schedule;
-	Messages requests, responses;
-	pthread_t thread;
-	pthread_mutex_t mutex;
-	pthread_cond_t done;
-	sem_t ready;
-	atomic_int stop, pending;
-	int started, synchronous;
-} Lv2Worker;
+typedef struct Lv2Runtime Lv2Runtime;
 typedef struct {
 	DSP *dsp;
 	Lv2Description description;
 	LilvInstance *instance;
 	LV2_URID_Map map;
 	LV2_URID_Unmap unmap;
-	pthread_mutex_t uris_mutex;
-	char **uris;
-	uint32_t nuri;
 	LV2_URID sequence, chunk, midi, event_transfer;
 	LV2_URID position, frame, speed, tempo, beat;
 	LV2_Atom_Forge forge;
@@ -72,7 +57,8 @@ typedef struct {
 	atomic_uint latency;
 	uint32_t applied_latency;
 	Messages from_ui, to_ui;
-	Lv2Worker worker;
+	LV2_Worker_Schedule schedule;
+	Lv2Runtime *runtime;
 } Lv2;
 
 LilvWorld *lv2_world_open(const char *path);
@@ -85,9 +71,17 @@ int lv2_ui_fixed(Lv2Description *d, const LilvUI *ui);
 LilvNode *lv2_get(LilvWorld *world, const LilvNode *subject, const char *predicate);
 int lv2_is(LilvWorld *world, const LilvNode *subject, const char *predicate, const char *object);
 int lv2_ui_send(Lv2 *l, uint32_t port, uint32_t size, const void *data);
+extern const char *const lv2_ui_type;
+// Platform runtime: synchronized URI mapping and background work. It outlives the plugin instance.
+int lv2_runtime_open(Lv2 *l);
+void lv2_runtime_close(Lv2 *l);
+LV2_URID lv2_map_uri(void *handle, const char *uri);
+const char *lv2_unmap_uri(void *handle, LV2_URID id);
 LV2_Worker_Status lv2_schedule(LV2_Worker_Schedule_Handle handle, uint32_t size, const void *data);
 int lv2_worker_start(Lv2 *l);
 void lv2_worker_wait(Lv2 *l);
-void lv2_worker_emit(Lv2 *l);
+void lv2_worker_begin(Lv2 *l, int offline);
+void lv2_worker_end(Lv2 *l);
+int lv2_worker_pending(Lv2 *l);
 void lv2_worker_close(Lv2 *l);
 #endif

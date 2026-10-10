@@ -1,5 +1,5 @@
 #include "controls.h"
-#include "module.h"
+#include "host/dsp_internal.h"
 #include "json_write.h"
 #include <math.h>
 #include <stdlib.h>

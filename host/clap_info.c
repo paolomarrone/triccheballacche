@@ -100,7 +100,7 @@ int clap_metadata(Clap *c, Json *j, const char *path) {
 	int input, output, midi;
 	if (clap_layout(c, &input, &output, &midi))
 		return -1;
-	int gui = c->gui && c->gui->is_api_supported && c->gui->is_api_supported(c->plugin, CLAP_WINDOW_API_X11, false);
+	int gui = c->gui && c->gui->is_api_supported && c->gui->is_api_supported(c->plugin, clap_window_api, false);
 	json_print(j, "{\"id\":");
 	json_string(j, c->plugin->desc->id);
 	json_print(j, ",\"binary\":");

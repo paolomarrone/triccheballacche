@@ -9,6 +9,7 @@
 
 // Deliberately sparse, out-of-order IDs and a parameter beyond the former 64-slot limit.
 enum { PARAMETERS = 130 };
+static unsigned entries, instances;
 static clap_id parameter_id(uint32_t i) {
 	return i == 0 ? 987654321 : 1000 + (PARAMETERS - i) * 7;
 }
@@ -53,6 +54,8 @@ static void destroy(const clap_plugin_t *plugin) {
 	Plugin *p = self(plugin);
 	main_thread(p);
 	assert(!p->active && !p->display);
+	assert(entries && instances);
+	--instances;
 	free(p);
 }
 static bool activate(const clap_plugin_t *plugin, double rate, uint32_t min, uint32_t max) {
@@ -244,7 +247,7 @@ static bool save(const clap_plugin_t *plugin, const clap_ostream_t *out) {
 		left -= n;
 		bytes += n;
 	}
-	return true;
+	return !getenv("CLAP_TEST_FAIL_SAVE");
 }
 static bool load(const clap_plugin_t *plugin, const clap_istream_t *in) {
 	Plugin *p = self(plugin);
@@ -395,12 +398,14 @@ static const clap_plugin_descriptor_t *descriptor(const clap_plugin_factory_t *f
 }
 static const clap_plugin_t *create(const clap_plugin_factory_t *factory, const clap_host_t *host, const char *id) {
 	(void)factory;
+	assert(entries);
 	int index = !strcmp(id, descriptors[1].id);
 	if (strcmp(id, descriptors[index].id))
 		return NULL;
 	Plugin *p = calloc(1, sizeof(*p));
 	if (!p)
 		return NULL;
+	++instances;
 	p->host = host;
 	p->effect = index;
 	atomic_init(&p->edited, 0);
@@ -422,9 +427,12 @@ static const clap_plugin_t *create(const clap_plugin_factory_t *factory, const c
 }
 static bool entry_init(const char *path) {
 	(void)path;
+	++entries;
 	return true;
 }
 static void entry_deinit(void) {
+	assert(entries && (entries > 1 || !instances));
+	--entries;
 }
 static const void *factory(const char *id) {
 	static const clap_plugin_factory_t f = {count, descriptor, create};

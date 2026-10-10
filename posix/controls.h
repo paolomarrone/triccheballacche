@@ -1,7 +1,7 @@
 #ifndef CONTROLS_H
 #define CONTROLS_H
 #include "session.h"
-#include "ui.h"
+#include "host/ui.h"
 #include "webui.h"
 
 typedef struct {

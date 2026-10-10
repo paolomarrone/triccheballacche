@@ -1,6 +1,7 @@
-#ifndef MODULE_H
-#define MODULE_H
-#include "loader.h"
+#ifndef DSP_INTERNAL_H
+#define DSP_INTERNAL_H
+#include "dsp.h"
+#include "module.h"
 #include <stdatomic.h>
 
 enum { MESSAGE_SLOTS = 64, MAX_MESSAGE = 4096 };
@@ -43,13 +44,6 @@ struct DSP {
 	Messages to_ui, to_dsp;
 };
 
-Module *module_open(Modules *cache, const char *path, int format);
-void module_close(Module *module);
-void *module_symbol(Module *module, const char *symbol);
-void *module_data(Module *module);
-const char *module_path(Module *module);
-const char *module_bindir(Module *module);
-const char *module_datadir(Module *module);
 int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity);
 int clap_open(DSP *dsp, unsigned sample_rate, size_t capacity);
 int lv2_open(DSP *dsp, unsigned sample_rate, size_t capacity);

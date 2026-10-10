@@ -1,7 +1,7 @@
-#include "lv2.h"
-#include "ui_internal.h"
-#include "window_x11.h"
-#include <dlfcn.h>
+#include "host/lv2.h"
+#include "host/ui_internal.h"
+#include "window.h"
+#include "host/platform.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -83,7 +83,7 @@ static void close_view(void *view) {
 		watch_dsp(ui->lv2->dsp, 0);
 	}
 	if (ui->library)
-		dlclose(ui->library);
+		library_close(ui->library);
 	window_close(&ui->window);
 	free(ui->shown);
 	free(ui);
@@ -105,10 +105,10 @@ static int open_view(void **out, Session *session, int id) {
 	ui->lv2 = l;
 	if (!binary || !bundle)
 		goto fail;
-	ui->library = dlopen(binary, RTLD_NOW | RTLD_LOCAL);
+	ui->library = library_open(binary);
 	if (!ui->library)
 		goto fail;
-	LV2UI_DescriptorFunction descriptor = (LV2UI_DescriptorFunction)dlsym(ui->library, "lv2ui_descriptor");
+	LV2UI_DescriptorFunction descriptor = (LV2UI_DescriptorFunction)library_symbol(ui->library, "lv2ui_descriptor");
 	if (!descriptor)
 		goto fail;
 	for (uint32_t i = 0; i < 256; ++i) {

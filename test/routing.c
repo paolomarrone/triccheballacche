@@ -1,4 +1,4 @@
-#include "posix/module.h"
+#include "host/dsp_internal.h"
 #include "script.h"
 #include "support.h"
 #include <assert.h>

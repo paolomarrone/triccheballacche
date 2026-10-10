@@ -1,6 +1,6 @@
-#include "ui_internal.h"
-#include "clap.h"
-#include "window_x11.h"
+#include "host/ui_internal.h"
+#include "host/clap.h"
+#include "window.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -45,20 +45,20 @@ static int open_view(void **out, Session *session, int id) {
 	DSP *dsp = session->nodes[id].dsp[0].dsp;
 	Clap *c = dsp->instance;
 	const clap_plugin_gui_t *g = c->gui;
-	if (!g || c->window || !g->is_api_supported(c->plugin, CLAP_WINDOW_API_X11, false))
+	if (!g || c->window || !g->is_api_supported(c->plugin, clap_window_api, false))
 		return -1;
 	ClapUI *ui = calloc(1, sizeof(*ui));
 	if (!ui)
 		return -1;
 	ui->clap = c;
-	if (!g->create(c->plugin, CLAP_WINDOW_API_X11, false))
+	if (!g->create(c->plugin, clap_window_api, false))
 		goto fail;
 	ui->created = 1;
 	uint32_t width, height;
 	if (!g->get_size(c->plugin, &width, &height) ||
 	    window_open(&ui->window, session_score(session)->nodes[id].info.name, width, height, !g->can_resize(c->plugin)))
 		goto fail;
-	clap_window_t window = {.api = CLAP_WINDOW_API_X11, .x11 = ui->window.parent};
+	clap_window_t window = {.api = clap_window_api, .x11 = ui->window.parent};
 	if (!g->set_parent(c->plugin, &window))
 		goto fail;
 	c->window = ui;

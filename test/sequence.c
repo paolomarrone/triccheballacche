@@ -1,6 +1,6 @@
 #include "support.h"
 #include "snapshot.h"
-#include "posix/module.h"
+#include "host/dsp_internal.h"
 #include <assert.h>
 #include <math.h>
 #include <pthread.h>

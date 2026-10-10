@@ -29,7 +29,7 @@ function build(targets, overrides = {}, success = true) {
 try {
     writeFileSync("build/test/build.log", "");
     for (const name of readdirSync(root))
-        if (/\.[ch]$/.test(name) || ["Makefile", "lib", "posix", "tools", "test", "plugins", "patches", ".deps"].includes(name))
+        if (/\.[ch]$/.test(name) || ["Makefile", "lib", "host", "posix", "x11", "web", "tools", "test", "plugins", "patches", ".deps"].includes(name))
             symlinkSync(join(root, name), join(work, name));
     // An unrelated sibling header must never override the pinned default.
     writeFileSync(join(directory, "miniaudio.h"), "#error Wrong miniaudio header\n");

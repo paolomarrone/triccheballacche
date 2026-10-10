@@ -1,5 +1,5 @@
-#ifndef WINDOW_X11_H
-#define WINDOW_X11_H
+#ifndef X11_WINDOW_H
+#define X11_WINDOW_H
 #include <X11/Xlib.h>
 
 typedef struct {

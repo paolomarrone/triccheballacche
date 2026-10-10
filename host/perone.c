@@ -1,6 +1,41 @@
-#include "module.h"
+#include "dsp_internal.h"
 #include "perone.h"
+#include "platform.h"
 #include <stdlib.h>
+
+typedef struct {
+	void *library;
+	char *bindir, *datadir;
+} PeroneModule;
+
+static void close_module(void *data) {
+	PeroneModule *m = data;
+	if (!m)
+		return;
+	library_close(m->library);
+	free(m->bindir);
+	free(m->datadir);
+	free(m);
+}
+static void *open_module(const char *path) {
+	PeroneModule *m = calloc(1, sizeof(*m));
+	if (!m)
+		return NULL;
+	m->bindir = host_parent(path);
+	m->datadir = m->bindir ? host_parent(m->bindir) : NULL;
+	if (!m->datadir || !(m->library = library_open(path))) {
+		close_module(m);
+		return NULL;
+	}
+	return m;
+}
+const ModuleOps perone_module_ops = {open_module, close_module};
+const char *perone_bindir(Module *module) {
+	return ((PeroneModule *)module_data(module))->bindir;
+}
+const char *perone_datadir(Module *module) {
+	return ((PeroneModule *)module_data(module))->datadir;
+}
 
 typedef struct {
 	const perone_api *api;
@@ -9,10 +44,10 @@ typedef struct {
 } Perone;
 
 static const char *bindir(void *handle) {
-	return module_bindir(((DSP *)handle)->module);
+	return perone_bindir(((DSP *)handle)->module);
 }
 static const char *datadir(void *handle) {
-	return module_datadir(((DSP *)handle)->module);
+	return perone_datadir(((DSP *)handle)->module);
 }
 
 static void close_instance(DSP *dsp) {
@@ -81,7 +116,8 @@ static const DspOps ops = {.close = close_instance,
 
 int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity) {
 	(void)capacity;
-	const perone_api *(*get_api)(uint32_t) = module_symbol(dsp->module, "perone_get_api");
+	PeroneModule *module = module_data(dsp->module);
+	const perone_api *(*get_api)(uint32_t) = library_symbol(module->library, "perone_get_api");
 	const perone_api *a = get_api ? get_api(PERONE_ABI_VERSION) : NULL;
 	const PluginConfig *config = &dsp->config;
 	if (!a || !a->alloc || !a->free || !a->init || !a->fini || !a->set_sample_rate || !a->mem_req || !a->mem_set ||

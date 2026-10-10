@@ -1,10 +1,11 @@
-#include "ui_internal.h"
-#include "module.h"
+#include "host/ui_internal.h"
+#include "host/dsp_internal.h"
+#include "host/perone.h"
+#include "host/platform.h"
 #include "perone_ui.h"
 #include "util.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include <dlfcn.h>
 #include <errno.h>
 #include <math.h>
 #include <stdlib.h>
@@ -28,12 +29,12 @@ typedef struct {
 
 static const char *bindir(void *handle) {
 	PeroneUI *ui = handle;
-	return module_bindir(ui->session->nodes[ui->node].dsp[0].dsp->module);
+	return perone_bindir(ui->session->nodes[ui->node].dsp[0].dsp->module);
 }
 
 static const char *datadir(void *handle) {
 	PeroneUI *ui = handle;
-	return module_datadir(ui->session->nodes[ui->node].dsp[0].dsp->module);
+	return perone_datadir(ui->session->nodes[ui->node].dsp[0].dsp->module);
 }
 
 static void parameter(void *handle, size_t index, float value) {
@@ -72,13 +73,13 @@ static int perone_open_ui(void **out, Session *session, int id) {
 		free(ui);
 		return -1;
 	}
-	ui->library = dlopen(node->info.ui, RTLD_NOW | RTLD_LOCAL);
+	ui->library = library_open(node->info.ui);
 	const char *error;
 	if (!ui->library) {
-		error = dlerror();
+		error = "cannot load UI library";
 		goto fail;
 	}
-	const perone_ui_api *(*get_api)(uint32_t) = dlsym(ui->library, "perone_ui_get_api");
+	const perone_ui_api *(*get_api)(uint32_t) = library_symbol(ui->library, "perone_ui_get_api");
 	error = "unsupported Perone UI ABI";
 	if (!get_api || !(ui->api = get_api(PERONE_UI_ABI_VERSION)))
 		goto fail;
@@ -207,7 +208,7 @@ static void perone_close(void *view) {
 	if (ui->display)
 		XCloseDisplay(ui->display);
 	if (ui->library)
-		dlclose(ui->library);
+		library_close(ui->library);
 	free(ui->shown);
 	free(ui);
 }

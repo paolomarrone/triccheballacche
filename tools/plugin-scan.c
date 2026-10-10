@@ -1,5 +1,5 @@
-#include "posix/clap.h"
-#include "posix/lv2.h"
+#include "host/clap.h"
+#include "host/lv2.h"
 #include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,7 +9,7 @@ static int clap_scan(Json *json, const char *path) {
 	Module *m = module_open(NULL, path, PLUGIN_CLAP);
 	if (!m)
 		return -1;
-	const clap_plugin_entry_t *entry = module_symbol(m, "clap_entry");
+	const clap_plugin_entry_t *entry = clap_module_entry(m);
 	const clap_plugin_factory_t *factory = entry->get_factory(CLAP_PLUGIN_FACTORY_ID);
 	if (!factory || !factory->get_plugin_count || !factory->get_plugin_descriptor || !factory->create_plugin)
 		goto fail;

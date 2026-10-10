@@ -1,4 +1,4 @@
-#include "window_x11.h"
+#include "window.h"
 #include <X11/Xutil.h>
 
 int window_size(PluginWindow *w, unsigned width, unsigned height) {

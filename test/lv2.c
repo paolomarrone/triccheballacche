@@ -1,7 +1,7 @@
 #include "score_janet.h"
 #include "discovery.h"
-#include "posix/lv2.h"
-#include "posix/ui.h"
+#include "host/lv2.h"
+#include "host/ui.h"
 #include <X11/Xlib.h>
 #include <assert.h>
 #include <math.h>
@@ -134,6 +134,7 @@ int main(int argc, char **argv) {
 	assert(json && strstr(json, "LV2 test synth") && strstr(json, "LV2 test effect") && !strstr(json, "Unsupported"));
 	free(json);
 	Modules modules = {0};
+	Module *previous = NULL;
 	for (int offline = 0; offline < 2; ++offline) {
 		Session s = {.modules = &modules, .sample_rate = offline ? 48000 : 44100};
 		Output output;
@@ -142,6 +143,13 @@ int main(int argc, char **argv) {
 		const PluginConfig *config = &session_score(&s)->nodes[0].config;
 		assert(config->format == PLUGIN_LV2 && config->nparams == 6 && config->parameters[4].id == 10);
 		DSP *synth = s.nodes[0].dsp[0].dsp;
+		Module *alias = module_open(&modules, "./build/test/../test/fixture.lv2", PLUGIN_LV2);
+		assert(alias == synth->module && alias == s.nodes[1].dsp[0].dsp->module);
+		assert(!previous || alias == previous);
+		previous = alias;
+		module_close(alias);
+		if (offline)
+			modules_free(&modules); // Lilv world remains alive until both instances close.
 		float audio[74];
 		while (s.time < s.frames) {
 			uint64_t start = s.time;

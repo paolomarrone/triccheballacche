@@ -1,4 +1,4 @@
-#include "../posix/perone_ui.c"
+#include "../x11/perone_ui.c"
 #include "script.h"
 #include <assert.h>
 #include <time.h>

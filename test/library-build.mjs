@@ -17,7 +17,7 @@ for (let i = 0; i < names.length; i++) {
     assert.equal(product.bundleName, `bw_example_${names[i]}`);
     assert(statSync(binaries[i]).size > 0);
 }
-execFileSync("./build/test/loader", bundles, {stdio: "inherit"});
+execFileSync("./build/test/dsp", bundles, {stdio: "inherit"});
 
 const log = "build/test/library-build.log";
 writeFileSync(log, "");

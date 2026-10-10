@@ -1,5 +1,5 @@
 #include "player.h"
-#include "posix/module.h"
+#include "host/dsp_internal.h"
 #include "transport.h"
 #include <assert.h>
 #include <math.h>

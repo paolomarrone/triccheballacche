@@ -1,7 +1,7 @@
 #include "score_janet.h"
 #include "snapshot.h"
-#include "posix/module.h"
-#include "posix/ui.h"
+#include "host/dsp_internal.h"
+#include "host/ui.h"
 #include <X11/Xlib.h>
 #include <assert.h>
 #include <math.h>
@@ -133,13 +133,18 @@ int main(int argc, char **argv) {
 		printf("OK: external plugin audio peak %.6f, native windows opened/closed\n", peak);
 		return 0;
 	}
-	Session s = {0};
+	Modules modules = {0};
+	Session s = {.modules = &modules};
 	Output output;
 	assert(!load_score(&s, &output, "test/clap/score.janet"));
 	assert(session_score(&s)->nodes[0].config.nparams == 130);
 	assert(session_score(&s)->nodes[0].config.parameters[129].id == 1007);
 	DSP *synth = s.nodes[0].dsp[0].dsp;
 	assert(synth && s.nodes[1].dsp[0].dsp);
+	Module *alias = module_open(&modules, "./build/test/../test/fixture.clap", PLUGIN_CLAP);
+	assert(alias == synth->module && alias == s.nodes[1].dsp[0].dsp->module);
+	module_close(alias);
+	modules_free(&modules); // Both instances must keep the entry initialized without the cache.
 	float audio[BLOCK * 2];
 	while (s.time < s.frames) {
 		size_t start = s.time, n = s.frames - start < 37 ? s.frames - start : 37;
@@ -176,8 +181,12 @@ int main(int argc, char **argv) {
 	session_sync(&s);
 	assert(read_dsp(synth, 0, &value) && value == .625);
 	assert(!state_dsp(synth, "build/test/clap.state", 1));
+	assert(state_dsp(synth, "build/test/missing-directory/clap.state", 1) == -1);
 	edit_dsp(synth, 0, .125);
 	session_sync(&s);
+	assert(!setenv("CLAP_TEST_FAIL_SAVE", "1", 1));
+	assert(state_dsp(synth, "build/test/clap.state", 1) == -1);
+	assert(!unsetenv("CLAP_TEST_FAIL_SAVE")); // A failed save must leave the previous file intact.
 	FILE *state = fopen("build/test/clap.state", "r+b");
 	assert(state);
 	double private_value = 2;
@@ -194,6 +203,7 @@ int main(int argc, char **argv) {
 	puts(
 	    "OK: CLAP discovery, sparse IDs, 130 controls, synth/effect audio, precise events, stopped edits, state and seek");
 	puts("OK: repeated seeks, parameter cookies after restart and coalesced controls requiring process()");
+	puts("OK: shared CLAP entry, canonical module paths and instances outliving their cache");
 	if (ui)
 		puts("OK: CLAP native X11 UI, timers, edits in both directions and repeated window lifetime");
 	latency_test();
