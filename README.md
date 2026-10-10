@@ -158,6 +158,9 @@ for the canonical library, or [Rame](examples/rame.janet) for a complete piece.
 [gui](examples/gui.janet) demonstrates A-SID and Tibia's plugin UIs.
 [Oculus](examples/oculus.janet) uses the local synth, drums, shape and echo;
 [Campagnola](examples/campagnola.janet) uses the optional sampled piano.
+[Crocevia](examples/crocevia.janet) combines local Perone drums/synths, Surge XT CLAP,
+A-SID LV2 from `../asid` (override with `ASID_LV2`) and Brickworks `fx_comb` VST3.
+Surge and the comb use the native plugin search paths described below.
 
 ## Plugins
 
