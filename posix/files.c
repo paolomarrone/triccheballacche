@@ -71,7 +71,7 @@ static const char library_source[] =
     ;
 
 char *library_json(void) {
-	JanetTable *env = script_env();
+	JanetTable *env = script_env(DEFAULT_SAMPLE_RATE);
 	if (!env)
 		return NULL;
 	Janet result;

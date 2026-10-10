@@ -18,13 +18,13 @@ static Janet scan(int32_t argc, Janet *argv) {
 	janet_fixarity(argc, 1);
 	char *json = scan_plugins(janet_getcstring(argv, 0));
 	if (!json)
-		janet_panic("Cannot scan CLAP module (see diagnostics)");
+		janet_panic("Cannot scan plugin (see diagnostics)");
 	Janet value = janet_cstringv(json);
 	free(json);
 	return value;
 }
 
-JanetTable *script_env(void) {
+JanetTable *script_env(unsigned sample_rate) {
 	janet_init();
 	JanetTable *env = janet_core_env(NULL), *json = janet_table(0);
 	script_trace(env);
@@ -37,6 +37,7 @@ JanetTable *script_env(void) {
 	janet_def(env, "host/binary-suffix", janet_cstringv(PERONE_SUFFIX), NULL);
 	janet_def(env, "host/platform", janet_cstringv(PERONE_PLATFORM), NULL);
 	janet_def(env, "host/max-params", janet_wrap_integer(MAX_PARAMS), NULL);
+	janet_def(env, "host/sample-rate", janet_wrap_number(sample_rate), NULL);
 	janet_def(env, "host/max-inputs", janet_wrap_integer(MAX_INPUTS), NULL);
 	janet_def(env, "host/max-message", janet_wrap_number(dsp_max_message), NULL);
 	janet_def(env, "host/scan", janet_wrap_cfunction(scan), NULL);
@@ -71,7 +72,10 @@ void script_config(Janet bundle, Janet defaults, PluginConfig *config) {
 	    .nparams = params.len};
 	Janet id = janet_get(bundle, janet_ckeywordv("id"));
 	if (!janet_checktype(id, JANET_NIL)) {
-		config->format = PLUGIN_CLAP;
+		Janet product = janet_get(bundle, janet_ckeywordv("product"));
+		Janet format = janet_get(product, janet_ckeywordv("format"));
+		const char *name = janet_getcstring(&format, 0);
+		config->format = !strcmp(name, "clap") ? PLUGIN_CLAP : !strcmp(name, "lv2") ? PLUGIN_LV2 : -1;
 		config->id = copy_string(janet_getcstring(&id, 0));
 		if (!config->id)
 			janet_panic("out of memory");
@@ -139,7 +143,7 @@ int read_bundle(const char *path, char **binary, PluginConfig *config, PluginInf
 	*config = (PluginConfig){0};
 	if (info)
 		*info = (PluginInfo){0};
-	JanetTable *env = script_env();
+	JanetTable *env = script_env(DEFAULT_SAMPLE_RATE);
 	if (!env)
 		return -1;
 	Bundle bundle = {binary, config, info};

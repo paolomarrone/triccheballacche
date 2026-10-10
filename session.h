@@ -41,6 +41,7 @@ typedef struct {
 	uint64_t (*held)[128]; // Note-off obligations survive a musical revision.
 	uint64_t next_off;
 	const char *error;
+	int offline; // Non-realtime rendering may perform plugin worker jobs synchronously.
 } Session;
 
 // The control thread may borrow this until collect/free; audio owns the active cursor.
@@ -63,7 +64,7 @@ int session_listen(Session *s, int track, int flags);
 uint64_t session_frame(const Session *s, double seconds);
 // Stop the callback first. Restore controls and held notes; reset DSP history.
 int session_seek(Session *s, uint64_t from);
-void session_sync(Session *s);
+void session_sync(Session *s); // Audio stopped; apply controls and service plugin messages.
 // Main thread: 1 requests a restart with audio stopped; -1 indicates a plugin error.
 int session_poll(Session *s);
 int session_restart(Session *s);

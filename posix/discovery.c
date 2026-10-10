@@ -137,9 +137,15 @@ static void register_cleanup(void) {
 char *scan_plugins(const char *path) {
 	struct stat info;
 	char *resolved = realpath(path, NULL);
-	if (!resolved || stat(resolved, &info) || !S_ISREG(info.st_mode)) {
+	if (!resolved || stat(resolved, &info) || (!S_ISREG(info.st_mode) && !S_ISDIR(info.st_mode))) {
 		free(resolved);
 		return NULL;
+	}
+	// RDF bundles may refer to several changing files. Read their metadata afresh.
+	if (S_ISDIR(info.st_mode)) {
+		char *result = scan(resolved);
+		free(resolved);
+		return result;
 	}
 	pthread_once(&cleanup_once, register_cleanup);
 	pthread_mutex_lock(&mutex);

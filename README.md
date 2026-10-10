@@ -1,6 +1,6 @@
 # triccheballacche
 
-A minimal scriptable DAW: Janet scores, C audio, Perone and CLAP plugins.
+A minimal scriptable DAW: Janet scores, C audio, Perone, CLAP and LV2 plugins.
 The native and browser editors share the same interface, audio engine and 2D/3D score view.
 Music can be finite or repeat indefinitely, with quantized live updates.
 
@@ -11,7 +11,8 @@ trusted. Plugin crashes are not isolated, and APIs may change.
 ## Build and run
 
 Run commands from the repository root. You need a C compiler, GNU Make, git,
-curl and patch; the plugin library also needs Node.js and npm.
+curl and patch. The native build also needs Meson, Ninja and pkg-config for
+Lilv and its dependencies; the plugin library needs Node.js and npm.
 
 ```sh
 make -j4 cli library
@@ -195,14 +196,42 @@ and plugins receive tempo and transport position. Host callbacks, timers and fil
 descriptors run on the main thread. Plugin restarts pause audio; incompatible
 port or parameter changes require preparing the score again.
 
-The supported audio graph routes the main mono/stereo buses. Additional inputs
+**LV2** works natively on Linux, with Lilv reading the bundle's Turtle metadata.
+Settings lists `.lv2` bundles from `LV2_PATH` (colon-separated), or from `~/.lv2`,
+`/usr/local/lib/lv2` and `/usr/lib/lv2` when it is unset. References use the plugin
+URI; an explicit `:path` selects a bundle outside those directories:
+
+```janet
+(def synth (daw/plugin :synth
+  {:format :lv2 :id "https://surge-synthesizer.github.io/lv2/surge-xt"}))
+# Or {:format :lv2 :path "/path/to/plugin.lv2" :id "urn:plugin:uri"}.
+```
+
+[examples/lv2.janet](examples/lv2.janet) uses Surge XT and Surge XT Effects 1.3.4.
+Run `LV2_PATH=/path/to/bundles ./build/gui examples/lv2.janet` and use each
+plugin's window icon to open its original X11 UI. GTK/Qt UIs are not embedded;
+control ports still appear in the shared parameter panel. Parameter keywords
+are port symbols, such as `:gain`; `daw/info` lists them. Numeric `patch` properties
+are not yet exposed as Janet parameters, though original UIs can exchange Atom
+messages with their DSP. Native LV2 bundles do not run in the Wasm editor.
+
+LV2 supports MIDI and transport through Atom sequences, control automation,
+sample-rate-scaled ranges, bundle default state and workers (background during
+playback, synchronous offline). UI messages are serviced even while stopped.
+Unknown required features/options, fixed/power-of-two block requirements, CV ports and
+non-sequence Atom ports are rejected unless the port is optional. Atom buffers
+are 64 KiB; worker messages and individual UI transfers are limited to 4 KiB
+(including the host's port index for UI transfers).
+`build/tools/plugin-scan /path/to/plugin.lv2` lists supported IDs and parameters.
+
+For CLAP and LV2, the audio graph routes the main mono/stereo buses. Additional inputs
 receive silence; additional outputs and note outputs are not routed. Plugins
-with note outputs or more than one note input are currently rejected. CLAP mono
+with note outputs or more than one note input are currently rejected. Mono
 effects are not duplicated implicitly on stereo signals. Parallel paths are
 latency-compensated with buffers allocated before rendering; total output latency
 and effect tails still need room in the score's duration. Per-note expression,
 plugin-driven note routing and project/preset persistence are not implemented.
-The adapter has an opaque-state stream operation, tested independently from score
+The CLAP adapter has an opaque-state stream operation, tested independently from score
 snapshots; parameter arrays are never used as a substitute for plugin state.
 
 The canonical library build is self-contained. Local plugin projects instead
@@ -248,6 +277,8 @@ musical names keep their spelling. Formatting is in `.editorconfig` and
 | `make test` | Local fixtures only; no audio device or sibling checkout. |
 | `make test-clap` | X11 headers/library for the fixture; no display needed. |
 | `make test-clap-ui` / `make test-clap-editor` | X11 display; Node.js/Chromium and audio for the editor. |
+| `make test-lv2` | X11 headers/library for the fixture; no display needed. |
+| `make test-lv2-ui` / `make test-lv2-editor` | X11 display; Node.js/Chromium and audio for the editor. |
 | `make format-check` | clang-format 21. |
 | `make test-build` / `make test-build-web` | Node.js; also Emscripten for web. |
 | `make test-plugins` / `make test-brickworks` | Corresponding prebuilt bundles. |
@@ -265,9 +296,10 @@ use `renders/` for exported audio. Both are ignored. `make clean` preserves
 downloads and local plugin builds; `make -C plugins clean` removes the latter.
 Use one `make -j` invocation for concurrent targets sharing a build directory.
 
-Dependency versions are pinned in [Makefile](Makefile) and
-[plugins/library.mk](plugins/library.mk). `MINIAUDIO`, `JANET`, `SPORK`, `WEBUI` and `CLAP`
-accept explicit paths. Fixes live in [patches/](patches/); the build applies them
+Dependency versions are pinned in [Makefile](Makefile),
+[plugins/library.mk](plugins/library.mk) and [tools/lv2-deps.sh](tools/lv2-deps.sh).
+`MINIAUDIO`, `JANET`, `SPORK`, `WEBUI`, `CLAP` and `LV2_DEPS` accept explicit paths.
+Fixes live in [patches/](patches/); the build applies them
 to generated copies, leaving downloaded sources intact.
 
 ## License

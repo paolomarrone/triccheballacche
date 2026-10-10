@@ -1,0 +1,263 @@
+#include "lv2.h"
+#include <float.h>
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+
+LilvNode *lv2_get(LilvWorld *world, const LilvNode *subject, const char *predicate) {
+	LilvNode *p = lilv_new_uri(world, predicate);
+	LilvNode *result = lilv_world_get(world, subject, p, NULL);
+	lilv_node_free(p);
+	return result;
+}
+int lv2_is(LilvWorld *world, const LilvNode *subject, const char *predicate, const char *object) {
+	LilvNode *p = lilv_new_uri(world, predicate), *o = lilv_new_uri(world, object);
+	int result = lilv_world_ask(world, subject, p, o);
+	lilv_node_free(p);
+	lilv_node_free(o);
+	return result;
+}
+LilvWorld *lv2_world_open(const char *path) {
+	LilvWorld *world = lilv_world_new();
+	if (!world)
+		return NULL;
+	size_t size = strlen(path) + 2;
+	char *directory = malloc(size);
+	if (!directory) {
+		lilv_world_free(world);
+		return NULL;
+	}
+	snprintf(directory, size, "%s/", path);
+	LilvNode *uri = lilv_new_file_uri(world, NULL, directory);
+	free(directory);
+	lilv_world_load_bundle(world, uri);
+	lilv_node_free(uri);
+	return world;
+}
+static int required(LilvWorld *world, const LilvNode *subject, const char *property, const char *const *supported,
+    const char *const *extra) {
+	LilvNode *predicate = lilv_new_uri(world, property);
+	LilvNodes *values = lilv_world_find_nodes(world, subject, predicate, NULL);
+	int ok = 1;
+	LILV_FOREACH(nodes, i, values) {
+		const LilvNode *value = lilv_nodes_get(values, i);
+		const char *uri = lilv_node_as_uri(value);
+		int found = 0;
+		for (int j = 0; uri && supported[j]; ++j)
+			found |= !strcmp(uri, supported[j]);
+		for (int j = 0; uri && extra && extra[j]; ++j)
+			found |= !strcmp(uri, extra[j]);
+		if (!found) {
+			fprintf(stderr, "[LV2] Unsupported %s: %s\n", property, lilv_node_as_string(value));
+			ok = 0;
+		}
+	}
+	lilv_nodes_free(values);
+	lilv_node_free(predicate);
+	return ok;
+}
+int lv2_required(LilvWorld *world, const LilvNode *subject, int ui) {
+	static const char *common[] = {LV2_URID__map, LV2_URID__unmap, LV2_OPTIONS__options,
+	    LV2_BUF_SIZE__boundedBlockLength, LV2_LOG__log, LV2_CORE__hardRTCapable, LV2_WORKER__schedule,
+	    LV2_STATE__loadDefaultState, NULL};
+	static const char *view[] = {LV2_UI__parent, LV2_UI__resize, LV2_UI__idleInterface, LV2_UI__noUserResize,
+	    LV2_UI__fixedSize, LV2_INSTANCE_ACCESS_URI, LV2_DATA_ACCESS_URI, LV2_UI__portMap, NULL};
+	static const char *options[] = {LV2_PARAMETERS__sampleRate, LV2_BUF_SIZE__minBlockLength,
+	    LV2_BUF_SIZE__maxBlockLength, LV2_BUF_SIZE__sequenceSize, LV2_UI__scaleFactor, NULL};
+	return required(world, subject, LV2_CORE__requiredFeature, common, ui ? view : NULL) &&
+	    required(world, subject, LV2_OPTIONS__requiredOption, options, NULL);
+}
+int lv2_ui_fixed(Lv2Description *d, const LilvUI *ui) {
+	const char *predicates[] = {LV2_CORE__requiredFeature, LV2_CORE__optionalFeature};
+	for (int i = 0; i < 2; ++i)
+		if (lv2_is(d->world, lilv_ui_get_uri(ui), predicates[i], LV2_UI__noUserResize) ||
+		    lv2_is(d->world, lilv_ui_get_uri(ui), predicates[i], LV2_UI__fixedSize))
+			return 1;
+	return 0;
+}
+LilvUIs *lv2_uis(Lv2Description *d, const LilvUI **selected) {
+	LilvUIs *uis = lilv_plugin_get_uis(d->plugin);
+	LilvNode *type = lilv_new_uri(d->world, LV2_UI__X11UI);
+	*selected = NULL;
+	LILV_FOREACH(uis, i, uis) {
+		const LilvUI *ui = lilv_uis_get(uis, i);
+		lilv_world_load_resource(d->world, lilv_ui_get_uri(ui));
+		if (lilv_ui_is_a(ui, type) && lv2_required(d->world, lilv_ui_get_uri(ui), 1)) {
+			*selected = ui;
+			break;
+		}
+	}
+	lilv_node_free(type);
+	return uis;
+}
+int lv2_describe(Lv2Description *d, LilvWorld *world, const char *id) {
+	*d = (Lv2Description){.world = world, .midi = -1, .latency = -1};
+	LilvNode *uri = lilv_new_uri(world, id);
+	d->plugin = lilv_plugins_get_by_uri(lilv_world_get_all_plugins(world), uri);
+	lilv_node_free(uri);
+	if (!d->plugin || !lv2_required(world, lilv_plugin_get_uri(d->plugin), 0))
+		return -1;
+	d->count = lilv_plugin_get_num_ports(d->plugin);
+	if (!d->count || d->count > LV2_PORT_LIMIT || !(d->ports = calloc(d->count, sizeof(*d->ports))))
+		return -1;
+	LilvNode *main[2] = {lv2_get(world, lilv_plugin_get_uri(d->plugin), LV2_PORT_GROUPS__mainOutput),
+	    lv2_get(world, lilv_plugin_get_uri(d->plugin), LV2_PORT_GROUPS__mainInput)};
+	int error = 0;
+	for (uint32_t i = 0; i < d->count && !error; ++i) {
+		const LilvPort *port = lilv_plugin_get_port_by_index(d->plugin, i);
+		const LilvNode *node = lilv_port_get_node(d->plugin, port);
+		Lv2Port *p = d->ports + i;
+		p->parameter = p->channel = -1;
+		p->input = lv2_is(world, node, LILV_NS_RDF "type", LV2_CORE__InputPort);
+		if (p->input == lv2_is(world, node, LILV_NS_RDF "type", LV2_CORE__OutputPort)) {
+			error = 1;
+			break;
+		}
+		if (lv2_is(world, node, LILV_NS_RDF "type", LV2_CORE__ControlPort)) {
+			p->type = LV2_PORT_CONTROL;
+			p->parameter = d->nparams++;
+			p->scaled = lv2_is(world, node, LV2_CORE__portProperty, LV2_CORE__sampleRate);
+			p->freewheel = p->input && lv2_is(world, node, LV2_CORE__designation, LV2_CORE__freeWheeling);
+			if (!p->input &&
+			    (lv2_is(world, node, LV2_CORE__designation, LV2_CORE__latency) ||
+			        lv2_is(world, node, LV2_CORE__portProperty, LV2_CORE__reportsLatency)))
+				d->latency = i;
+		} else if (lv2_is(world, node, LILV_NS_RDF "type", LV2_CORE__AudioPort)) {
+			p->type = LV2_PORT_AUDIO;
+			LilvNode *group = lv2_get(world, node, LV2_PORT_GROUPS__group);
+			if (!main[p->input] || lilv_node_equals(group, main[p->input]))
+				p->channel = p->input ? d->main_inputs++ : d->main_outputs++;
+			lilv_node_free(group);
+			if (p->input)
+				++d->inputs;
+			else
+				++d->outputs;
+		} else if (lv2_is(world, node, LILV_NS_RDF "type", LV2_ATOM__AtomPort) &&
+		    lv2_is(world, node, LV2_ATOM__bufferType, LV2_ATOM__Sequence)) {
+			p->type = LV2_PORT_ATOM;
+			p->midi = lv2_is(world, node, LV2_ATOM__supports, LV2_MIDI__MidiEvent);
+			p->time = p->input && lv2_is(world, node, LV2_ATOM__supports, LV2_TIME__Position);
+			LilvNode *size = lv2_get(world, node, LV2_RESIZE_PORT__minimumSize);
+			if (size && lilv_node_as_float(size) > LV2_ATOM_CAPACITY)
+				error = 1;
+			lilv_node_free(size);
+			if (p->midi) {
+				if (!p->input || d->midi >= 0)
+					error = 1;
+				else
+					d->midi = i;
+			}
+		} else if (!lv2_is(world, node, LV2_CORE__portProperty, LV2_CORE__connectionOptional))
+			error = 1;
+	}
+	lilv_node_free(main[0]);
+	lilv_node_free(main[1]);
+	if (error || !d->main_outputs || d->main_outputs > 2 || d->main_inputs > 2 || d->inputs > MAX_INPUTS ||
+	    d->outputs > 64)
+		return -1;
+	int in = d->main_inputs, out = d->main_outputs;
+	for (uint32_t i = 0; i < d->count; ++i)
+		if (d->ports[i].type == LV2_PORT_AUDIO && d->ports[i].channel < 0)
+			d->ports[i].channel = d->ports[i].input ? in++ : out++;
+	return 0;
+}
+static double number(const LilvNode *node, double fallback) {
+	return node && (lilv_node_is_float(node) || lilv_node_is_int(node)) ? lilv_node_as_float(node) : fallback;
+}
+int lv2_metadata(Lv2Description *d, Json *j, const char *path) {
+	LilvNode *name = lilv_plugin_get_name(d->plugin);
+	const char *id = lilv_node_as_uri(lilv_plugin_get_uri(d->plugin));
+	const LilvUI *ui;
+	LilvUIs *uis = lv2_uis(d, &ui);
+	json_print(j, "{\"id\":");
+	json_string(j, id);
+	json_print(j, ",\"binary\":");
+	json_string(j, path);
+	if (ui)
+		json_print(j, ",\"ui-binary\":\"lv2\"");
+	json_print(j,
+	    ",\"layout\":{\"input-channels\":%d,\"output-channels\":%d,\"midi-bus\":%d,"
+	    "\"input-offset\":0,\"input-slots\":%d,\"dsp-to-ui-size\":0,\"ui-to-dsp-size\":0},"
+	    "\"product\":{\"format\":\"lv2\",\"id\":",
+	    d->main_inputs, d->main_outputs, d->midi, d->inputs);
+	json_string(j, id);
+	json_print(j, ",\"name\":");
+	json_string(j, name ? lilv_node_as_string(name) : id);
+	lilv_node_free(name);
+	if (ui)
+		json_print(j, ",\"ui\":{\"userResizable\":%s}", lv2_ui_fixed(d, ui) ? "false" : "true");
+	lilv_uis_free(uis);
+	json_print(j, ",\"parameters\":[");
+	int n = 0;
+	for (uint32_t i = 0; i < d->count; ++i) {
+		Lv2Port *p = d->ports + i;
+		if (p->type != LV2_PORT_CONTROL)
+			continue;
+		const LilvPort *port = lilv_plugin_get_port_by_index(d->plugin, i);
+		const LilvNode *node = lilv_port_get_node(d->plugin, port);
+		LilvNode *def, *min, *max;
+		lilv_port_get_range(d->plugin, port, &def, &min, &max);
+		double low = number(min, 0), high = number(max, i == (uint32_t)d->latency ? 3840000 : 1);
+		double value = number(def, fmax(low, fmin(high, 0)));
+		lilv_node_free(def);
+		lilv_node_free(min);
+		lilv_node_free(max);
+		if (!isfinite(low) || !isfinite(high) || !isfinite(value) || low > high || value < low || value > high ||
+		    fabs(low) > FLT_MAX || fabs(high) > FLT_MAX)
+			return -1;
+		name = lilv_port_get_name(d->plugin, port);
+		json_print(j, "%s{\"id\":", n++ ? "," : "");
+		json_string(j, lilv_node_as_string(lilv_port_get_symbol(d->plugin, port)));
+		json_print(j, ",\"nativeId\":%u,\"sampleRate\":%s,\"automatable\":%s,\"name\":", i,
+		    p->scaled ? "true" : "false",
+		    p->freewheel || lv2_is(d->world, node, LV2_CORE__portProperty, LV2_PORT_PROPS__notAutomatic) ? "false"
+		                                                                                                 : "true");
+		json_string(j, name ? lilv_node_as_string(name) : "Control");
+		lilv_node_free(name);
+		int integer = lv2_is(d->world, node, LV2_CORE__portProperty, LV2_CORE__integer);
+		int toggle = lv2_is(d->world, node, LV2_CORE__portProperty, LV2_CORE__toggled);
+		int hidden = p->freewheel || lv2_is(d->world, node, LV2_CORE__portProperty, LV2_PORT_PROPS__notOnGUI);
+		int log = lv2_is(d->world, node, LV2_CORE__portProperty, LV2_PORT_PROPS__logarithmic);
+		json_print(j,
+		    ",\"minimum\":%.17g,\"maximum\":%.17g,\"defaultValue\":%.17g,\"direction\":\"%s\","
+		    "\"integer\":%s,\"toggled\":%s,\"hidden\":%s,\"map\":\"%s\",\"scalePoints\":{",
+		    low, high, value, p->input ? "input" : "output", integer || toggle ? "true" : "false",
+		    toggle ? "true" : "false", hidden ? "true" : "false", log && low > 0 ? "logarithmic" : "linear");
+		LilvScalePoints *points = lilv_port_get_scale_points(d->plugin, port);
+		unsigned count = 0;
+		LILV_FOREACH(scale_points, k, points) {
+			const LilvScalePoint *point = lilv_scale_points_get(points, k);
+			if (count++)
+				json_print(j, ",");
+			json_string(j, lilv_node_as_string(lilv_scale_point_get_label(point)));
+			json_print(j, ":%.17g", number(lilv_scale_point_get_value(point), 0));
+		}
+		lilv_scale_points_free(points);
+		json_print(j, "},\"list\":%s}",
+		    count && lv2_is(d->world, node, LV2_CORE__portProperty, LV2_CORE__enumeration) ? "true" : "false");
+	}
+	json_print(j, "]}}");
+	return j->failed ? -1 : 0;
+}
+int lv2_scan(Json *json, const char *path) {
+	LilvWorld *world = lv2_world_open(path);
+	if (!world)
+		return -1;
+	const LilvPlugins *plugins = lilv_world_get_all_plugins(world);
+	json_print(json, "[");
+	unsigned n = 0;
+	LILV_FOREACH(plugins, i, plugins) {
+		const char *id = lilv_node_as_uri(lilv_plugin_get_uri(lilv_plugins_get(plugins, i)));
+		Lv2Description d;
+		Json entry = {0};
+		if (!lv2_describe(&d, world, id) && !lv2_metadata(&d, &entry, path))
+			json_print(json, "%s%s", n++ ? "," : "", entry.data);
+		else
+			fprintf(stderr, "[LV2] Unsupported plugin: %s\n", id);
+		free(d.ports);
+		free(entry.data);
+	}
+	json_print(json, "]");
+	lilv_world_free(world);
+	return json->failed ? -1 : 0;
+}

@@ -7,7 +7,7 @@ struct UI {
 	void *view;
 };
 int ui_available(const Node *node) {
-	return node->info.ui && (node->config.format == PLUGIN_CLAP || !access(node->info.ui, R_OK));
+	return node->info.ui && (node->config.format != PLUGIN_PERONE || !access(node->info.ui, R_OK));
 }
 int ui_open(UI **out, Session *session, int id) {
 	*out = NULL;
@@ -17,7 +17,8 @@ int ui_open(UI **out, Session *session, int id) {
 	UI *ui = calloc(1, sizeof(*ui));
 	if (!ui)
 		return -1;
-	ui->ops = node->config.format == PLUGIN_CLAP ? &clap_ui_ops : &perone_ui_ops;
+	const UIOps *const formats[] = {&perone_ui_ops, &clap_ui_ops, &lv2_ui_ops};
+	ui->ops = formats[node->config.format];
 	if (ui->ops->open(&ui->view, session, id)) {
 		free(ui);
 		return -1;

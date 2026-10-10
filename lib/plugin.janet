@@ -43,34 +43,62 @@
 
 (def- plugin/cache @{})
 
-(defn plugin/clap-paths []
+(defn plugin/paths [format]
+  (def variable (case format :clap "CLAP_PATH" :lv2 "LV2_PATH" (error "unsupported plugin format")))
+  (def custom (os/getenv variable))
+  (def suffix (string format))
+  (def defaults [(string (or (os/getenv "HOME") "") "/." suffix)
+                 (string "/usr/local/lib/" suffix) (string "/usr/lib/" suffix)])
   (filter |(> (length $) 0)
-    (array/concat @[] (string/split ":" (or (os/getenv "CLAP_PATH") ""))
-      [(string (or (os/getenv "HOME") "") "/.clap") "/usr/lib/clap" "/usr/local/lib/clap"])))
+    (if (and (= format :lv2) custom) (string/split ":" custom)
+      (array/concat @[] (string/split ":" (or custom "")) defaults))))
 
-(defn plugin/clap-files [root &opt depth]
+(defn plugin/files [format root &opt depth]
   (default depth 0)
   (def files @[])
   (when (and (< depth 8) (= :directory (os/stat root :mode)))
     (each name (sort (os/dir root))
       (unless (string/has-prefix? "." name)
         (def path (string root "/" name))
-        (case (os/lstat path :mode)
-          :directory (array/concat files (plugin/clap-files path (+ depth 1)))
-          :file (when (string/has-suffix? ".clap" name) (array/push files path))))))
+        (def kind (os/stat path :mode))
+        (cond
+          (and (= format :lv2) (= kind :directory) (string/has-suffix? ".lv2" name))
+          (array/push files path)
+          (and (= format :clap) (= kind :file) (string/has-suffix? ".clap" name))
+          (array/push files path)
+          (= :directory (os/lstat path :mode))
+          (array/concat files (plugin/files format path (+ depth 1)))))))
   files)
 
-(defn plugin/clap-find [id]
-  (assert (string? id) "CLAP reference needs :id or :path")
+(defn plugin/sample-rate [description]
+  (each p (get-in description [:product :parameters])
+    (when (p :sampleRate)
+      (each key [:minimum :maximum :defaultValue]
+        (put p key (* (p key) host/sample-rate)))
+      (eachp [label value] (or (p :scalePoints) {})
+        (put (p :scalePoints) label (* value host/sample-rate)))))
+  description)
+
+(def- plugin/descriptions @{})
+(defn plugin/scan [path]
+  (or (plugin/descriptions path)
+      (let [entries (json/decode (host/scan path) true)]
+        # Normalize once, before any caller sees or caches the description.
+        (each entry entries (plugin/sample-rate entry))
+        (put plugin/descriptions path entries)
+        entries)))
+
+(defn plugin/find [format id]
+  (assert (string? id) "plugin reference needs :id or :path")
   (var found nil)
-  (each root (plugin/clap-paths)
+  (each root (plugin/paths format)
     (unless found
-      (each path (plugin/clap-files root)
+      (each path (plugin/files format root)
         (unless found
           (try
-            (set found (find |(= ($ :id) id) (json/decode (host/scan path) true)))
-            ([err] (eprint "CLAP: " path ": " err)))))))
-  (or found (error (string "CLAP plugin not found: " id "; check Settings or CLAP_PATH"))))
+            (set found (find |(= ($ :id) id) (plugin/scan path)))
+            ([err] (eprint "Plugin: " path ": " err)))))))
+  (or found (error (string "plugin not found: " id "; check Settings or the plugin search path"))))
 
 (defn plugin/read [reference]
   (or (plugin/cache reference)
@@ -78,17 +106,21 @@
             (if (string? reference)
               (perone/read reference)
               (do
-                (assert (= (reference :format) :clap) "unsupported plugin format")
+                (def format (reference :format))
+                (assert (or (= format :clap) (= format :lv2)) "unsupported plugin format")
                 (def path (reference :path))
                 (def id (reference :id))
-                (if path
-                  (do
-                    (assert (string? path) "CLAP :path must be a string")
-                    (def entries (json/decode (host/scan path) true))
-                    (assert (or id (= 1 (length entries))) "CLAP module has multiple plugins; specify :id")
-                    (or (if id (find |(= ($ :id) id) entries) (entries 0))
-                        (error "CLAP plugin ID not found")))
-                  (plugin/clap-find id))))
+                (def entry
+                  (if path
+                    (do
+                      (assert (string? path) "plugin :path must be a string")
+                      (def entries (plugin/scan path))
+                      (assert (or id (= 1 (length entries))) "bundle has multiple plugins; specify :id")
+                      (or (if id (find |(= ($ :id) id) entries) (entries 0))
+                          (error "plugin ID not found")))
+                    (plugin/find format id)))
+                (assert (= (string format) (get-in entry [:product :format])) "plugin format does not match reference")
+                entry))
             parameters (plugin/parameters (get-in description [:product :parameters]))
             bundle (freeze (merge description
               {:parameters parameters

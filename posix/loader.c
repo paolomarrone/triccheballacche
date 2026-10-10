@@ -101,7 +101,8 @@ DSP *open_dsp(Modules *modules, const char *path, const PluginConfig *config, un
 	dsp->module = module_open(modules, path, config->format);
 	if (!dsp->module)
 		goto fail;
-	if ((config->format == PLUGIN_CLAP ? clap_open : perone_open)(dsp, rate, capacity))
+	int (*const openers[])(DSP *, unsigned, size_t) = {perone_open, clap_open, lv2_open};
+	if (config->format < 0 || config->format >= PLUGIN_FORMATS || openers[config->format](dsp, rate, capacity))
 		goto fail;
 	return dsp;
 fail:
@@ -142,6 +143,10 @@ void reset_dsp(DSP *dsp) {
 
 void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message) {
 	dsp->ops->midi(dsp, bus, message);
+}
+void idle_dsp(DSP *dsp, const ProcessTime *time) {
+	if (dsp && dsp->ops->idle)
+		dsp->ops->idle(dsp, time);
 }
 uint32_t latency_dsp(DSP *dsp) {
 	return dsp && dsp->ops->latency ? dsp->ops->latency(dsp) : 0;

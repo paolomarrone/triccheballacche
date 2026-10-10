@@ -7,8 +7,8 @@ int plugin_config_valid(const PluginConfig *c) {
 	if (c->input < 0 || c->input > 2 || c->output < 1 || c->output > 2 || c->inputs < c->input ||
 	    c->inputs > MAX_INPUTS || c->input_offset < 0 || c->input_offset > MAX_INPUTS ||
 	    c->input_offset + c->input > c->inputs || c->midi < -1 || c->nparams < 0 || c->nparams > MAX_PARAMS ||
-	    (c->nparams && !c->parameters) || (c->format != PLUGIN_PERONE && c->format != PLUGIN_CLAP) ||
-	    (c->format == PLUGIN_CLAP && (!c->id || !*c->id)))
+	    (c->nparams && !c->parameters) || c->format < 0 || c->format >= PLUGIN_FORMATS ||
+	    (c->format != PLUGIN_PERONE && (!c->id || !*c->id)))
 		return 0;
 	for (int i = 0; i < c->nparams; ++i)
 		if (!(c->parameters[i].flags & PARAM_OUTPUT) && !isfinite(c->parameters[i].value))

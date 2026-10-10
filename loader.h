@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 enum { MAX_PARAMS = 65536, MAX_INPUTS = 8 };
-enum { PLUGIN_PERONE, PLUGIN_CLAP };
+enum { PLUGIN_PERONE, PLUGIN_CLAP, PLUGIN_LV2, PLUGIN_FORMATS };
 enum { PARAM_OUTPUT = 1, PARAM_INTEGER = 2, PARAM_AUTOMATABLE = 4 };
 
 typedef struct {
@@ -28,7 +28,7 @@ typedef struct {
 typedef struct {
 	uint64_t frame;
 	double bpm, beat;
-	int playing;
+	int playing, offline;
 } ProcessTime;
 
 typedef struct DSP DSP;
@@ -48,6 +48,7 @@ void reset_dsp(DSP *dsp);
 void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message);
 // Apply pending host edits before rendering either instance of a mono pair. NULL is allowed.
 void sync_dsp(DSP *dsp, DSP *paired);
+void idle_dsp(DSP *dsp, const ProcessTime *time); // Service messages with audio stopped, without advancing time.
 // Planar buffers belong to the caller; NULL optional inputs remain disconnected.
 int process_dsp(DSP *dsp, const float **inputs, float **outputs, size_t frames, const ProcessTime *time);
 // Control thread only; the caller must stop audio before restart or state access.

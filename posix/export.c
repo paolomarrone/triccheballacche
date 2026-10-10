@@ -44,6 +44,8 @@ int write_score(Session *s, const Output *cfg, const char *path) {
 		s->error = "out of memory";
 		return -1;
 	}
+	int offline = s->offline;
+	s->offline = 1;
 	sprintf(temporary, "%s.XXXXXX", path);
 	int result = -1, fd = mkstemp(temporary);
 	FILE *spool = NULL;
@@ -115,5 +117,6 @@ done:
 			s->error = "cannot write WAV";
 	}
 	free(temporary);
+	s->offline = offline;
 	return result;
 }

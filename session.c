@@ -195,9 +195,21 @@ int session_seek(Session *s, uint64_t from) {
 	return 0;
 }
 
-void session_sync(Session *s) {
+static void sync_controls(Session *s) {
 	for (int i = 0; i < s->nnodes; ++i)
 		sync_dsp(s->nodes[i].dsp[0].dsp, s->nodes[i].dsp[1].dsp);
+}
+void session_sync(Session *s) {
+	sync_controls(s);
+	const Score *score = session_score(s);
+	if (!score)
+		return;
+	ProcessTime time = {.frame = s->time,
+	    .bpm = score->sequence.bpm,
+	    .beat = (double)s->time / s->sample_rate * score->sequence.bpm / 60};
+	for (int i = 0; i < s->nnodes; ++i)
+		for (int c = 0; c < 2; ++c)
+			idle_dsp(s->nodes[i].dsp[c].dsp, &time);
 }
 
 static void fade(
@@ -242,7 +254,8 @@ static int process(
 		state->dsp[c].time = (ProcessTime){.frame = s->time,
 		    .bpm = score->sequence.bpm,
 		    .beat = (double)s->time / s->sample_rate * score->sequence.bpm / 60,
-		    .playing = 1};
+		    .playing = 1,
+		    .offline = s->offline};
 	float input[BLOCK * 2];
 	if (!node->ninputs) {
 		if (render_plugin(state->dsp, out, NULL, frames))
@@ -514,7 +527,7 @@ int session_render(Session *s, float *out, size_t frames) {
 	bw_slew_lim_set_max_rate(&slew, 1.f / .005f);
 	bw_slew_lim_reset_coeffs(&slew);
 	while (frames) {
-		session_sync(s);
+		sync_controls(s);
 		Revision *pending = atomic_load(&s->pending);
 		if (pending && pending->at <= s->time) {
 			// If publication missed its boundary, keep the old revision until the next grid.

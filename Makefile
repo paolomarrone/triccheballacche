@@ -17,6 +17,9 @@ SPORK_REV = 0667f96b74de52747ffe5e19e185563ebf53816b
 WEBUI_REV = 52f9e75b92faf9a23fd150b3c60051c4ec85fc69
 CLAP_VERSION = 1.2.10
 CLAP ?= .deps/clap-$(CLAP_VERSION)
+LV2_DEPS ?= .deps/lv2
+LV2_INCLUDES = -I$(LV2_DEPS)/include -I$(LV2_DEPS)/include/lilv-0
+LV2_LIBS = $(addprefix $(LV2_DEPS)/lib/,liblilv-0.a libsratom-0.a libsord-0.a libserd-0.a libzix-0.a)
 WEBUI ?= .deps/webui-$(WEBUI_REV)
 PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
@@ -24,12 +27,12 @@ SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_P
 PLUGIN_SOURCES = plugin.c script.c trace.c
 SCORE_SOURCES = score_janet.c score.c score_view.c score_automation.c session.c sequence.c $(PLUGIN_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c transport.c
-PLUGIN_OBJECTS = $(addprefix build/obj/native/,plugin.o posix/loader.o posix/module.o posix/perone.o posix/clap.o posix/clap_info.o posix/discovery.o json_write.o script.o trace.o json.o janet.o)
+PLUGIN_OBJECTS = $(addprefix build/obj/native/,plugin.o posix/loader.o posix/module.o posix/perone.o posix/clap.o posix/clap_info.o posix/lv2.o posix/lv2_info.o posix/lv2_worker.o posix/discovery.o json_write.o script.o trace.o json.o janet.o)
 SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o score_automation.o session.o sequence.o) $(PLUGIN_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host build/tools/plugin-scan
-NATIVE_TESTS = $(addprefix build/test/,loader daw player routing score_view plugins ui view_json sequence clap)
-FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
+NATIVE_TESTS = $(addprefix build/test/,loader daw player routing score_view plugins ui view_json sequence clap lv2)
+FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
 
 .PHONY: all cli gui tools clean format format-check
 all: cli
@@ -95,6 +98,15 @@ CLAP_OBJECTS = $(addprefix build/obj/native/,posix/module.o posix/clap.o posix/c
 $(CLAP_OBJECTS): override CPPFLAGS += -I$(CLAP)/include
 $(CLAP_OBJECTS): $(CLAP)/include/clap/clap.h
 
+$(LV2_DEPS)/.ready: tools/lv2-deps.sh
+	CC="$(CC)" sh tools/lv2-deps.sh "$(LV2_DEPS)"
+
+LV2_OBJECTS = $(addprefix build/obj/native/,posix/module.o posix/lv2.o posix/lv2_info.o posix/lv2_worker.o posix/lv2_ui.o tools/plugin-scan.o test/lv2.o)
+$(LV2_OBJECTS): override CPPFLAGS += $(LV2_INCLUDES)
+$(LV2_OBJECTS): $(LV2_DEPS)/.ready
+$(filter-out build/test/score_view,$(NATIVE_PROGRAMS) $(NATIVE_TESTS)): $(LV2_DEPS)/.ready
+$(filter-out build/test/score_view,$(NATIVE_PROGRAMS) $(NATIVE_TESTS)): private LDLIBS += $(LV2_LIBS)
+
 build/obj/native/test/%.o: override CFLAGS += -UNDEBUG
 $(addprefix build/obj/native/,score_janet.o script.o trace.o posix/files.o posix/prepare.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
 build/obj/native/script.o: build/generated/perone.inc build/generated/plugin.inc
@@ -109,11 +121,11 @@ $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
 	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(LDLIBS) -o $@
 
 build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
-build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o posix/ui.o posix/perone_ui.o posix/clap_ui.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
+build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o posix/ui.o posix/perone_ui.o posix/clap_ui.o posix/lv2_ui.o posix/window_x11.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
 build/tools/perone-host: build/obj/native/tools/perone-host.o $(PLUGIN_OBJECTS) build/obj/native/audio.o
-build/gui build/test/ui build/test/clap: private LDLIBS += -lX11
+build/gui build/test/ui build/test/clap build/test/lv2: private LDLIBS += -lX11
 
-build/tools/plugin-scan: $(addprefix build/obj/native/,tools/plugin-scan.o posix/clap.o posix/clap_info.o posix/module.o posix/loader.o posix/perone.o json_write.o)
+build/tools/plugin-scan: $(addprefix build/obj/native/,tools/plugin-scan.o posix/clap.o posix/clap_info.o posix/lv2.o posix/lv2_info.o posix/lv2_worker.o posix/module.o posix/loader.o posix/perone.o json_write.o)
 $(filter-out build/tools/plugin-scan,$(NATIVE_PROGRAMS)) $(filter-out build/test/score_view,$(NATIVE_TESTS)): | build/tools/plugin-scan
 
 
@@ -184,11 +196,27 @@ test-clap: build/test/clap build/test/fixture.clap
 	./build/test/clap
 test-clap-ui: build/test/clap build/test/fixture.clap
 	./build/test/clap --ui
-build/test/clap: $(SCORE_OBJECTS) build/obj/native/posix/ui.o build/obj/native/posix/perone_ui.o build/obj/native/posix/clap_ui.o
+build/test/clap: $(SCORE_OBJECTS) build/obj/native/posix/ui.o build/obj/native/posix/perone_ui.o build/obj/native/posix/clap_ui.o build/obj/native/posix/lv2_ui.o build/obj/native/posix/window_x11.o
 
 .PHONY: test-clap-editor
 test-clap-editor: gui build/test/fixture.clap
-	node test/clap-editor.mjs
+	node test/plugin-editor.mjs clap
+
+build/test/fixture.lv2/fixture.so: test/lv2/plugin.c Makefile $(LV2_DEPS)/.ready
+	mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG $(LV2_INCLUDES) -fPIC -shared $< -lX11 -o $@
+build/test/fixture.lv2/%.ttl: test/lv2/%.ttl
+	mkdir -p $(@D)
+	cp $< $@
+LV2_FIXTURE = build/test/fixture.lv2/fixture.so build/test/fixture.lv2/manifest.ttl build/test/fixture.lv2/plugin.ttl
+build/test/lv2: $(SCORE_OBJECTS) $(addprefix build/obj/native/,posix/ui.o posix/perone_ui.o posix/clap_ui.o posix/lv2_ui.o posix/window_x11.o)
+.PHONY: test-lv2 test-lv2-ui test-lv2-editor
+test-lv2-editor: gui $(LV2_FIXTURE)
+	node test/plugin-editor.mjs lv2
+test-lv2: build/test/lv2 $(LV2_FIXTURE)
+	./build/test/lv2
+test-lv2-ui: build/test/lv2 $(LV2_FIXTURE)
+	./build/test/lv2 --ui
 
 .PHONY: test test-plugins test-ui test-editor test-prog test-brickworks check-plugins prog
 test: $(addprefix build/test/,loader daw player routing score_view sequence) $(NATIVE_FIXTURES) $(MIXER_FIXTURE)
@@ -379,7 +407,7 @@ clean:
 
 # Recheck configuration on each invocation; unchanged files keep their timestamps.
 # Capture global flags here so per-target additions cannot leak through prerequisites.
-build/config/native.compile: private CONFIG := $(CC) | $(CPPFLAGS) | $(CFLAGS) | $(SCRIPT_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(WEBUI) | $(CLAP) | $(BW_SOURCE)
+build/config/native.compile: private CONFIG := $(CC) | $(CPPFLAGS) | $(CFLAGS) | $(SCRIPT_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(WEBUI) | $(CLAP) | $(LV2_DEPS) | $(BW_SOURCE)
 build/config/native.link: private CONFIG := $(CC) | $(CFLAGS) | $(LDFLAGS) | $(LDLIBS) | $(TARGET_OS)
 build/config/web-offline.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(SPORK) | $(BW_SOURCE)
 build/config/web-player.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(PLAYER_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(BW_SOURCE)
@@ -399,7 +427,7 @@ $(CONFIG_FILES): FORCE
 	@rm -f $@.tmp
 
 NATIVE_OBJECTS = $(addprefix build/obj/native/,$(patsubst %.c,%.o,$(wildcard *.c posix/*.c tools/*.c test/*.c)) json.o janet.o vendor/webui.o vendor/civetweb.o vendor/wkwebview.o)
-$(NATIVE_OBJECTS) $(filter %$(PERONE_SUFFIX),$(NATIVE_FIXTURES)) $(MIXER_FIXTURE) build/test/fixture.clap: build/config/native.compile
+$(NATIVE_OBJECTS) $(filter %$(PERONE_SUFFIX),$(NATIVE_FIXTURES)) $(MIXER_FIXTURE) build/test/fixture.clap build/test/fixture.lv2/fixture.so: build/config/native.compile
 $(NATIVE_PROGRAMS) $(NATIVE_TESTS): build/config/native.link
 $(WEB_OBJECTS): build/config/web-offline.compile
 $(PLAYER_OBJECTS): build/config/web-player.compile

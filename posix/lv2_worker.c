@@ -1,0 +1,119 @@
+#include "lv2.h"
+#include <errno.h>
+#include <stdlib.h>
+
+static LV2_Worker_Status respond(void *handle, uint32_t size, const void *data) {
+	Lv2 *l = handle;
+	return message_push(&l->worker.responses, size, data) ? LV2_WORKER_ERR_NO_SPACE : LV2_WORKER_SUCCESS;
+}
+static void work(Lv2 *l, uint32_t size, const void *data) {
+	if (l->worker.api->work(lilv_instance_get_handle(l->instance), respond, l, size, data))
+		atomic_store(&l->error, 1);
+}
+LV2_Worker_Status lv2_schedule(void *handle, uint32_t size, const void *data) {
+	Lv2 *l = handle;
+	Lv2Worker *w = &l->worker;
+	if (!w->api || size > MAX_MESSAGE)
+		return LV2_WORKER_ERR_NO_SPACE;
+	if (w->synchronous) {
+		work(l, size, data);
+		return LV2_WORKER_SUCCESS;
+	}
+	atomic_fetch_add(&w->pending, 1);
+	if (message_push(&w->requests, size, data)) {
+		atomic_fetch_sub(&w->pending, 1);
+		return LV2_WORKER_ERR_NO_SPACE;
+	}
+	sem_post(&w->ready);
+	return LV2_WORKER_SUCCESS;
+}
+static void *worker_thread(void *handle) {
+	Lv2 *l = handle;
+	Lv2Worker *w = &l->worker;
+	for (;;) {
+		while (sem_wait(&w->ready) && errno == EINTR) {
+		}
+		if (atomic_load(&w->stop))
+			return NULL;
+		uint64_t data[MAX_MESSAGE / sizeof(uint64_t)];
+		size_t size;
+		while (message_pop(&w->requests, &size, data)) {
+			work(l, size, data);
+			pthread_mutex_lock(&w->mutex);
+			atomic_fetch_sub(&w->pending, 1);
+			pthread_cond_signal(&w->done);
+			pthread_mutex_unlock(&w->mutex);
+		}
+	}
+}
+int lv2_worker_start(Lv2 *l) {
+	Lv2Worker *w = &l->worker;
+	w->api = lilv_instance_get_extension_data(l->instance, LV2_WORKER__interface);
+	w->synchronous = 1;
+	if (!w->api)
+		return 0;
+	if (!w->api->work || !w->api->work_response)
+		return -1;
+	atomic_init(&w->stop, 0);
+	atomic_init(&w->pending, 0);
+	for (int i = 0; i < 2; ++i) {
+		Messages *q = i ? &w->responses : &w->requests;
+		q->limit = MAX_MESSAGE;
+		q->data = malloc(MESSAGE_SLOTS * q->limit);
+		atomic_init(&q->read, 0);
+		atomic_init(&q->write, 0);
+		if (!q->data)
+			return -1;
+	}
+	if (sem_init(&w->ready, 0, 0))
+		return -1;
+	if (pthread_mutex_init(&w->mutex, NULL)) {
+		sem_destroy(&w->ready);
+		return -1;
+	}
+	if (pthread_cond_init(&w->done, NULL)) {
+		pthread_mutex_destroy(&w->mutex);
+		sem_destroy(&w->ready);
+		return -1;
+	}
+	if (pthread_create(&w->thread, NULL, worker_thread, l)) {
+		pthread_cond_destroy(&w->done);
+		pthread_mutex_destroy(&w->mutex);
+		sem_destroy(&w->ready);
+		return -1;
+	}
+	w->started = 1;
+	return 0;
+}
+void lv2_worker_emit(Lv2 *l) {
+	Lv2Worker *w = &l->worker;
+	uint64_t data[MAX_MESSAGE / sizeof(uint64_t)];
+	size_t size;
+	for (int i = 0; w->started && i < MESSAGE_SLOTS && message_pop(&w->responses, &size, data); ++i)
+		if (w->api->work_response(lilv_instance_get_handle(l->instance), size, data))
+			atomic_store(&l->error, 1);
+}
+void lv2_worker_wait(Lv2 *l) {
+	Lv2Worker *w = &l->worker;
+	if (!w->started)
+		return;
+	pthread_mutex_lock(&w->mutex);
+	while (atomic_load(&w->pending))
+		pthread_cond_wait(&w->done, &w->mutex);
+	pthread_mutex_unlock(&w->mutex);
+	lv2_worker_emit(l);
+}
+void lv2_worker_close(Lv2 *l) {
+	Lv2Worker *w = &l->worker;
+	if (w->started) {
+		lv2_worker_wait(l);
+		atomic_store(&w->stop, 1);
+		sem_post(&w->ready);
+		pthread_join(w->thread, NULL);
+		pthread_cond_destroy(&w->done);
+		pthread_mutex_destroy(&w->mutex);
+		sem_destroy(&w->ready);
+	}
+	free(w->requests.data);
+	free(w->responses.data);
+}

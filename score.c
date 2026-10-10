@@ -143,8 +143,9 @@ static int visit(Score *s, int id, unsigned char *state) {
 	Node *n = s->nodes + id;
 	if (!plugin_config_valid(&n->config))
 		return fail(s, "invalid plugin configuration");
-	if (n->path && n->ninputs != !!n->config.input)
-		return fail(s, "effect has no input");
+	if (n->path &&
+	    (n->ninputs > 1 || (n->ninputs && !n->config.input) || (!n->ninputs && n->config.input && n->config.midi < 0)))
+		return fail(s, "invalid plugin audio input");
 	n->upstream = n->track ? 1u << (n->track - 1) : 0;
 	for (int i = 0; i < n->ninputs; ++i) {
 		int input = n->inputs[i];

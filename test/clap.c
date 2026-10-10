@@ -130,7 +130,7 @@ int main(int argc, char **argv) {
 			if (ui && ui_available(session_score(&s)->nodes + i))
 				native_ui(&s, i, 0);
 		session_free(&s);
-		printf("OK: external CLAP audio peak %.6f, native windows opened/closed\n", peak);
+		printf("OK: external plugin audio peak %.6f, native windows opened/closed\n", peak);
 		return 0;
 	}
 	Session s = {0};

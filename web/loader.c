@@ -83,6 +83,10 @@ int poll_dsp(DSP *dsp) {
 	(void)dsp;
 	return 0;
 }
+void idle_dsp(DSP *dsp, const ProcessTime *time) {
+	(void)dsp;
+	(void)time;
+}
 int restart_dsp(DSP *dsp) {
 	(void)dsp;
 	return 0;

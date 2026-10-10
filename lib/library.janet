@@ -1,4 +1,4 @@
-# Native discovery. CLAP inspection runs in the scanner process, never in Janet.
+# Native discovery. Plugin inspection runs in the scanner process, never in Janet.
 (def files @[])
 (def plugins @[])
 (defn add [path]
@@ -34,18 +34,21 @@
   |(or (string/has-prefix? "fx_" $) (string/has-prefix? "synth_" $)))
 (bundle asid)
 (bundle tibia)
-(def clap-paths (plugin/clap-paths))
+(def paths @[])
 (def seen @{})
-(each root clap-paths
-  (each path (plugin/clap-files root)
-    (try
-      (each entry (json/decode (host/scan path) true)
-        (def key [(entry :binary) (entry :id)])
-        (unless (seen key)
-          (put seen key true)
-          (array/push plugins {:format "clap" :path (entry :binary) :id (entry :id)
-            :name (get-in entry [:product :name])
-            :kind (if (> (get-in entry [:layout :input-channels]) 0) "Effect" "Instrument")})))
-      ([err] (eprint "Library: " path ": " err)))))
+(each format [:clap :lv2]
+  (def roots (plugin/paths format))
+  (array/concat paths roots)
+  (each root roots
+    (each path (plugin/files format root)
+      (try
+        (each entry (plugin/scan path)
+          (def key [(entry :binary) (entry :id)])
+          (unless (seen key)
+            (put seen key true)
+            (array/push plugins {:format (string format) :path (entry :binary) :id (entry :id)
+              :name (get-in entry [:product :name])
+              :kind (if (>= (get-in entry [:layout :midi-bus]) 0) "Instrument" "Effect")})))
+        ([err] (eprint "Library: " path ": " err))))))
 (examples "examples")
-(string (json/encode {:paths (array/concat @[] ["plugins" brickworks asid tibia] clap-paths) :files files :plugins plugins}))
+(string (json/encode {:paths (array/concat @[] ["plugins" brickworks asid tibia] paths) :files files :plugins plugins}))

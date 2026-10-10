@@ -24,7 +24,8 @@ typedef struct {
 	void (*reset)(DSP *);
 	void (*midi)(DSP *, size_t, const uint8_t *);
 	int (*process)(DSP *, const float **, float **, size_t, const ProcessTime *);
-	void (*sync)(DSP *); // Audio role, also while the device is stopped.
+	void (*sync)(DSP *);                      // Audio role, also while the device is stopped.
+	void (*idle)(DSP *, const ProcessTime *); // Control thread, no concurrent rendering.
 	void (*message)(DSP *, size_t, const void *);
 	int (*poll)(DSP *);                     // Main thread. 1 requests a quiescent restart, -1 reports an error.
 	int (*restart)(DSP *);                  // Main thread, no concurrent audio calls.
@@ -45,9 +46,11 @@ struct DSP {
 Module *module_open(Modules *cache, const char *path, int format);
 void module_close(Module *module);
 void *module_symbol(Module *module, const char *symbol);
+void *module_data(Module *module);
 const char *module_path(Module *module);
 const char *module_bindir(Module *module);
 const char *module_datadir(Module *module);
 int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity);
 int clap_open(DSP *dsp, unsigned sample_rate, size_t capacity);
+int lv2_open(DSP *dsp, unsigned sample_rate, size_t capacity);
 #endif

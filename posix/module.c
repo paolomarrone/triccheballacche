@@ -1,4 +1,5 @@
 #include "module.h"
+#include "lv2.h"
 #include "util.h"
 #include <clap/entry.h>
 #include <stdio.h>
@@ -9,6 +10,7 @@
 struct Module {
 	Module *next;
 	void *handle;
+	LilvWorld *world;
 	const clap_plugin_entry_t *entry;
 	int format, initialized;
 	char *path, *bindir, *datadir;
@@ -22,6 +24,8 @@ void module_close(Module *m) {
 		m->entry->deinit();
 	if (m->handle)
 		dlclose(m->handle);
+	if (m->world)
+		lilv_world_free(m->world);
 	free(m->path);
 	free(m->bindir);
 	free(m->datadir);
@@ -57,21 +61,28 @@ Module *module_open(Modules *modules, const char *path, int format) {
 	m->path = resolved;
 	m->format = format;
 	const char *error = "out of memory";
-	m->bindir = copy_string(resolved);
-	if (!m->bindir)
-		goto fail;
-	*strrchr(m->bindir, '/') = 0;
-	m->datadir = copy_string(m->bindir);
-	if (!m->datadir)
-		goto fail;
-	char *slash = strrchr(m->datadir, '/');
-	if (!slash) {
-		error = "plugin binary has no bundle directory";
-		goto fail;
+	if (format == PLUGIN_PERONE) {
+		m->bindir = copy_string(resolved);
+		if (!m->bindir)
+			goto fail;
+		*strrchr(m->bindir, '/') = 0;
+		m->datadir = copy_string(m->bindir);
+		if (!m->datadir)
+			goto fail;
+		char *slash = strrchr(m->datadir, '/');
+		if (!slash) {
+			error = "plugin binary has no bundle directory";
+			goto fail;
+		}
+		*slash = 0;
 	}
-	*slash = 0;
-	m->handle = dlopen(resolved, RTLD_NOW | RTLD_LOCAL);
-	if (!m->handle) {
+	if (format == PLUGIN_LV2) {
+		m->world = lv2_world_open(resolved);
+		if (!m->world)
+			goto fail;
+	} else
+		m->handle = dlopen(resolved, RTLD_NOW | RTLD_LOCAL);
+	if (format != PLUGIN_LV2 && !m->handle) {
 		error = dlerror();
 		goto fail;
 	}
@@ -98,6 +109,9 @@ fail:
 
 void *module_symbol(Module *m, const char *symbol) {
 	return dlsym(m->handle, symbol);
+}
+void *module_data(Module *m) {
+	return m->world;
 }
 const char *module_path(Module *m) {
 	return m->path;

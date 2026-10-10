@@ -325,7 +325,7 @@ int prepare_score(Score *s, Output *cfg, const char *path, const char *source, c
 	output = cfg;
 	projection = view;
 	*cfg = (Output){0};
-	JanetTable *env = script_env();
+	JanetTable *env = script_env(s->sample_rate);
 	if (!env) {
 		current = NULL;
 		output = NULL;

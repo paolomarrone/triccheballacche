@@ -3,7 +3,7 @@
 #include "plugin.h"
 #include "janet.h"
 // Synchronous setup only. script_env starts Janet; its caller must close it.
-JanetTable *script_env(void);
+JanetTable *script_env(unsigned sample_rate);
 void script_trace(JanetTable *env);
 void script_info(Janet bundle, Janet encoded, PluginInfo *info);
 void script_config(Janet bundle, Janet defaults, PluginConfig *config);

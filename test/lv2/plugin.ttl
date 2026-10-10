@@ -1,0 +1,51 @@
+@prefix lv2: <http://lv2plug.in/ns/lv2core#> .
+@prefix atom: <http://lv2plug.in/ns/ext/atom#> .
+@prefix doap: <http://usefulinc.com/ns/doap#> .
+@prefix ui: <http://lv2plug.in/ns/extensions/ui#> .
+@prefix urid: <http://lv2plug.in/ns/ext/urid#> .
+@prefix work: <http://lv2plug.in/ns/ext/worker#> .
+@prefix opts: <http://lv2plug.in/ns/ext/options#> .
+@prefix bufs: <http://lv2plug.in/ns/ext/buf-size#> .
+@prefix midi: <http://lv2plug.in/ns/ext/midi#> .
+@prefix time: <http://lv2plug.in/ns/ext/time#> .
+@prefix test: <urn:triccheballacche:test:lv2:> .
+
+test:synth a lv2:InstrumentPlugin ; doap:name "LV2 test synth" ;
+    lv2:requiredFeature urid:map, opts:options, bufs:boundedBlockLength, work:schedule ;
+    opts:requiredOption bufs:maxBlockLength, bufs:sequenceSize ;
+    lv2:extensionData work:interface ; ui:ui test:ui ;
+    lv2:port test:gain, test:meter, test:events, test:notify, test:left, test:right,
+        test:inleft, test:inright, test:latency, test:lag, test:scaled, test:worked .
+test:effect a lv2:AmplifierPlugin ; doap:name "LV2 test effect" ;
+    lv2:requiredFeature urid:map, opts:options, bufs:boundedBlockLength, work:schedule ;
+    lv2:extensionData work:interface ; ui:ui test:ui ;
+    lv2:port test:gain, test:meter, test:events, test:notify, test:left, test:right,
+        test:inleft, test:inright, test:latency, test:lag, test:scaled, test:worked .
+test:unsupported a lv2:Plugin ; doap:name "Unsupported feature" ;
+    lv2:requiredFeature <urn:unsupported:feature> ; lv2:port test:left .
+test:unsupported-options a lv2:Plugin ; doap:name "Unsupported option" ;
+    opts:requiredOption <urn:unsupported:option> ; lv2:port test:left .
+
+test:gain a lv2:InputPort, lv2:ControlPort ; lv2:index 0 ; lv2:symbol "gain" ; lv2:name "Gain" ;
+    lv2:minimum 0 ; lv2:maximum 1 ; lv2:default 0.25 .
+test:meter a lv2:OutputPort, lv2:ControlPort ; lv2:index 1 ; lv2:symbol "meter" ; lv2:name "Meter" ;
+    lv2:minimum 0 ; lv2:maximum 1 .
+test:events a lv2:InputPort, atom:AtomPort ; lv2:index 2 ; lv2:symbol "events" ; lv2:name "Events" ;
+    atom:bufferType atom:Sequence ; atom:supports midi:MidiEvent, time:Position .
+test:notify a lv2:OutputPort, atom:AtomPort ; lv2:index 3 ; lv2:symbol "notify" ; lv2:name "Notify" ;
+    atom:bufferType atom:Sequence .
+test:left a lv2:OutputPort, lv2:AudioPort ; lv2:index 4 ; lv2:symbol "left" ; lv2:name "Left" .
+test:right a lv2:OutputPort, lv2:AudioPort ; lv2:index 5 ; lv2:symbol "right" ; lv2:name "Right" .
+test:inleft a lv2:InputPort, lv2:AudioPort ; lv2:index 6 ; lv2:symbol "inleft" ; lv2:name "Input left" .
+test:inright a lv2:InputPort, lv2:AudioPort ; lv2:index 7 ; lv2:symbol "inright" ; lv2:name "Input right" .
+test:latency a lv2:OutputPort, lv2:ControlPort ; lv2:index 8 ; lv2:symbol "latency" ; lv2:name "Latency" ;
+    lv2:designation lv2:latency ; lv2:minimum 0 ; lv2:maximum 7 ; lv2:portProperty lv2:integer .
+test:lag a lv2:InputPort, lv2:ControlPort ; lv2:index 9 ; lv2:symbol "lag" ; lv2:name "Delay" ;
+    lv2:minimum 0 ; lv2:maximum 1 ; lv2:default 0 ; lv2:portProperty lv2:toggled .
+test:scaled a lv2:InputPort, lv2:ControlPort ; lv2:index 10 ; lv2:symbol "scaled" ; lv2:name "Scaled" ;
+    lv2:minimum 0 ; lv2:maximum 0.5 ; lv2:default 0.25 ; lv2:portProperty lv2:sampleRate .
+test:worked a lv2:OutputPort, lv2:ControlPort ; lv2:index 11 ; lv2:symbol "worked" ; lv2:name "Worker replies" ;
+    lv2:minimum 0 ; lv2:maximum 1 .
+test:ui lv2:requiredFeature ui:parent, ui:idleInterface, urid:map, ui:resize ;
+    opts:requiredOption ui:scaleFactor ;
+    lv2:extensionData ui:idleInterface, ui:resize .

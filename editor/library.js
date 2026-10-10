@@ -74,7 +74,7 @@ export function library(request, open, fail) {
         score(score) {
             used = new Map();
             for (const node of score.nodes) if (node.bundle) {
-                const key = node.product?.format === "clap" ? `${node.bundle}\n${node.product.id}` : node.bundle;
+                const key = node.product?.id ? `${node.bundle}\n${node.product.id}` : node.bundle;
                 used.set(key, (used.get(key) || 0) + 1);
             }
             render();
