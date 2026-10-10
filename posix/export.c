@@ -25,6 +25,14 @@ static ma_result wav_seek(ma_encoder *encoder, ma_int64 offset, ma_seek_origin o
 	return wav->failed ? MA_IO_ERROR : MA_SUCCESS;
 }
 
+// Export runs on the control thread and services plugin requests between blocks.
+static int render(Session *s, float *audio, size_t frames) {
+	int service = session_poll(s);
+	if (service < 0 || (service && session_restart(s)))
+		return -1;
+	return session_render(s, audio, frames);
+}
+
 int write_score(Session *s, const Output *cfg, const char *path) {
 	if (!s->audio || s->time || s->frames == UINT64_MAX) {
 		s->error = "export requires a fresh, finite session; set :duration for a repeating score";
@@ -55,7 +63,7 @@ int write_score(Session *s, const Output *cfg, const char *path) {
 	if (spool) {
 		while (s->time < s->frames) {
 			size_t n = s->frames - s->time < BLOCK ? s->frames - s->time : BLOCK;
-			if (session_render(s, audio, n) || fwrite(audio, sizeof(float) * 2, n, spool) != n)
+			if (render(s, audio, n) || fwrite(audio, sizeof(float) * 2, n, spool) != n)
 				goto done;
 			for (size_t i = 0; i < n * 2; ++i)
 				peak = fmaxf(peak, fabsf(audio[i]));
@@ -71,7 +79,7 @@ int write_score(Session *s, const Output *cfg, const char *path) {
 	result = 0;
 	for (size_t pos = 0; pos < s->frames;) {
 		size_t n = s->frames - pos < BLOCK ? s->frames - pos : BLOCK;
-		if (spool ? fread(audio, sizeof(float) * 2, n, spool) != n : session_render(s, audio, n)) {
+		if (spool ? fread(audio, sizeof(float) * 2, n, spool) != n : render(s, audio, n)) {
 			result = -1;
 			break;
 		}

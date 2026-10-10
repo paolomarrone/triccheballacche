@@ -69,7 +69,7 @@ export class Perone {
         if (this.instances.has(id) || this.planned.has(id) || this.remote.has(id)) throw Error("Perone handle already in use");
         const config = {...configuration, path: this.path(configuration.path),
             parameters: new Float32Array(configuration.parameters)};
-        const {path, sampleRate, inputChannels, outputChannels, midiBus, parameters, outputMask, capacity, toDsp = 0, toUi = 0} = config;
+        const {path, sampleRate, inputChannels, outputChannels, midiBus, parameters, outputParameters, capacity, toDsp = 0, toUi = 0} = config;
         const module = this.modules.get(path);
         if (!module) throw Error("Wasm module not preloaded: " + path);
         if (this.deferred) {
@@ -84,7 +84,7 @@ export class Perone {
         const table = wasm.__indirect_function_table;
         const api = Object.fromEntries(Array.from(new Uint32Array(wasm.memory.buffer, pointer, names.length),
             (index, i) => [names[i], index ? table.get(index) : null]));
-        const isOutput = i => (outputMask[i < 32 ? 0 : 1] >>> (i % 32)) & 1;
+        const isOutput = i => outputParameters[i];
         const required = names.slice(0, 9);
         if (midiBus >= 0) required.push("midi_msg_in");
         if (toDsp) required.push("msg_in");
@@ -227,7 +227,7 @@ export class Perone {
         } else if (!p.watching) throw Error("Perone UI is not attached");
         else if (op === "parameter") {
             if (!Number.isInteger(index) || index < 0 || index >= p.config.parameters.length ||
-                (p.config.outputMask[index < 32 ? 0 : 1] >>> (index % 32)) & 1 || !Number.isFinite(Math.fround(value)))
+                p.config.outputParameters[index] || !Number.isFinite(Math.fround(value)))
                 throw Error("Invalid Perone parameter");
             p.wanted[index] = value;
             p.dirty[index] = 1;
@@ -240,7 +240,7 @@ export class Perone {
         } else if (op === "controls") {
             if (p.overflow) throw Error("Perone DSP message queue overflow");
             return {values: Array.from(p.config.parameters, (value, i) => p.dirty[i] ? null :
-                ((p.config.outputMask[i < 32 ? 0 : 1] >>> (i % 32)) & 1) ? p.api.get_parameter(p.instance, i) : value),
+                p.config.outputParameters[i] ? p.api.get_parameter(p.instance, i) : value),
                 messages: p.toUi.drain()};
         } else throw Error("Unknown Perone control");
         return {};

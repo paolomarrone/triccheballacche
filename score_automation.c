@@ -45,8 +45,8 @@ static int compare(const void *aa, const void *bb) {
 }
 
 static void include(ScoreAutomation *out, size_t bin, ScoreControl point) {
-	out->low[bin] = fminf(out->low[bin], point.value);
-	out->high[bin] = fmaxf(out->high[bin], point.value);
+	out->low[bin] = fmin(out->low[bin], point.value);
+	out->high[bin] = fmax(out->high[bin], point.value);
 	if (compare(out->points + bin + 1, &point) < 0)
 		out->points[bin + 1] = point;
 }
@@ -54,9 +54,9 @@ static void include(ScoreAutomation *out, size_t bin, ScoreControl point) {
 int score_view_automation(
     const ScoreView *view, int node, int parameter, double from, double to, size_t bins, ScoreAutomation *out) {
 	*out = (ScoreAutomation){0};
-	if (node < 0 || node >= view->nnodes || parameter < 0 || parameter >= MAX_PARAMS || !view->sample_rate ||
-	    !isfinite(from) || !isfinite(to) || from < 0 || from >= to || to * view->sample_rate >= 0x1p53 || !bins ||
-	    bins > SCORE_AUTOMATION_POINTS)
+	if (node < 0 || node >= view->nnodes || parameter < 0 || parameter >= view->nodes[node].nparams ||
+	    !view->sample_rate || !isfinite(from) || !isfinite(to) || from < 0 || from >= to ||
+	    to * view->sample_rate >= 0x1p53 || !bins || bins > SCORE_AUTOMATION_POINTS)
 		return -1;
 	const ScoreNode *n = view->nodes + node;
 	size_t begin = n->offsets[parameter], end = n->offsets[parameter + 1];
@@ -66,7 +66,7 @@ int score_view_automation(
 		to = fmin(to, view->end);
 	if (from >= to)
 		return 0;
-	ScoreControl initial = {.time = -1, .value = n->defaults[parameter], .order = UINT64_MAX};
+	ScoreControl initial = {.time = -1, .value = n->parameters[parameter].value, .order = UINT64_MAX};
 	double count = 0;
 	for (size_t i = begin; i < end; ++i) {
 		const ScoreEvent *e = n->events + n->controls[i];
@@ -130,9 +130,9 @@ int score_view_automation(
 		}
 	}
 	for (size_t b = 0; b < bins; ++b) {
-		float value = out->points[b].value;
-		out->low[b] = fminf(out->low[b], value);
-		out->high[b] = fmaxf(out->high[b], value);
+		double value = out->points[b].value;
+		out->low[b] = fmin(out->low[b], value);
+		out->high[b] = fmax(out->high[b], value);
 		if (out->points[b + 1].time < 0)
 			out->points[b + 1] = out->points[b];
 		out->points[b + 1].time = from + (to - from) * (b + 1) / bins;

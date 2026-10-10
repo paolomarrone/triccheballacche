@@ -1,7 +1,7 @@
 # triccheballacche
 
-A minimal scriptable DAW: Janet scores, C audio, Perone plugins. The native and
-browser editors share the same interface, audio engine and 2D/3D score view.
+A minimal scriptable DAW: Janet scores, C audio, Perone and CLAP plugins.
+The native and browser editors share the same interface, audio engine and 2D/3D score view.
 Music can be finite or repeat indefinitely, with quantized live updates.
 
 This is a development project. Linux and Chromium/Wasm are tested; macOS is
@@ -33,7 +33,7 @@ their C++ duplicates. No sibling repositories are needed for the commands above.
 | `make library` | `build/library/brickworks/`: plugin bundles. |
 | `make web` | `build/web/player.{mjs,wasm}` and project catalog. |
 | `make web-offline` | `build/web/offline.{mjs,wasm}`: offline rendering runtime. |
-| `make tools` | `build/tools/perone-host`: single-plugin diagnostics. |
+| `make tools` | `build/tools/perone-host` and `build/tools/plugin-scan`: plugin diagnostics. |
 
 The native editor needs X11 development libraries and, on Linux, GTK 3 and
 WebKitGTK 4.1 (or 4.0) runtime libraries. WebUI is fetched automatically.
@@ -160,11 +160,50 @@ for the canonical library, or [Rame](examples/rame.janet) for a complete piece.
 
 ## Plugins
 
-Perone is the only plugin format. Copy whole `.perone` bundles: `product.json`,
+**Perone** works natively and in the browser. Copy whole `.perone` bundles: `product.json`,
 the native `<platform>/<bundleName>.so` or `wasm32/<bundleName>.wasm`, and optional
 UI assets. Janet reads metadata; no per-plugin Janet wrapper is needed.
 DSP ABI v2 and optional native UI ABI v1 come from Tibia. Web UIs declare
 `product.ui.web` and may load their own Wasm. Native UI hosting currently uses X11.
+
+**CLAP** works natively on Linux, including original X11 plugin windows and the
+shared parameter panel. Settings lists modules from `CLAP_PATH` (colon-separated),
+`~/.clap`, `/usr/lib/clap` and `/usr/local/lib/clap`, including each factory ID.
+An explicit path also works outside those directories:
+
+```janet
+(def synth (daw/plugin :synth
+  {:format :clap :id "org.surge-synth-team.surge-xt"}))
+# Or {:format :clap :path "/path/to/plugin.clap" :id "native.plugin.id"}.
+# :id is optional only when the module exports one supported plugin.
+```
+
+[examples/clap.janet](examples/clap.janet) uses separately installed Surge XT and
+Surge XT Effects; both were tested with version 1.3.4, including their original
+windows. `CLAP_PATH=/path/to/plugins ./build/gui examples/clap.janet` runs it.
+Use `build/tools/plugin-scan /path/to/plugin.clap` to inspect IDs and parameters.
+CLAP parameter keywords are native numeric IDs, such as `:825615485`;
+`daw/info` exposes their labels, ranges and automation flags. Enumeration indices
+also work but are less stable across plugin versions. No wrapper or `product.json`
+is required. CLAP native binaries do not run in the Wasm editor.
+
+Discovery uses a separate process, with a timeout and a file-stamped memory cache.
+Playback uses independent instances and cached modules in the host process.
+The initial patch supplies initial control values; these can differ from a
+parameter's declared default. Notes and automation retain sample boundaries,
+and plugins receive tempo and transport position. Host callbacks, timers and file
+descriptors run on the main thread. Plugin restarts pause audio; incompatible
+port or parameter changes require preparing the score again.
+
+The supported audio graph routes the main mono/stereo buses. Additional inputs
+receive silence; additional outputs and note outputs are not routed. Plugins
+with note outputs or more than one note input are currently rejected. CLAP mono
+effects are not duplicated implicitly on stereo signals. Parallel paths are
+latency-compensated with buffers allocated before rendering; total output latency
+and effect tails still need room in the score's duration. Per-note expression,
+plugin-driven note routing and project/preset persistence are not implemented.
+The adapter has an opaque-state stream operation, tested independently from score
+snapshots; parameter arrays are never used as a substitute for plugin state.
 
 The canonical library build is self-contained. Local plugin projects instead
 default to sibling `../tibia` and `../brickworks` checkouts. Tibia must provide
@@ -207,6 +246,8 @@ musical names keep their spelling. Formatting is in `.editorconfig` and
 | Check | Requirements beyond the host build |
 | --- | --- |
 | `make test` | Local fixtures only; no audio device or sibling checkout. |
+| `make test-clap` | X11 headers/library for the fixture; no display needed. |
+| `make test-clap-ui` / `make test-clap-editor` | X11 display; Node.js/Chromium and audio for the editor. |
 | `make format-check` | clang-format 21. |
 | `make test-build` / `make test-build-web` | Node.js; also Emscripten for web. |
 | `make test-plugins` / `make test-brickworks` | Corresponding prebuilt bundles. |
@@ -225,7 +266,7 @@ downloads and local plugin builds; `make -C plugins clean` removes the latter.
 Use one `make -j` invocation for concurrent targets sharing a build directory.
 
 Dependency versions are pinned in [Makefile](Makefile) and
-[plugins/library.mk](plugins/library.mk). `MINIAUDIO`, `JANET`, `SPORK` and `WEBUI`
+[plugins/library.mk](plugins/library.mk). `MINIAUDIO`, `JANET`, `SPORK`, `WEBUI` and `CLAP`
 accept explicit paths. Fixes live in [patches/](patches/); the build applies them
 to generated copies, leaving downloaded sources intact.
 

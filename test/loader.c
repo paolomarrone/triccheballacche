@@ -55,8 +55,8 @@ typedef struct {
 	atomic_int *gate;
 } Controls;
 
-static void control_parameter(void *p, size_t index, float value) {
-	Controls *c = p;
+static void control_parameter(DSP *dsp, size_t index, double value) {
+	Controls *c = dsp->instance;
 	c->indices[c->parameters++] = index;
 	c->values[index] = value;
 	if (c->gate) {
@@ -66,8 +66,8 @@ static void control_parameter(void *p, size_t index, float value) {
 	}
 }
 
-static void control_message(void *p, size_t size, const void *data) {
-	Controls *c = p;
+static void control_message(DSP *dsp, size_t size, const void *data) {
+	Controls *c = dsp->instance;
 	assert(size == sizeof(unsigned) && c->count < 2);
 	memcpy(c->messages + c->count, data, size);
 	c->at_message[c->count++] = c->values[0];
@@ -79,14 +79,18 @@ static void *apply_control(void *arg) {
 }
 
 static void test_controls(void) {
-	const perone_api api = {.set_parameter = control_parameter, .msg_in = control_message};
+	const DspOps api = {.set = control_parameter, .message = control_message};
 	Controls left = {0}, right = {0};
 	unsigned data[MESSAGE_SLOTS], first = 7, second = 8;
-	DSP a = {.api = &api,
+	DSP a = {.ops = &api,
+	    .requested = (atomic_uint[2]){0},
+	    .applied = (atomic_uint[2]){0},
+	    .wanted = (_Atomic double[2]){0},
+	    .values = (_Atomic double[2]){0},
 	    .instance = &left,
 	    .config = {.nparams = 2},
 	    .to_dsp = {.limit = sizeof(unsigned), .data = (unsigned char *)data}};
-	DSP b = {.api = &api, .instance = &right};
+	DSP b = {.ops = &api, .instance = &right, .values = (_Atomic double[2]){0}};
 	watch_dsp(&a, 1);
 	// Messages are FIFO, but all pending parameter values precede them, regardless of submission order.
 	assert(!send_dsp(&a, sizeof(first), &first));
@@ -95,7 +99,7 @@ static void test_controls(void) {
 	edit_dsp(&a, 0, 2);
 	assert(!send_dsp(&a, sizeof(second), &second));
 	edit_dsp(&a, 0, 3);
-	float value;
+	double value;
 	assert(!left.parameters && !left.count && !read_dsp(&a, 0, &value));
 	sync_dsp(&a, &b);
 	assert(read_dsp(&a, 0, &value) && value == 3);
@@ -131,21 +135,23 @@ static void test_controls(void) {
 	puts("OK: latest parameter values, message order, stereo edits, concurrent acknowledgement and counter wrap");
 }
 
-static void mock_process(void *p, const float **in, float **out, size_t n) {
+static int mock_process(DSP *dsp, const float **in, float **out, size_t n, const ProcessTime *time) {
+	(void)time;
 	for (size_t i = 0; i < n; ++i)
-		out[0][i] = in[0][i] + *(float *)p;
+		out[0][i] = in[0][i] + *(float *)dsp->instance;
+	return 0;
 }
 
-static void mock_param(void *p, size_t index, float v) {
+static void mock_param(DSP *dsp, size_t index, double v) {
 	(void)index;
-	*(float *)p = v;
+	*(float *)dsp->instance = v;
 }
 
 static void test_mono_adapter(void) {
 	float value = 3, out[8195] = {123};
 	out[8194] = 123;
-	const perone_api api = {.process = mock_process};
-	DSP dsp = {.api = &api, .instance = &value};
+	const DspOps api = {.process = mock_process};
+	DSP dsp = {.ops = &api, .instance = &value};
 	Plugin e = {.dsp = &dsp, .config = {.input = 1, .inputs = 1, .output = 1}};
 	render_plugin(&e, out + 1, NULL, 8193);
 	for (int i = 0; i < 8193; ++i)
@@ -154,11 +160,13 @@ static void test_mono_adapter(void) {
 	puts("OK: mono adapter, silent input, large buffers and output bounds");
 }
 
-static void stereo_process(void *p, const float **in, float **out, size_t n) {
+static int stereo_process(DSP *dsp, const float **in, float **out, size_t n, const ProcessTime *time) {
+	(void)time;
 	for (size_t i = 0; i < n; ++i) {
-		out[0][i] = in[0][i] + *(float *)p;
-		out[1][i] = in[1][i] - *(float *)p;
+		out[0][i] = in[0][i] + *(float *)dsp->instance;
+		out[1][i] = in[1][i] - *(float *)dsp->instance;
 	}
+	return 0;
 }
 
 static void test_stereo_adapter(void) {
@@ -169,8 +177,8 @@ static void test_stereo_adapter(void) {
 		input[2 * i] = i;
 		input[2 * i + 1] = -2 * i;
 	}
-	const perone_api api = {.process = stereo_process, .set_parameter = mock_param};
-	DSP dsp = {.api = &api, .instance = &value};
+	const DspOps api = {.process = stereo_process, .set = mock_param};
+	DSP dsp = {.ops = &api, .instance = &value};
 	PluginConfig config = {.input = 2, .inputs = 2, .output = 2, .midi = -1};
 	Plugin e = {.dsp = &dsp, .config = config};
 	out[0] = out[FRAMES * 2 + 1] = 123;
@@ -192,15 +200,15 @@ static void test_stereo_adapter(void) {
 	puts("OK: stereo channel separation, large buffers, block invariance and silent input");
 }
 
-static void disconnected_process(void *p, const float **in, float **out, size_t n) {
+static int disconnected_process(DSP *dsp, const float **in, float **out, size_t n, const ProcessTime *time) {
 	assert(!in[0] && !in[3]);
-	stereo_process(p, in + 1, out, n);
+	return stereo_process(dsp, in + 1, out, n, time);
 }
 
 static void test_disconnected_inputs(void) {
 	float value = 1, in[] = {2, 3, 4, 5}, out[4];
-	const perone_api api = {.process = disconnected_process};
-	DSP dsp = {.api = &api, .instance = &value};
+	const DspOps api = {.process = disconnected_process};
+	DSP dsp = {.ops = &api, .instance = &value};
 	PluginConfig config = {.input = 2, .output = 2, .inputs = 4, .input_offset = 1, .midi = -1};
 	Plugin e = {.dsp = &dsp, .config = config};
 	render_plugin(&e, out, in, 2);
@@ -225,11 +233,14 @@ static void test_lifecycle(void) {
 	assert(!open_bundle(&e, path, DEFAULT_SAMPLE_RATE));
 	DSP *original = e.dsp;
 	assert(open_bundle(&e, path, DEFAULT_SAMPLE_RATE) < 0 && e.dsp == original);
-	assert(e.config.nparams == 3 && e.config.outputs == 1);
+	assert(e.config.nparams == 3 && (e.config.parameters[0].flags & PARAM_OUTPUT));
 	float out[6];
 	render_plugin(&e, out, NULL, 3);
 	assert(out[0] == .5f && out[1] == -.5f);
-	assert(e.dsp->api->get_parameter(e.dsp->instance, 0) == .5f);
+	watch_dsp(e.dsp, 1);
+	sync_dsp(e.dsp, NULL);
+	double current;
+	assert(read_dsp(e.dsp, 0, &current) && current == .5f);
 	close_plugin(&e);
 	puts("OK: Perone allocation/init/memory/ABI failures, cleanup, callbacks and output-first defaults");
 }
@@ -241,11 +252,13 @@ static void test_notifications(void) {
 	assert(!read_bundle("build/test/fixture.perone", &binary, &config, NULL));
 	config.to_ui = config.to_dsp = 16;
 	assert(!open_plugin(&e, binary, &config, DEFAULT_SAMPLE_RATE));
+	plugin_config_free(&config);
 	free(binary);
 	DSP *dsp = e.dsp;
 	unsigned char sent = 7, received[16];
 	size_t size;
-	float audio[2], value;
+	float audio[2];
+	double value;
 	watch_dsp(dsp, 1);
 	for (int i = 0; i <= MESSAGE_SLOTS; ++i) {
 		assert(!send_dsp(dsp, 1, &sent));

@@ -17,9 +17,10 @@ export function library(request, open, fail) {
         for (const entry of data.plugins) {
             const row = element("div", "", "catalog-item"), heading = element("div", "", "catalog-heading");
             row.dataset.path = entry.path;
-            const count = used.get(entry.path);
-            heading.append(element("span", entry.name), element("small", `${entry.kind}${count ? ` · ${count} in use` : ""}`));
+            const count = used.get(entry.id ? `${entry.path}\n${entry.id}` : entry.path);
+            heading.append(element("span", entry.name), element("small", `${entry.format || "Perone"} · ${entry.kind}${count ? ` · ${count} in use` : ""}`));
             row.append(heading, element("div", entry.path, "catalog-path"));
+            if (entry.id) row.append(element("div", entry.id, "catalog-path"));
             list.append(row);
         }
         byId("catalog-title").textContent = `Available plugins · ${data.plugins.length}`;
@@ -29,7 +30,7 @@ export function library(request, open, fail) {
         if (data) return;
         try {
             loading ||= request("library").then(result => {
-                const plugins = [], scores = [];
+                const plugins = [...(result.plugins || [])], scores = [];
                 for (const file of result.files) {
                     if (file.path.endsWith(".perone/product.json")) {
                         const {product} = JSON.parse(file.text);
@@ -72,7 +73,10 @@ export function library(request, open, fail) {
         },
         score(score) {
             used = new Map();
-            for (const node of score.nodes) if (node.bundle) used.set(node.bundle, (used.get(node.bundle) || 0) + 1);
+            for (const node of score.nodes) if (node.bundle) {
+                const key = node.product?.format === "clap" ? `${node.bundle}\n${node.product.id}` : node.bundle;
+                used.set(key, (used.get(key) || 0) + 1);
+            }
             render();
         }
     };

@@ -24,7 +24,7 @@ typedef struct {
 	ScoreSummary summary;
 	int pitch, velocity; // pitch -1: parameter.
 	int parameter, stream;
-	float value;
+	double value;
 } ScoreEvent;
 
 typedef struct {
@@ -32,12 +32,11 @@ typedef struct {
 	unsigned upstream, downstream;
 	char *label;
 	char *name, *bundle, *product; // Product JSON is encoded by Janet before teardown.
-	float minimum[MAX_PARAMS], maximum[MAX_PARAMS];
-	float defaults[MAX_PARAMS];
-	uint64_t integers;
+	Parameter *parameters;
+	int nparams;
 	ScoreEvent *events;
 	size_t *by_order, count;
-	size_t *controls, offsets[MAX_PARAMS + 1]; // Event indices grouped by parameter, in time order.
+	size_t *controls, *offsets; // Event indices grouped by parameter, in time order.
 } ScoreNode;
 
 // An owned, immutable visual snapshot. Rendering never reads the live DSP or mixer state.
@@ -70,12 +69,12 @@ enum { SCORE_AUTOMATION_POINTS = 512 };
 typedef struct {
 	double time, cycle;
 	uint64_t order;
-	float value;
+	double value;
 	int stream;
 } ScoreControl;
 typedef struct {
 	ScoreControl points[SCORE_AUTOMATION_POINTS + 1];
-	float low[SCORE_AUTOMATION_POINTS], high[SCORE_AUTOMATION_POINTS];
+	double low[SCORE_AUTOMATION_POINTS], high[SCORE_AUTOMATION_POINTS];
 	size_t count;
 	int dense;
 } ScoreAutomation;

@@ -301,6 +301,17 @@ static void poll_player(Editor *editor) {
 		return;
 	const char *error = NULL;
 	accept_revision(editor);
+	int service = session_poll(&editor->session);
+	if (service < 0)
+		error = editor->session.error;
+	else if (service > 0) {
+		int playing = editor->transport.playing;
+		error = pause_editor(editor);
+		if (!error && session_restart(&editor->session))
+			error = editor->session.error;
+		if (!error && playing)
+			error = play_editor(editor);
+	}
 
 	if (controls_poll(&editor->controls, &editor->session) < 0)
 		error = "Plugin UI control error";

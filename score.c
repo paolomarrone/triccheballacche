@@ -15,12 +15,12 @@ unsigned score_rate(Score *s) {
 	return s->sample_rate <= 384000 ? s->sample_rate : 0;
 }
 
-static int valid(Score *s, int id, int param, float value) {
+static int valid(Score *s, int id, int param, double value) {
 	if (s->sealed || id < 0 || id >= s->nnodes)
 		return fail(s, "sealed score or invalid handle");
 	const Node *n = s->nodes + id;
 	const PluginConfig *config = &n->config;
-	if (param < 0 || param >= config->nparams || (config->outputs & (UINT64_C(1) << param)))
+	if (param < 0 || param >= config->nparams || (config->parameters[param].flags & PARAM_OUTPUT))
 		return fail(s, "unknown or output parameter");
 	if (!isfinite(value) || (!n->path && (value < (param ? -1 : 0) || value > (param ? 1 : 4))))
 		return fail(s, "parameter outside range");
@@ -34,18 +34,21 @@ int score_plugin(Score *s, const char *path, const PluginConfig *config) {
 		return fail(s, "invalid plugin configuration");
 	Node *n = s->nodes + s->nnodes;
 	*n = (Node){0};
-	n->config = *config;
-	n->path = copy_string(path);
-	if (!n->path)
+	if (plugin_config_copy(&n->config, config))
 		return fail(s, "out of memory");
+	n->path = copy_string(path);
+	if (!n->path) {
+		plugin_config_free(&n->config);
+		return fail(s, "out of memory");
+	}
 	return s->nnodes++;
 }
 
-int score_set(Score *s, int id, int param, float value) {
+int score_set(Score *s, int id, int param, double value) {
 	if (valid(s, id, param, value))
 		return -1;
 	Node *n = s->nodes + id;
-	n->config.defaults[param] = value;
+	n->config.parameters[param].value = value;
 	return 0;
 }
 
@@ -74,10 +77,17 @@ int score_mix(Score *s, const int *inputs, int count) {
 		if (!handle(s, inputs[i]))
 			return fail(s, "invalid mix input");
 	Node *n = s->nodes + s->nnodes;
-	*n = (Node){.ninputs = count, .config = {.nparams = 2, .midi = -1, .output = 2, .defaults = {1, 0}}};
-	n->inputs = calloc(count, sizeof(int));
-	if (!n->inputs)
+	*n = (Node){.ninputs = count};
+	Parameter parameters[] = {{.value = 1, .minimum = 0, .maximum = 4, .flags = PARAM_AUTOMATABLE},
+	    {.id = 1, .value = 0, .minimum = -1, .maximum = 1, .flags = PARAM_AUTOMATABLE}};
+	PluginConfig config = {.nparams = 2, .midi = -1, .output = 2, .parameters = parameters};
+	if (plugin_config_copy(&n->config, &config))
 		return fail(s, "out of memory");
+	n->inputs = calloc(count, sizeof(int));
+	if (!n->inputs) {
+		plugin_config_free(&n->config);
+		return fail(s, "out of memory");
+	}
 	for (int i = 0; i < count; ++i)
 		n->inputs[i] = inputs[i];
 	return s->nnodes++;
@@ -131,6 +141,8 @@ static int visit(Score *s, int id, unsigned char *state) {
 		return 0;
 	state[id] = 1;
 	Node *n = s->nodes + id;
+	if (!plugin_config_valid(&n->config))
+		return fail(s, "invalid plugin configuration");
 	if (n->path && n->ninputs != !!n->config.input)
 		return fail(s, "effect has no input");
 	n->upstream = n->track ? 1u << (n->track - 1) : 0;
@@ -142,6 +154,8 @@ static int visit(Score *s, int id, unsigned char *state) {
 	}
 	n->channels = n->path ? n->config.output : 2;
 	if (n->path && n->ninputs && s->nodes[n->inputs[0]].channels == 2 && n->config.input == 1) {
+		if (n->config.format != PLUGIN_PERONE)
+			return fail(s, "a mono plugin requires a mono signal");
 		if (n->channels == 2)
 			return fail(s, "a mono-to-stereo effect requires a mono signal");
 		n->channels = 2;
@@ -180,7 +194,8 @@ static int valid_cue(Score *s, Cue c) {
 		if (c.parameter != -1 || !n->path || n->config.midi < 0 || c.pitch < 0 || c.pitch > 127 || c.velocity < 1 ||
 		    c.velocity > 127 || c.end <= c.start)
 			return fail(s, "invalid note");
-	} else if (valid(s, c.node, c.parameter, c.value) || c.start != c.end) {
+	} else if (valid(s, c.node, c.parameter, c.value) || c.start != c.end ||
+	    !(n->config.parameters[c.parameter].flags & PARAM_AUTOMATABLE)) {
 		return fail(s, "invalid parameter event");
 	}
 	return 0;
@@ -195,7 +210,7 @@ int score_cue(Score *s, Cue cue) {
 	return 0;
 }
 
-int score_param(Score *s, int id, uint64_t time, int param, float value) {
+int score_param(Score *s, int id, uint64_t time, int param, double value) {
 	return score_cue(s,
 	    (Cue){.node = id,
 	        .start = (double)time / score_rate(s),
@@ -272,6 +287,7 @@ void score_free(Score *s) {
 	for (int i = 0; i < s->nnodes; ++i) {
 		Node *n = s->nodes + i;
 		plugin_info_free(&n->info);
+		plugin_config_free(&n->config);
 		free(n->path);
 		free(n->name);
 		free(n->key);

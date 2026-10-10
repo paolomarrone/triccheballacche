@@ -174,7 +174,8 @@ static int mock(Score *s, int kind, float value) {
 	    .output = outputs[kind],
 	    .midi = -1,
 	    .nparams = 2,
-	    .defaults = {value, kind}};
+	    .parameters = (Parameter[]){{.value = value, .minimum = -4, .maximum = 4, .flags = PARAM_AUTOMATABLE},
+	        {.id = 1, .value = kind, .minimum = 0, .maximum = 4, .flags = PARAM_AUTOMATABLE}}};
 	return score_plugin(s, "build/test/mixer" PERONE_SUFFIX, &config);
 }
 
@@ -183,6 +184,7 @@ static int score_bundle(Score *s, const char *path) {
 	PluginConfig config;
 	assert(!read_bundle(path, &binary, &config, NULL));
 	int id = score_plugin(s, binary, &config);
+	plugin_config_free(&config);
 	free(binary);
 	return id;
 }

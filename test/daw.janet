@@ -12,12 +12,12 @@
                   [(merge metadata-param {:defaultValue 2})]
                   [(merge metadata-param {:integer true})]
                   [(merge metadata-param {:direction "wrong"})]
-                  [(merge metadata-param {:id ""})]
-                  (map |(merge metadata-param {:id (string $)}) (range 65))]
-  (rejects (fn [] (perone/parameters parameters))))
-(def bypass ((perone/parameters [{:id "bypass" :direction "input" :isBypass true}]) 0))
+                  [(merge metadata-param {:id ""})]]
+  (rejects (fn [] (plugin/parameters parameters))))
+(assert (= 65 (length (plugin/parameters (map |(merge metadata-param {:id (string $)}) (range 65))))))
+(def bypass ((plugin/parameters [{:id "bypass" :direction "input" :isBypass true}]) 0))
 (assert (= [(bypass :min) (bypass :max) (bypass :default) (bypass :integer)] [0 1 0 true]))
-(rejects (fn [] (perone/value bypass 0.5)))
+(rejects (fn [] (plugin/value bypass 0.5)))
 (def path "build/test/fixture.perone")
 (def synth (daw/plugin path {:gain 0.25}))
 (def filter (daw/plugin "build/test/effect.perone"))

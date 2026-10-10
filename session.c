@@ -40,7 +40,7 @@ int session_listen(Session *s, int track, int flags) {
 	return 0;
 }
 
-static void set_control(Session *s, int id, int parameter, float value) {
+static void set_control(Session *s, int id, int parameter, double value) {
 	NodeState *n = s->nodes + id;
 	if (!n->dsp[0].dsp)
 		n->values[parameter] = value;
@@ -74,6 +74,41 @@ static int note_order(const void *aa, const void *bb) {
 	return (a->order > b->order) - (a->order < b->order);
 }
 
+// Equalize arrival times at graph merges. Single-input chains need no host delay.
+static int prepare_latency(Session *s, const Score *score) {
+	uint64_t arrival[MAX_NODES] = {0}, samples = 0;
+	for (int k = 0; k < score->norder; ++k) {
+		int id = score->order[k];
+		const Node *n = score->nodes + id;
+		NodeState *state = s->nodes + id;
+		uint64_t latest = 0, own = latency_dsp(state->dsp[0].dsp);
+		if (own > 10u * s->sample_rate)
+			return fail(s, "plugin latency exceeds ten seconds");
+		for (int j = 0; j < n->ninputs; ++j)
+			if (arrival[n->inputs[j]] > latest)
+				latest = arrival[n->inputs[j]];
+		arrival[id] = latest + own;
+		for (int j = 0; j < n->ninputs; ++j) {
+			int source = n->inputs[j];
+			InputState *input = state->inputs + j;
+			size_t length = (latest - arrival[source]) * score->nodes[source].channels;
+			samples += length;
+			if (samples > 60u * s->sample_rate)
+				return fail(s, "graph latency buffers exceed memory limit");
+			if (input->length == length)
+				continue;
+			float *delay = length ? calloc(length, sizeof(float)) : NULL;
+			if (length && !delay)
+				return fail(s, "out of memory");
+			free(input->delay);
+			input->delay = delay;
+			input->length = length;
+			input->position = 0;
+		}
+	}
+	return 0;
+}
+
 int session_seek(Session *s, uint64_t from) {
 	if (!s->audio)
 		return fail(s, "seek requires a prepared session");
@@ -82,7 +117,16 @@ int session_seek(Session *s, uint64_t from) {
 	HeldNote(*notes)[128] = from ? calloc(s->nnodes, sizeof(*notes)) : NULL;
 	if (from && !notes)
 		return fail(s, "out of memory");
-	float values[MAX_NODES][MAX_PARAMS];
+	size_t total = 0;
+	const Score *description = session_score(s);
+	for (int i = 0; i < s->nnodes; ++i)
+		total += description->nodes[i].config.nparams;
+	double *storage = total ? malloc(total * sizeof(double)) : NULL, *values[MAX_NODES];
+	if (total && !storage) {
+		free(notes);
+		return fail(s, "out of memory");
+	}
+	size_t offset = 0;
 	Revision *r = s->active;
 	const Score *score = &r->score;
 	Sequencer *cursor = &r->cursor;
@@ -99,9 +143,17 @@ int session_seek(Session *s, uint64_t from) {
 	}
 	for (int i = 0; i < s->nnodes; ++i) {
 		const Node *n = score->nodes + i;
-		memcpy(values[i], n->config.defaults, n->config.nparams * sizeof(float));
-		for (int j = 0; j < n->ninputs; ++j)
-			s->nodes[i].inputs[j] = !solo || ((score->nodes[n->inputs[j]].upstream | n->downstream) & solo);
+		values[i] = storage ? storage + offset : NULL;
+		offset += n->config.nparams;
+		for (int j = 0; j < n->config.nparams; ++j)
+			values[i][j] = n->config.parameters[j].value;
+		for (int j = 0; j < n->ninputs; ++j) {
+			InputState *input = s->nodes[i].inputs + j;
+			input->level = !solo || ((score->nodes[n->inputs[j]].upstream | n->downstream) & solo);
+			input->position = 0;
+			if (input->length)
+				memset(input->delay, 0, input->length * sizeof(float));
+		}
 	}
 	sequencer_history(cursor, from);
 	for (size_t order = 0; cursor->used; ++order) {
@@ -124,7 +176,7 @@ int session_seek(Session *s, uint64_t from) {
 			if (s->held[i][pitch] && s->held[i][pitch] < s->next_off)
 				s->next_off = s->held[i][pitch];
 		for (int j = 0; j < n->config.nparams; ++j)
-			if (!(n->config.outputs & (UINT64_C(1) << j)))
+			if (!(n->config.parameters[j].flags & PARAM_OUTPUT))
 				set_control(s, i, j, values[i][j]);
 		// Reset after restoring parameters; history and queued UI gestures belong to the old position.
 		for (int c = 0; c < 2 && state->dsp[c].dsp; ++c)
@@ -137,6 +189,7 @@ int session_seek(Session *s, uint64_t from) {
 		}
 	}
 	free(notes);
+	free(storage);
 	s->time = from;
 	s->error = NULL;
 	return 0;
@@ -164,11 +217,20 @@ static void input_audio(Session *s, const Score *score, int id, int index, unsig
 	int source_id = node->inputs[index];
 	const Node *source = score->nodes + source_id;
 	const float *input = s->audio + source_id * BLOCK * 2;
-	float *level = s->nodes[id].inputs + index;
+	InputState *state = s->nodes[id].inputs + index;
+	float *level = &state->level;
 	float target = !solo || ((source->upstream | node->downstream) & solo);
 	if (!s->time)
 		*level = target;
-	bw_buf_copy(input, audio, frames * source->channels);
+	if (!state->length)
+		bw_buf_copy(input, audio, frames * source->channels);
+	else
+		for (size_t i = 0; i < frames * source->channels; ++i) {
+			audio[i] = state->delay[state->position];
+			state->delay[state->position] = input[i];
+			if (++state->position == state->length)
+				state->position = 0;
+		}
 	fade(slew, level, target, audio, source->channels, frames);
 }
 
@@ -176,9 +238,15 @@ static int process(
     Session *s, const Score *score, int id, unsigned solo, const bw_slew_lim_coeffs *slew, float *out, size_t frames) {
 	const Node *node = score->nodes + id;
 	NodeState *state = s->nodes + id;
+	for (int c = 0; c < 2; ++c)
+		state->dsp[c].time = (ProcessTime){.frame = s->time,
+		    .bpm = score->sequence.bpm,
+		    .beat = (double)s->time / s->sample_rate * score->sequence.bpm / 60,
+		    .playing = 1};
 	float input[BLOCK * 2];
 	if (!node->ninputs) {
-		render_plugin(state->dsp, out, NULL, frames);
+		if (render_plugin(state->dsp, out, NULL, frames))
+			return fail(s, "plugin processing failed");
 		return 0;
 	}
 	if (!node->path) {
@@ -223,7 +291,8 @@ static int process(
 		for (int c = 0; c < 2; ++c) {
 			for (size_t i = 0; i < frames; ++i)
 				mono[i] = input[2 * i + c];
-			render_plugin(state->dsp + c, tmp, mono, frames);
+			if (render_plugin(state->dsp + c, tmp, mono, frames))
+				return fail(s, "plugin processing failed");
 			for (size_t i = 0; i < frames; ++i)
 				out[2 * i + c] = tmp[i];
 		}
@@ -231,7 +300,8 @@ static int process(
 		if (score->nodes[node->inputs[0]].channels == 1 && node->config.input == 2)
 			for (size_t i = frames; i-- > 0;)
 				input[2 * i] = input[2 * i + 1] = input[i];
-		render_plugin(state->dsp, out, input, frames);
+		if (render_plugin(state->dsp, out, input, frames))
+			return fail(s, "plugin processing failed");
 	}
 	return 0;
 }
@@ -275,12 +345,16 @@ static int render_audio(Session *s, const Score *score, const bw_slew_lim_coeffs
 
 void session_free(Session *s) {
 	session_cancel(s);
-	revision_free(s->active);
+	const Score *score = session_score(s);
 	for (int i = 0; i < s->nnodes; ++i) {
 		close_plugin(s->nodes[i].dsp);
 		close_plugin(s->nodes[i].dsp + 1);
+		if (s->nodes[i].inputs)
+			for (int j = 0; score && j < score->nodes[i].ninputs; ++j)
+				free(s->nodes[i].inputs[j].delay);
 		free(s->nodes[i].inputs);
 	}
+	revision_free(s->active);
 	free(s->held);
 	free(s->audio);
 	*s = (Session){0};
@@ -308,7 +382,7 @@ int session_activate(Session *s, Score *score) {
 	for (int i = 0; i < score->nnodes; ++i) {
 		const Node *n = score->nodes + i;
 		NodeState *state = next.nodes + i;
-		if (n->ninputs && !(state->inputs = calloc(n->ninputs, sizeof(float))))
+		if (n->ninputs && !(state->inputs = calloc(n->ninputs, sizeof(InputState))))
 			goto fail;
 		if (!n->path)
 			continue;
@@ -321,11 +395,26 @@ int session_activate(Session *s, Score *score) {
 			}
 		}
 	}
+	if (prepare_latency(&next, score)) {
+		error = next.error;
+		goto fail;
+	}
 	next.active = r;
+	if (session_seek(&next, 0)) {
+		error = next.error;
+		next.active = NULL;
+		goto fail;
+	}
 	*score = (Score){0};
 	*s = next;
-	return session_seek(s, 0);
+	return 0;
 fail:
+	for (int i = 0; i < score->nnodes; ++i)
+		if (next.nodes[i].inputs)
+			for (int j = 0; j < score->nodes[i].ninputs; ++j) {
+				free(next.nodes[i].inputs[j].delay);
+				next.nodes[i].inputs[j].delay = NULL;
+			}
 	session_free(&next);
 	sequencer_free(&r->cursor);
 	free(r); // The caller still owns the score.
@@ -337,9 +426,16 @@ static int same(const char *a, const char *b) {
 }
 
 static int same_config(const PluginConfig *a, const PluginConfig *b) {
-	return a->input == b->input && a->output == b->output && a->midi == b->midi && a->input_offset == b->input_offset &&
-	    a->inputs == b->inputs && a->nparams == b->nparams && a->outputs == b->outputs && a->to_ui == b->to_ui &&
-	    a->to_dsp == b->to_dsp;
+	if (a->input != b->input || a->output != b->output || a->midi != b->midi || a->input_offset != b->input_offset ||
+	    a->inputs != b->inputs || a->nparams != b->nparams || a->format != b->format || !same(a->id, b->id) ||
+	    a->to_ui != b->to_ui || a->to_dsp != b->to_dsp)
+		return 0;
+	for (int i = 0; i < a->nparams; ++i) {
+		const Parameter *x = a->parameters + i, *y = b->parameters + i;
+		if (x->id != y->id || x->flags != y->flags || x->minimum != y->minimum || x->maximum != y->maximum)
+			return 0;
+	}
+	return 1;
 }
 
 int session_update(Session *s, Score *next, uint64_t earliest, unsigned revision, int *mapping) {
@@ -431,9 +527,9 @@ int session_render(Session *s, float *out, size_t frames) {
 					const Node *n = r->score.nodes + i;
 					int count = n->config.nparams;
 					for (int j = 0; j < count; ++j) {
-						if ((!n->path || !(n->config.outputs & (UINT64_C(1) << j))) &&
-						    pending->score.nodes[i].config.defaults[j] != n->config.defaults[j])
-							set_control(s, i, j, pending->score.nodes[i].config.defaults[j]);
+						if ((!n->path || !(n->config.parameters[j].flags & PARAM_OUTPUT)) &&
+						    pending->score.nodes[i].config.parameters[j].value != n->config.parameters[j].value)
+							set_control(s, i, j, pending->score.nodes[i].config.parameters[j].value);
 					}
 				}
 				Revision *old = r;
@@ -490,4 +586,23 @@ int session_render(Session *s, float *out, size_t frames) {
 		frames -= n;
 	}
 	return 0;
+}
+
+int session_poll(Session *s) {
+	int restart = 0;
+	for (int i = 0; i < s->nnodes; ++i)
+		for (int c = 0; c < 2; ++c) {
+			int status = poll_dsp(s->nodes[i].dsp[c].dsp);
+			if (status < 0)
+				return fail(s, "plugin callback failed");
+			restart |= status;
+		}
+	return restart;
+}
+int session_restart(Session *s) {
+	for (int i = 0; i < s->nnodes; ++i)
+		for (int c = 0; c < 2; ++c)
+			if (restart_dsp(s->nodes[i].dsp[c].dsp))
+				return fail(s, "plugin configuration changed; prepare the score again");
+	return prepare_latency(s, session_score(s));
 }

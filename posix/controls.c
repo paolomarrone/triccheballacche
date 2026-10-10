@@ -79,11 +79,11 @@ void controls_command(Controls *c, Session *s, unsigned revision, webui_event_t 
 	} else if (!strcmp(op, "parameter")) {
 		double index = number(event, 3), value = number(event, 4);
 		if (!isfinite(index) || index < 0 || index >= config->nparams || index != floor(index) ||
-		    (config->outputs & (UINT64_C(1) << (int)index)) || !isfinite((float)value)) {
+		    (config->parameters[(int)index].flags & PARAM_OUTPUT) || !isfinite(value)) {
 			error = "Invalid parameter";
 		} else {
-			float adjusted = value;
-			if (plugin_parameter(config, &node->info, (size_t)index, &adjusted))
+			double adjusted = value;
+			if (plugin_parameter(config, (size_t)index, &adjusted))
 				error = "Invalid parameter";
 			else
 				edit_dsp(dsp, (size_t)index, adjusted);
@@ -109,10 +109,10 @@ void controls_command(Controls *c, Session *s, unsigned revision, webui_event_t 
 	} else if (!strcmp(op, "controls")) {
 		json_print(&json, "\"values\":[");
 		for (int i = 0; i < config->nparams; ++i) {
-			float value;
+			double value;
 			json_print(&json, "%s", i ? "," : "");
 			if (read_dsp(dsp, i, &value) && isfinite(value))
-				json_print(&json, "%.9g", value);
+				json_print(&json, "%.17g", value);
 			else
 				json_print(&json, "null");
 		}

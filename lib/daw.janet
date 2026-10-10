@@ -28,20 +28,19 @@
   (or p (error (string "unknown parameter " key))))
 
 (defn daw/plugin
-  "Instantiate a Perone bundle. An optional leading keyword gives the node a stable live identity."
+  "Instantiate a plugin reference. An optional leading keyword gives the node a stable live identity."
   [id-or-path & args]
   (def named (keyword? id-or-path))
   (assert (<= (length args) (if named 2 1)) "too many plugin arguments")
   (def path (if named (args 0) id-or-path))
   (def params (or (get args (if named 1 0)) {}))
   (assert (dictionary? params) "expected initial parameter dictionary")
-  (def plugin (perone/read path))
+  (def plugin (plugin/read path))
   (def defaults (array ;(plugin :defaults)))
   (eachp [key value] params
     (def p (daw/parameter (plugin :parameters) key))
-    (put defaults (p :index) (perone/value p value)))
-  (def id (native/plugin (plugin :binary) (plugin :layout) defaults
-                        plugin (string (json/encode (plugin :product)))))
+    (put defaults (p :index) (plugin/value p value)))
+  (def id (native/plugin plugin defaults (string (json/encode (plugin :product)))))
   (when named (native/key id (string id-or-path)))
   (put daw/nodes id (plugin :parameters))
   (put daw/products id (plugin :product))
@@ -69,7 +68,7 @@
 
 (defn daw/param [node time parameter value]
   (def p (daw/parameter (daw/info node) parameter))
-  (native/param node time (p :index) (perone/value p value)))
+  (native/param node time (p :index) (plugin/value p value)))
 
 (def daw/note native/note)
 (def daw/end native/end)
@@ -104,7 +103,7 @@
 (defn daw/tempo
   "Set the score tempo in quarter notes per minute. Live revisions keep the current tempo."
   [bpm]
-  (assert (and (perone/finite? bpm) (> bpm 0)) "BPM must be finite and positive")
+  (assert (and (plugin/finite? bpm) (> bpm 0)) "BPM must be finite and positive")
   (set daw/bpm bpm))
 
 (defn daw/score
@@ -129,6 +128,6 @@
         :param (do
           (assert (= a b) "parameter must be a point event")
           (def p (daw/parameter (daw/info node) key))
-          (native/cue node start end period (p :index) (perone/value p value) 0 si))
+          (native/cue node start end period (p :index) (plugin/value p value) 0 si))
         (error "expected :note or :param"))))
   (native/seal (or (options :duration) (when (pattern :length) (* unit (pattern :length))))))

@@ -50,7 +50,7 @@ static void test_snapshot(void) {
 	assert(data && size);
 	assert(!score_unpack(&b, &restored, &bv, data, size));
 	for (int i = 0; i < av.nnodes; ++i)
-		assert(!memcmp(av.nodes[i].defaults, bv.nodes[i].defaults, sizeof(av.nodes[i].defaults)));
+		assert(!memcmp(av.nodes[i].parameters, bv.nodes[i].parameters, av.nodes[i].nparams * sizeof(Parameter)));
 	void *other = score_pack(&b, &restored, &bv, &other_size);
 	assert(other && other_size == size && !memcmp(data, other, size));
 	free(other);
@@ -99,16 +99,16 @@ static void test_automation(void) {
 			assert(out.count && !out.dense);
 			assert(!session_seek(&s, sample));
 			float audio[2];
-			assert(!session_render(&s, audio, 1) && audio[0] == out.points[0].value);
+			assert(!session_render(&s, audio, 1) && fabs(audio[0] - out.points[0].value) < 1e-7);
 		}
 		assert(!score_view_automation(&view, 0, 1, 0, 1000000, 32, &out));
 		assert(out.dense && out.count == 33);
 		for (int i = 0; i < 32; ++i) {
-			assert(out.low[i] == .2f && out.high[i] == .9f);
+			assert(fabs(out.low[i] - .2) < 1e-7 && fabs(out.high[i] - .9) < 1e-7);
 			uint64_t sample = (uint64_t)llround(out.points[i + 1].time * rate) - 1;
 			assert(!session_seek(&s, sample));
 			float audio[2];
-			assert(!session_render(&s, audio, 1) && audio[0] == out.points[i + 1].value);
+			assert(!session_render(&s, audio, 1) && fabs(audio[0] - out.points[i + 1].value) < 1e-7);
 		}
 		session_free(&s);
 		assert(!score_view_automation(&view, 0, 1, 1000000, 1000001, 32, &out));
@@ -395,7 +395,7 @@ static void test_prepared_ownership(void) {
 	assert(!prepare_score(&score, &output, "test/ownership.janet", code, NULL, &view));
 	Cue *cues = score.sequence.cues;
 	char *product = score.nodes[0].info.product;
-	assert(product && score.nodes[0].info.maximum[1] == 1);
+	assert(product && score.nodes[0].config.parameters[1].maximum == 1);
 	assert(session_activate(&session, &score) && !session.active && !session.audio);
 	assert(score.sealed && score.sequence.cues == cues && score.nodes[0].info.product == product);
 	assert(!unsetenv("PERONE_TEST_FAIL"));

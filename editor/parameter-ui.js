@@ -4,12 +4,13 @@ import {parameterRatio, parameterValue, parameterText} from "./parameters.js";
 let serial = 0;
 export function create(element, callbacks) {
     const style = document.createElement("link");
-    style.rel = "stylesheet"; style.href = new URL("./perone-ui.css", import.meta.url);
+    style.rel = "stylesheet"; style.href = new URL("./parameter-ui.css", import.meta.url);
     const root = document.createElement("div");
-    root.className = "perone-controls";
-    const prefix = "perone-" + serial++ + "-", controls = [];
+    root.className = "parameter-controls";
+    const prefix = "parameter-" + serial++ + "-", controls = [];
     const events = new AbortController();
     for (const [index, p] of callbacks.product.parameters.entries()) {
+        if (p.hidden) continue;
         const row = document.createElement("div"), name = document.createElement("label"), value = document.createElement("output");
         const field = document.createElement("div");
         row.className = "parameter"; field.className = "parameter-control";
@@ -62,7 +63,7 @@ export function create(element, callbacks) {
         row.append(name, field, value); root.append(row);
     }
     for (const event of ["pointerup", "pointercancel"])
-        root.ownerDocument.addEventListener(event, () => { for (const c of controls) c.end(); }, { signal: events.signal });
+        root.ownerDocument.addEventListener(event, () => { for (const c of controls) c?.end(); }, { signal: events.signal });
     const close = event => {
         const menu = root.querySelector(":popover-open");
         if (menu && !event.composedPath().includes(menu)) menu.hidePopover();
@@ -72,7 +73,7 @@ export function create(element, callbacks) {
     element.append(style, root);
     return {
         set_parameter(index, value) { controls[index]?.set(value); },
-        free() { events.abort(); for (const c of controls) c.end(); root.remove(); style.remove(); }
+        free() { events.abort(); for (const c of controls) c?.end(); root.remove(); style.remove(); }
     };
 }
 

@@ -25,6 +25,11 @@ static int play_score(Session *s) {
 		puts("Playing; Ctrl-C to stop.");
 		fflush(stdout);
 		while (!stopped && !player_status(p)) {
+			int service = session_poll(s);
+			if (service < 0 || (service > 0 && (player_pause(p) || session_restart(s) || player_start(p)))) {
+				result = -1;
+				break;
+			}
 			if (!ma_device_is_started(&p->device)) {
 				s->error = "audio device stopped unexpectedly";
 				result = -1;

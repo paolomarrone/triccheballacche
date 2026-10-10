@@ -11,6 +11,8 @@ void score_view_free(ScoreView *view) {
 		free(view->nodes[i].events);
 		free(view->nodes[i].by_order);
 		free(view->nodes[i].controls);
+		free(view->nodes[i].parameters);
+		free(view->nodes[i].offsets);
 	}
 	for (size_t i = 0; i < view->norigins; ++i) {
 		for (size_t j = 0; j < view->origins[i].count; ++j)
@@ -47,10 +49,13 @@ int score_view_init(ScoreView *view, const Score *score) {
 	for (int i = 0; i < score->nnodes; ++i) {
 		const Node *source = score->nodes + i;
 		ScoreNode *node = view->nodes + i;
-		memcpy(node->defaults, source->config.defaults, source->config.nparams * sizeof(float));
-		memcpy(node->minimum, source->info.minimum, sizeof(node->minimum));
-		memcpy(node->maximum, source->info.maximum, sizeof(node->maximum));
-		node->integers = source->info.integers;
+		node->nparams = source->config.nparams;
+		node->parameters = node->nparams ? malloc(node->nparams * sizeof(Parameter)) : NULL;
+		node->offsets = calloc(node->nparams + 1, sizeof(size_t));
+		if (!node->offsets || (node->nparams && !node->parameters))
+			return -1;
+		if (node->nparams)
+			memcpy(node->parameters, source->config.parameters, node->nparams * sizeof(Parameter));
 		if (source->info.product && !(node->product = copy_string(source->info.product)))
 			return -1;
 		node->ninputs = source->ninputs;
@@ -70,7 +75,7 @@ int score_view_init(ScoreView *view, const Score *score) {
 			if (!node->bundle)
 				return -1;
 			// Perone binaries occupy exactly one platform directory inside the bundle.
-			for (int j = 0; j < 2; ++j) {
+			for (int j = 0; source->config.format == PLUGIN_PERONE && j < 2; ++j) {
 				char *slash = strrchr(node->bundle, '/');
 				if (!slash)
 					return -1;
@@ -149,7 +154,7 @@ int score_view_index(ScoreView *view) {
 		free(node->by_order);
 		free(node->controls);
 		node->by_order = node->controls = NULL;
-		memset(node->offsets, 0, sizeof(node->offsets));
+		memset(node->offsets, 0, (node->nparams + 1) * sizeof(size_t));
 		size_t count = node->count;
 		if (!count)
 			continue;
@@ -159,22 +164,30 @@ int score_view_index(ScoreView *view) {
 			return -1;
 		for (size_t j = 0; j < node->count; ++j)
 			node->by_order[j] = SIZE_MAX;
-		for (size_t j = 0; j < count; ++j)
-			node->by_order[node->events[j].order] = j;
+		for (size_t j = 0; j < count; ++j) {
+			const ScoreEvent *event = node->events + j;
+			if (event->order >= count ||
+			    (event->pitch == -1 && (event->parameter < 0 || event->parameter >= node->nparams)))
+				return -1;
+			node->by_order[event->order] = j;
+		}
 		for (size_t j = 0; j < count; ++j)
 			if (node->events[j].pitch == -1)
 				++node->offsets[node->events[j].parameter + 1];
-		for (int j = 1; j <= MAX_PARAMS; ++j)
+		for (int j = 1; j <= node->nparams; ++j)
 			node->offsets[j] += node->offsets[j - 1];
-		if (node->offsets[MAX_PARAMS]) {
-			node->controls = malloc(node->offsets[MAX_PARAMS] * sizeof(size_t));
+		if (node->offsets[node->nparams]) {
+			node->controls = malloc(node->offsets[node->nparams] * sizeof(size_t));
 			if (!node->controls)
 				return -1;
-			size_t next[MAX_PARAMS];
-			memcpy(next, node->offsets, sizeof(next));
+			size_t *next = malloc(node->nparams * sizeof(size_t));
+			if (!next)
+				return -1;
+			memcpy(next, node->offsets, node->nparams * sizeof(size_t));
 			for (size_t j = 0; j < count; ++j)
 				if (node->events[j].pitch == -1)
 					node->controls[next[node->events[j].parameter]++] = j;
+			free(next);
 		}
 		index_events(node->events, 0, count);
 	}

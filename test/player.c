@@ -169,11 +169,11 @@ static void test_pcm(void) {
 				watch_dsp(original, 1);
 				edit_dsp(original, 1, .9f);
 				session_sync(&s); // UI edits also work with the audio callback stopped.
-				float value;
+				double value;
 				assert(read_dsp(original, 1, &value) && value == .9f);
 				edit_dsp(original, 1, .8f); // A queued gesture must not override the prepared defaults.
 				assert(!player_seek(p, 0) && !s.time && !player_time(p));
-				assert(read_dsp(original, 1, &value) && value == s.nodes[0].dsp[0].config.defaults[1]);
+				assert(read_dsp(original, 1, &value) && value == s.nodes[0].dsp[0].config.parameters[1].value);
 				assert(s.nodes[0].dsp[0].dsp == original && opened == devices);
 				emitted = 0;
 				assert(!player_start(p));

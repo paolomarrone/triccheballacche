@@ -33,14 +33,14 @@ typedef struct {
 
 unsigned score_rate(Score *s);
 int score_plugin(Score *s, const char *path, const PluginConfig *config);
-int score_set(Score *s, int id, int param, float value);
+int score_set(Score *s, int id, int param, double value);
 int score_through(Score *s, int source, int effect);
 int score_mix(Score *s, const int *inputs, int count);
 int score_output(Score *s, int source);
 int score_track(Score *s, int source, const int *effects, int count, int master);
 int score_cue(Score *s, Cue cue);
 // Convenience entry points for finite events expressed in samples.
-int score_param(Score *s, int id, uint64_t time, int param, float value);
+int score_param(Score *s, int id, uint64_t time, int param, double value);
 int score_note(Score *s, int id, uint64_t time, uint64_t end, int pitch, int velocity);
 int score_end(Score *s, uint64_t frames);
 void score_remap(Score *s, const int *mapping);

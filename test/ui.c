@@ -1,11 +1,11 @@
-#include "../posix/ui_x11.c"
+#include "../posix/perone_ui.c"
 #include "script.h"
 #include <assert.h>
 #include <time.h>
 
-static void pump(UI *ui) {
+static void pump(PeroneUI *ui) {
 	for (int i = 0; i < 50; ++i) {
-		assert(!ui_poll(ui));
+		assert(!perone_poll(ui));
 		nanosleep(&(struct timespec){.tv_nsec = 1000000}, NULL);
 	}
 	XSync(ui->display, False);
@@ -26,12 +26,12 @@ static void test_close_callbacks(void) {
 	DSP dsp = {.to_dsp = {.limit = 1, .data = data}};
 	Session session = {.nnodes = 1};
 	session.nodes[0].dsp[0] = (Plugin){.dsp = &dsp, .config = {.nparams = 1}};
-	UI *ui = calloc(1, sizeof(*ui));
+	PeroneUI *ui = calloc(1, sizeof(*ui));
 	assert(ui);
 	ui->session = &session;
 	ui->instance = ui;
 	ui->api = &api;
-	ui_close(ui);
+	perone_close(ui);
 	assert(!atomic_load(&dsp.pending));
 	puts("OK: callbacks emitted during native UI destruction cannot edit the DSP");
 }
@@ -43,7 +43,7 @@ static void test_delayed_widget(void) {
 	Session session = {.active = &revision};
 	session.nodes[0].dsp[0].dsp = &dsp;
 	const perone_ui_api api = {.idle = idle};
-	UI ui = {.session = &session, .api = &api, .width = 100, .height = 100};
+	PeroneUI ui = {.session = &session, .api = &api, .width = 100, .height = 100};
 	ui.display = XOpenDisplay(NULL);
 	Display *plugin = XOpenDisplay(NULL);
 	assert(ui.display && plugin);
@@ -56,7 +56,7 @@ static void test_delayed_widget(void) {
 	ui.widget = XCreateSimpleWindow(plugin, ui.parent, 0, 0, 100, 100, 0, 0, 0);
 	XResizeWindow(ui.display, ui.parent, 200, 300);
 	XSync(ui.display, False);
-	assert(!ui_poll(&ui) && !ui.ready && ui.width == 200 && ui.height == 300);
+	assert(!perone_poll(&ui) && !ui.ready && ui.width == 200 && ui.height == 300);
 	XSync(ui.display, False); // Mapping/resizing the missing child here would cause BadWindow.
 	XFlush(plugin);
 	pump(&ui);
@@ -71,7 +71,7 @@ static void test_delayed_widget(void) {
 	puts("OK: widget creation on a separate X connection, deferred mapping and resize");
 }
 
-static void mouse(UI *ui, int type, int x, int y) {
+static void mouse(PeroneUI *ui, int type, int x, int y) {
 	XEvent event = {0};
 	event.xbutton.type = type;
 	event.xbutton.display = ui->display;
@@ -111,8 +111,11 @@ static void test_view(const char *bundle, int tibia) {
 	revision->score = score;
 	session.active = revision;
 	session.nnodes = 1;
-	UI *ui;
-	assert(!ui_open(&ui, &session, 0) && ui);
+	PeroneUI *ui;
+	assert(!perone_open_ui((void **)&ui, &session, 0) && ui);
+	// Test host/plugin sizing without a window manager overriding the requested geometry.
+	XChangeWindowAttributes(
+	    ui->display, ui->parent, CWOverrideRedirect, &(XSetWindowAttributes){.override_redirect = True});
 	XUnmapWindow(ui->display, ui->parent);
 	pump(ui);
 	Window root, parent, *children;
@@ -121,7 +124,7 @@ static void test_view(const char *bundle, int tibia) {
 	if (children)
 		XFree(children);
 	assert(parent == ui->parent);
-	float value;
+	double value;
 	for (int i = 0; i < config.nparams; ++i)
 		assert(read_dsp(node->dsp[0].dsp, i, &value));
 	float input[BLOCK], before[BLOCK], after[BLOCK], right[BLOCK];
@@ -140,32 +143,32 @@ static void test_view(const char *bundle, int tibia) {
 	}
 	DSP *dsp = node->dsp[0].dsp;
 	assert(!read_dsp(dsp, 0, &value));
-	assert(atomic_load(&dsp->values[0]) == config.defaults[0]); // The UI has not called the DSP.
+	assert(atomic_load(&dsp->values[0]) == config.parameters[0].value); // The UI has not called the DSP.
 	sync_dsp(dsp, node->dsp[1].dsp);
 	render_plugin(node->dsp, after, input, BLOCK);
 	render_plugin(node->dsp + 1, right, input, BLOCK);
 	assert(!memcmp(after, right, sizeof(after)));
 	assert(memcmp(after, before, sizeof(after)));
-	assert(atomic_load(&dsp->values[0]) < config.defaults[0]);
+	assert(atomic_load(&dsp->values[0]) < config.parameters[0].value);
 	pump(ui);
 	assert(ui->shown[0] == atomic_load(&dsp->values[0]));
 	int output = tibia ? 5 : 4;
-	assert(ui->shown[output] == dsp->api->get_parameter(dsp->instance, output));
+	assert(ui->shown[output] == atomic_load(&dsp->values[output]));
 	// An edit arriving between L and R must wait for the next shared block boundary.
 	render_plugin(node->dsp, after, input, BLOCK);
-	ui->callbacks.set_parameter(ui, 0, config.defaults[0]);
+	ui->callbacks.set_parameter(ui, 0, config.parameters[0].value);
 	render_plugin(node->dsp + 1, right, input, BLOCK);
 	assert(!memcmp(after, right, sizeof(after)) && !read_dsp(dsp, 0, &value));
 	sync_dsp(dsp, node->dsp[1].dsp);
-	assert(atomic_load(&dsp->values[0]) == config.defaults[0]);
-	assert(atomic_load(&node->dsp[1].dsp->values[0]) == config.defaults[0]);
+	assert(atomic_load(&dsp->values[0]) == config.parameters[0].value);
+	assert(atomic_load(&node->dsp[1].dsp->values[0]) == config.parameters[0].value);
 	pump(ui);
 	// A scheduled parameter reaches both the DSP and UI at its sample boundary, without a gesture.
 	float automation = tibia ? -12 : 60;
 	for (int i = 0; i < 2; ++i)
 		render_plugin(node->dsp + i, after, input, 31);
 	pump(ui);
-	assert(ui->shown[0] == config.defaults[0]);
+	assert(ui->shown[0] == config.parameters[0].value);
 	for (int i = 0; i < 2; ++i) {
 		set_dsp(node->dsp[i].dsp, 0, automation);
 		render_plugin(node->dsp + i, after, input, 1);
@@ -205,9 +208,10 @@ static void test_view(const char *bundle, int tibia) {
 	close.xclient.data.l[0] = ui->quit;
 	assert(XSendEvent(ui->display, ui->parent, False, NoEventMask, &close));
 	XSync(ui->display, False);
-	assert(ui_poll(ui) == 1);
-	ui_close(ui);
+	assert(perone_poll(ui) == 1);
+	perone_close(ui);
 	assert(!atomic_load(&dsp->viewing));
+	plugin_config_free(&config);
 	session_free(&session);
 	printf("OK: %s: original UI gestures, audio, stereo copies, automation feedback, resize and close\n", bundle);
 }

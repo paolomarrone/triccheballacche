@@ -22,7 +22,7 @@ static void automation(void) {
 	    {.start = 1, .end = 1, .parameter = 0, .value = 1}, {.start = 1, .end = 1, .parameter = 0, .value = 1.5f},
 	    {.start = .5, .end = .5, .parameter = 1, .value = -.5f}};
 	s.sequence = (Sequence){.cues = events, .count = 4};
-	s.nodes[0].config = (PluginConfig){.nparams = 2, .defaults = {.25f, 0}};
+	s.nodes[0].config = (PluginConfig){.nparams = 2, .parameters = (Parameter[]){{.value = .25}, {0}}};
 	ScoreView view;
 	ScoreAutomation out;
 	assert(!score_view_init(&view, &s) && !score_view_index(&view));
@@ -67,6 +67,7 @@ int main(void) {
 	// Deliberately schedule out of time order, with overlapping equal pitches and nested durations.
 	// No DSP and no provenance are needed to construct or query a projection.
 	Score session = {.nnodes = 1, .ntracks = 1, .sample_rate = 48000, .sealed = 1};
+	session.nodes[0].config = (PluginConfig){.nparams = 1, .parameters = (Parameter[]){{0}}};
 	session.sequence.cues = calloc(400, sizeof(Cue));
 	assert(session.sequence.cues);
 	ScoreEvent expected[400];

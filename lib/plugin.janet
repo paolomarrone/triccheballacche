@@ -1,0 +1,97 @@
+# Common parameter metadata. Formats provide descriptions; scores never instantiate DSPs.
+(defn plugin/finite? [x]
+  (and (number? x) (= (- x x) 0)))
+
+(defn plugin/in-range? [p value]
+  (and (plugin/finite? value) (<= (p :min) value (p :max))
+       (or (not (p :integer)) (= value (math/floor value)))))
+
+(defn plugin/value [p value]
+  (assert (and (= (p :direction) :input) (plugin/in-range? p value))
+    (string "invalid value for " (p :name)))
+  value)
+
+(defn plugin/parameters [parameters]
+  (assert (and (indexed? parameters) (<= (length parameters) host/max-params)) "too many or invalid parameters")
+  (def ids @{})
+  (freeze
+    (seq [[i p] :pairs parameters]
+      (def id (p :id))
+      (assert (and (string? id) (> (length id) 0) (not (ids id))) "invalid or duplicate parameter ID")
+      (put ids id true)
+      (assert (or (= (p :direction) "input") (= (p :direction) "output")) "invalid parameter direction")
+      (def row
+        {:index i
+         :native-id (or (p :nativeId) i)
+         :automatable (not (= (p :automatable) false))
+         :name (keyword id)
+         :label (or (p :name) id)
+         :unit (or (p :unit) "")
+         :min (if (p :isBypass) 0 (p :minimum))
+         :max (if (p :isBypass) 1 (p :maximum))
+         :default (if (p :isBypass) 0 (or (p :initialValue) (p :defaultValue)))
+         :integer (not (not (or (p :integer) (p :toggled) (p :isBypass))))
+         :direction (keyword (p :direction))
+         :map (keyword (or (p :map) "linear"))
+         :scale-points (p :scalePoints)})
+      (assert (and (plugin/finite? (row :min))
+                   (plugin/finite? (row :max))
+                   (plugin/in-range? row (row :default)))
+        "invalid parameter range/default")
+      row)))
+
+
+(def- plugin/cache @{})
+
+(defn plugin/clap-paths []
+  (filter |(> (length $) 0)
+    (array/concat @[] (string/split ":" (or (os/getenv "CLAP_PATH") ""))
+      [(string (or (os/getenv "HOME") "") "/.clap") "/usr/lib/clap" "/usr/local/lib/clap"])))
+
+(defn plugin/clap-files [root &opt depth]
+  (default depth 0)
+  (def files @[])
+  (when (and (< depth 8) (= :directory (os/stat root :mode)))
+    (each name (sort (os/dir root))
+      (unless (string/has-prefix? "." name)
+        (def path (string root "/" name))
+        (case (os/lstat path :mode)
+          :directory (array/concat files (plugin/clap-files path (+ depth 1)))
+          :file (when (string/has-suffix? ".clap" name) (array/push files path))))))
+  files)
+
+(defn plugin/clap-find [id]
+  (assert (string? id) "CLAP reference needs :id or :path")
+  (var found nil)
+  (each root (plugin/clap-paths)
+    (unless found
+      (each path (plugin/clap-files root)
+        (unless found
+          (try
+            (set found (find |(= ($ :id) id) (json/decode (host/scan path) true)))
+            ([err] (eprint "CLAP: " path ": " err)))))))
+  (or found (error (string "CLAP plugin not found: " id "; check Settings or CLAP_PATH"))))
+
+(defn plugin/read [reference]
+  (or (plugin/cache reference)
+      (let [description
+            (if (string? reference)
+              (perone/read reference)
+              (do
+                (assert (= (reference :format) :clap) "unsupported plugin format")
+                (def path (reference :path))
+                (def id (reference :id))
+                (if path
+                  (do
+                    (assert (string? path) "CLAP :path must be a string")
+                    (def entries (json/decode (host/scan path) true))
+                    (assert (or id (= 1 (length entries))) "CLAP module has multiple plugins; specify :id")
+                    (or (if id (find |(= ($ :id) id) entries) (entries 0))
+                        (error "CLAP plugin ID not found")))
+                  (plugin/clap-find id))))
+            parameters (plugin/parameters (get-in description [:product :parameters]))
+            bundle (freeze (merge description
+              {:parameters parameters
+               :defaults (map |(if (= ($ :direction) :input) ($ :default) nil) parameters)}))]
+        (put plugin/cache reference bundle)
+        bundle)))

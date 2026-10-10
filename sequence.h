@@ -10,7 +10,7 @@ enum { MAX_CUES = 1048576 };
 typedef struct {
 	double start, end, period;
 	int node, parameter, pitch, velocity, stream;
-	float value;
+	double value;
 } Cue;
 
 typedef struct {

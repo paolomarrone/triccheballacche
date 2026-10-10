@@ -1,5 +1,6 @@
-# Native library discovery. Return file contents without loading DSPs or evaluating scores.
+# Native discovery. CLAP inspection runs in the scanner process, never in Janet.
 (def files @[])
+(def plugins @[])
 (defn add [path]
   (array/push files {:path path :text (slurp path)}))
 (defn children [path]
@@ -7,7 +8,7 @@
 (defn bundle [path]
   (when (= :file (os/stat (string path "/product.json") :mode))
     (try
-      (let [info (perone/read path)]
+      (let [info (plugin/read path)]
         (when (= :file (os/stat (info :binary) :mode))
           (add (string path "/product.json"))))
       ([err] (eprint "Library: " path ": " err)))))
@@ -33,5 +34,18 @@
   |(or (string/has-prefix? "fx_" $) (string/has-prefix? "synth_" $)))
 (bundle asid)
 (bundle tibia)
+(def clap-paths (plugin/clap-paths))
+(def seen @{})
+(each root clap-paths
+  (each path (plugin/clap-files root)
+    (try
+      (each entry (json/decode (host/scan path) true)
+        (def key [(entry :binary) (entry :id)])
+        (unless (seen key)
+          (put seen key true)
+          (array/push plugins {:format "clap" :path (entry :binary) :id (entry :id)
+            :name (get-in entry [:product :name])
+            :kind (if (> (get-in entry [:layout :input-channels]) 0) "Effect" "Instrument")})))
+      ([err] (eprint "Library: " path ": " err)))))
 (examples "examples")
-(string (json/encode {:paths ["plugins" brickworks asid tibia] :files files}))
+(string (json/encode {:paths (array/concat @[] ["plugins" brickworks asid tibia] clap-paths) :files files :plugins plugins}))

@@ -26,7 +26,7 @@ static void metadata(Json *json, const ScoreView *view, unsigned revision) {
 		json_print(json, ",\"product\":%s,\"low\":%d,\"high\":%d,\"automation\":[",
 		    node->product ? node->product : "null", summary.low, summary.high);
 		int count = 0;
-		for (int j = 0; j < MAX_PARAMS; ++j)
+		for (int j = 0; j < node->nparams; ++j)
 			if (node->offsets[j + 1] > node->offsets[j])
 				json_print(json, "%s[%d,%zu]", count++ ? "," : "", j, node->offsets[j + 1] - node->offsets[j]);
 		json_print(json, "]}");
@@ -136,7 +136,7 @@ static const char *range(
 static const char *automation(
     Json *json, const ScoreView *view, double node, double parameter, double from, double to, double bins) {
 	ScoreAutomation out;
-	if (!integer(node, 0, view->nnodes - 1) || !integer(parameter, 0, MAX_PARAMS - 1) ||
+	if (!integer(node, 0, view->nnodes - 1) || !integer(parameter, 0, view->nodes[(int)node].nparams - 1) ||
 	    !integer(bins, 1, SCORE_AUTOMATION_POINTS) ||
 	    score_view_automation(view, node, parameter, from, to, bins, &out))
 		return "Invalid automation range";

@@ -56,7 +56,7 @@ try {
             await wait('document.querySelector("#play")?.disabled === false');
             await click("#views");
             await click("#play");
-            await wait(`${synthRoot}?.querySelectorAll(".perone-controls label").length === 3`);
+            await wait(`${synthRoot}?.querySelectorAll(".parameter-controls label").length === 3`);
             const toggle = async (track, bit, pressed) => {
                 const button = `document.querySelector('#track-list .track:nth-child(${track + 1}) [data-listen="${bit}"]')`;
                 await wait(`${button} && !${button}.disabled`);
@@ -112,7 +112,7 @@ try {
                 "Only the selected node expands");
             assert(await evaluate(`${fixture} === selectedChainUI`), "Selecting the effect preserves its UI");
             await evaluate(`document.querySelector('.plugin[data-node="0"]').open = true`);
-            await wait(`${synthRoot}?.querySelectorAll('.perone-controls label').length === 3`);
+            await wait(`${synthRoot}?.querySelectorAll('.parameter-controls label').length === 3`);
             await evaluate(`(() => {
                 const gain = ${synthRoot}.querySelectorAll("input")[0]; gain.value = .03;
                 gain.dispatchEvent(new Event("input")); gain.dispatchEvent(new Event("change"));
@@ -133,7 +133,7 @@ try {
             await evaluate(`${root}.querySelector('#send-message').click()`);
             await wait(`${root}.querySelector('output').textContent === "0,127,255"`);
             await toggleParameters();
-            await wait(`${root}?.querySelectorAll(".perone-controls label").length === 3`);
+            await wait(`${root}?.querySelectorAll(".parameter-controls label").length === 3`);
             assert.equal(await evaluate("fixtureFreed"), 1);
             await toggleParameters();
             await wait(`${fixture}?.dataset.helper === "7"`);
@@ -162,7 +162,7 @@ try {
             assert.equal(await evaluate("fixtureFreed"), 1);
             await wait('!document.querySelector("#play").disabled');
             await key("Enter", "Enter", 2);
-            await wait(`${synthRoot}?.querySelector(".perone-controls")`);
+            await wait(`${synthRoot}?.querySelector(".parameter-controls")`);
             assert.equal(await evaluate('document.querySelectorAll("#track-list [data-listen][aria-pressed=true]").length'), 0,
                 "A newly prepared score clears mute/solo");
             assert.deepEqual(await inaudible(), [false, false, false]);
@@ -190,7 +190,7 @@ try {
             // Creation-time gestures and replies survive an asynchronous factory spanning several polls.
             await wait('parseFloat(document.querySelector("#time").value) > 2');
             await toggleParameters();
-            await wait(`${synthRoot}?.querySelector(".perone-controls")`);
+            await wait(`${synthRoot}?.querySelector(".parameter-controls")`);
             await evaluate("fixtureWait = true; fixtureResume = undefined");
             await toggleParameters();
             await wait('typeof fixtureResume === "function"');
@@ -201,11 +201,11 @@ try {
             // Bad callbacks detach the view; audio continues and a new view can attach cleanly.
             await evaluate("fixtureCallbacks.at(-1).set_parameter(0, .9)");
             await wait(`${root} === undefined`);
-            assert(await evaluate(`${synthRoot}?.querySelector(".perone-controls")`));
+            assert(await evaluate(`${synthRoot}?.querySelector(".parameter-controls")`));
             assert.match(await evaluate('document.querySelector("#errors").textContent'), /Invalid UI parameter/);
             assert.equal(await evaluate('document.querySelector("#stop").disabled'), false);
             await toggleParameters();
-            await wait(`${root}?.querySelector(".perone-controls")`);
+            await wait(`${root}?.querySelector(".parameter-controls")`);
             await toggleParameters();
             await wait(`${fixture}?.dataset.helper === "7"`);
             // Track headers select their actual chain and open the panel; other chains have no mounted views.
@@ -213,9 +213,9 @@ try {
             await evaluate(`document.querySelector('#track-list [data-track="1"]').click()`);
             await wait('!document.querySelector("#plugins").hidden && document.querySelector("#views").checked');
             assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 1);
-            await wait(`document.querySelector('.plugin[data-node="3"] .plugin-body > div')?.shadowRoot?.querySelector(".perone-controls")`);
+            await wait(`document.querySelector('.plugin[data-node="3"] .plugin-body > div')?.shadowRoot?.querySelector(".parameter-controls")`);
             await evaluate(`document.querySelector('#track-list [data-track="0"]').click()`);
-            await wait(`${synthRoot}?.querySelector(".perone-controls")`);
+            await wait(`${synthRoot}?.querySelector(".parameter-controls")`);
             assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 2);
             await openEffect();
             await wait(`${fixture}?.dataset.helper === "7"`);
@@ -228,7 +228,7 @@ try {
             const freed = await evaluate("fixtureFreed");
             await wait('!document.querySelector("#play").disabled');
             await key("Enter", "Enter", 2);
-            await wait(`${synthRoot}?.querySelector(".perone-controls")`);
+            await wait(`${synthRoot}?.querySelector(".parameter-controls")`);
             await evaluate("fixtureWait = true; fixtureResume = undefined");
             await openEffect();
             await wait('typeof fixtureResume === "function"');
@@ -241,7 +241,7 @@ try {
             assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 2);
             // Collapsing still invalidates a factory whose returned UI arrives later.
             await toggleParameters();
-            await wait(`${root}?.querySelector(".perone-controls")`);
+            await wait(`${root}?.querySelector(".parameter-controls")`);
             const beforePending = await evaluate("fixtureFreed");
             await evaluate("fixtureWait = true; fixtureResume = undefined");
             await toggleParameters();

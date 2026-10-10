@@ -1,44 +1,4 @@
-# Bundle metadata and parameter semantics. Loaded by the host before any DSP runs.
-
-(defn perone/finite? [x]
-  (and (number? x) (= (- x x) 0) (<= (math/abs x) 3.4028234663852886e38)))
-
-(defn perone/in-range? [p value]
-  (and (perone/finite? value) (<= (p :min) value (p :max))
-       (or (not (p :integer)) (= value (math/floor value)))))
-
-(defn perone/value [p value]
-  (assert (and (= (p :direction) :input) (perone/in-range? p value))
-    (string "invalid value for " (p :name)))
-  value)
-
-(defn perone/parameters [parameters]
-  (assert (and (indexed? parameters) (<= (length parameters) host/max-params)) "too many or invalid parameters")
-  (def ids @{})
-  (freeze
-    (seq [[i p] :pairs parameters]
-      (def id (p :id))
-      (assert (and (string? id) (> (length id) 0) (not (ids id))) "invalid or duplicate parameter ID")
-      (put ids id true)
-      (assert (or (= (p :direction) "input") (= (p :direction) "output")) "invalid parameter direction")
-      (def row
-        {:index i
-         :name (keyword id)
-         :label (or (p :name) id)
-         :unit (or (p :unit) "")
-         :min (if (p :isBypass) 0 (p :minimum))
-         :max (if (p :isBypass) 1 (p :maximum))
-         :default (if (p :isBypass) 0 (p :defaultValue))
-         :integer (not (not (or (p :integer) (p :toggled) (p :isBypass))))
-         :direction (keyword (p :direction))
-         :map (keyword (or (p :map) "linear"))
-         :scale-points (p :scalePoints)})
-      (assert (and (perone/finite? (row :min))
-                   (perone/finite? (row :max))
-                   (perone/in-range? row (row :default)))
-        "invalid parameter range/default")
-      row)))
-
+# Perone bundle metadata; parameter validation belongs to plugin/read.
 (defn- perone/load [path]
   (def product ((freeze (json/decode (slurp (string path "/product.json")) true)) :product))
   (def name (product :bundleName))
@@ -82,10 +42,14 @@
               (set offset slots))))
         (unless out (+= slots channels)))))
   (assert (and (> output 0) (<= slots host/max-inputs)) "unsupported audio layout")
-  (def parameters (perone/parameters (product :parameters)))
+  # Perone controls use float32; the common host control domain is double.
+  (each p (product :parameters)
+    (each key [:minimum :maximum :defaultValue]
+      (def value (p key))
+      (assert (and (number? value) (<= (math/abs value) 3.4028234663852886e38))
+        "Perone parameter is outside float32 range")))
   (def binary (string path "/" host/platform "/" name))
   {:product product
-   :parameters parameters
    :binary (string binary host/binary-suffix)
    :ui-binary (when (product :ui) (string binary "-ui" host/binary-suffix))
    :layout {:input-channels input
@@ -94,8 +58,7 @@
             :input-offset offset
             :input-slots slots
             :dsp-to-ui-size (or (get-in product [:messaging :dspToUiSize]) 0)
-            :ui-to-dsp-size (or (get-in product [:messaging :uiToDspSize]) 0)}
-   :defaults (map |(if (= ($ :direction) :input) ($ :default) nil) parameters)})
+            :ui-to-dsp-size (or (get-in product [:messaging :uiToDspSize]) 0)}})
 
 # One immutable description per bundle in this evaluation. A new Run rereads metadata.
 (def- perone/cache @{})

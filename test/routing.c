@@ -11,8 +11,9 @@ static int plugin(Score *s, int effect, float gain) {
 	char *binary;
 	PluginConfig config;
 	assert(!read_bundle(effect ? "build/test/effect.perone" : "build/test/fixture.perone", &binary, &config, NULL));
-	config.defaults[1] = gain;
+	config.parameters[1].value = gain;
 	int id = score_plugin(s, binary, &config);
+	plugin_config_free(&config);
 	free(binary);
 	assert(id >= 0);
 	return id;

@@ -221,7 +221,7 @@ try {
             })()`), "All routing blocks fit in the score map");
             await click('.routing-node[data-node="0"]');
             const effectUI = `document.querySelector('.plugin[data-node="0"] .plugin-body > div')?.shadowRoot`;
-            await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
+            await wait(`${effectUI}?.querySelectorAll('.parameter-controls label').length === 3`);
             assert(await evaluate('document.querySelector("#views").checked && !document.querySelector("#plugins").hidden'));
             const openNodes = () => evaluate('Array.from(document.querySelectorAll(".plugin[open]"), p => Number(p.dataset.node))');
             assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [1, 0, 5],
@@ -258,7 +258,7 @@ try {
             assert.equal(await evaluate(`document.querySelector('.plugin[data-node="3"] .plugin-body').textContent`), 'Inputs: Source <&>');
             assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 0, "Mix inspection opens no plugin UI");
             await click('.routing-node[data-node="0"]');
-            await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
+            await wait(`${effectUI}?.querySelectorAll('.parameter-controls label').length === 3`);
             assert.equal(await evaluate('document.querySelectorAll(".routing-cable.highlighted").length'), 2);
             assert.equal(await evaluate('document.querySelector(".routing-node.dim").dataset.node'), "3", "A parallel dry branch is outside the effect's path");
             await evaluate(`globalThis.inspectedUI = ${effectUI}`);
@@ -277,7 +277,7 @@ try {
                 "Track controls do not clear the selected node");
             await click('#track-list [data-listen="1"]');
             await click('.track-select[data-track="0"]');
-            await wait(`document.querySelector('.plugin[data-node="1"] .plugin-body > div')?.shadowRoot?.querySelectorAll('.perone-controls label').length === 3`);
+            await wait(`document.querySelector('.plugin[data-node="1"] .plugin-body > div')?.shadowRoot?.querySelectorAll('.parameter-controls label').length === 3`);
             assert.equal(await evaluate('document.querySelectorAll(".plugin").length'), 1, "Track selection restores its plugin chain");
             assert.equal(await evaluate('document.querySelectorAll(".routing-node[aria-pressed=true]").length'), 0,
                 "Track selection clears the node highlight");
@@ -297,7 +297,7 @@ try {
             })()`);
             assert(offsets.every(x => x >= 18), "Effect and mixer lanes are indented in the shared editor");
             await click('.routing-node[data-node="0"]');
-            await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
+            await wait(`${effectUI}?.querySelectorAll('.parameter-controls label').length === 3`);
             assert.deepEqual(await openNodes(), [0]);
             assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [1, 0, 5]);
             assert.equal(await evaluate('document.querySelector(".track-select[aria-pressed=true]").dataset.track'), "1");
@@ -359,7 +359,7 @@ try {
             await click("#play");
             await wait('document.querySelectorAll(".routing-node").length === 6');
             await click('.routing-node[data-node="0"]');
-            await wait(`${effectUI}?.querySelectorAll('.perone-controls label').length === 3`);
+            await wait(`${effectUI}?.querySelectorAll('.parameter-controls label').length === 3`);
             assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [1, 0, 5, 6, 7],
                 "The sidebar includes both downstream master effects");
             assert.deepEqual(await openNodes(), [0]);

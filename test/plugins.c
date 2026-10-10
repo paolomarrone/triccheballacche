@@ -31,7 +31,7 @@ static void test_synth(void) {
 	assert(!open_bundle(&e, "plugins/synth_mono/build/plugin.perone", DEFAULT_SAMPLE_RATE));
 	assert(e.config.midi == 0 && !e.config.input);
 	assert(e.config.nparams == 39);
-	assert(e.config.outputs & (UINT64_C(1) << 38));
+	assert(e.config.parameters[38].flags & PARAM_OUTPUT);
 	float warmup[4096];
 	int crossings;
 	assert(measure(&e, &crossings) < 1e-12);
@@ -58,6 +58,7 @@ static int plugin(Score *score, const char *path) {
 	PluginConfig config;
 	assert(!read_bundle(path, &binary, &config, NULL));
 	int id = score_plugin(score, binary, &config);
+	plugin_config_free(&config);
 	free(binary);
 	assert(id >= 0);
 	return id;

@@ -6,8 +6,14 @@
 enum { TRACK_MUTE = 1, TRACK_SOLO = 2 };
 
 typedef struct {
-	Plugin dsp[2];            // Independent L/R instances for a mono effect on stereo audio.
-	float values[2], *inputs; // Mixer controls and per-edge solo fades.
+	float level, *delay;
+	size_t length, position; // Interleaved samples, prepared outside rendering.
+} InputState;
+
+typedef struct {
+	Plugin dsp[2]; // Independent L/R instances for a mono effect on stereo audio.
+	float values[2];
+	InputState *inputs; // Per-edge solo fades and latency compensation.
 } NodeState;
 
 typedef struct {
@@ -58,5 +64,8 @@ uint64_t session_frame(const Session *s, double seconds);
 // Stop the callback first. Restore controls and held notes; reset DSP history.
 int session_seek(Session *s, uint64_t from);
 void session_sync(Session *s);
+// Main thread: 1 requests a restart with audio stopped; -1 indicates a plugin error.
+int session_poll(Session *s);
+int session_restart(Session *s);
 void session_free(Session *s);
 #endif

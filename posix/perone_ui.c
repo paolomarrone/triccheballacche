@@ -1,4 +1,4 @@
-#include "ui.h"
+#include "ui_internal.h"
 #include "module.h"
 #include "perone_ui.h"
 #include "util.h"
@@ -12,7 +12,7 @@
 #include <string.h>
 #include <unistd.h>
 
-struct UI {
+typedef struct {
 	Session *session;
 	int node;
 	Display *display;
@@ -22,52 +22,56 @@ struct UI {
 	const perone_ui_api *api;
 	perone_ui_callbacks callbacks;
 	unsigned width, height;
-	float shown[MAX_PARAMS];
+	double *shown;
 	int ready, closing, error;
-};
+} PeroneUI;
 
 static const char *bindir(void *handle) {
-	UI *ui = handle;
-	return ui->session->nodes[ui->node].dsp[0].dsp->bindir;
+	PeroneUI *ui = handle;
+	return module_bindir(ui->session->nodes[ui->node].dsp[0].dsp->module);
 }
 
 static const char *datadir(void *handle) {
-	UI *ui = handle;
-	return ui->session->nodes[ui->node].dsp[0].dsp->datadir;
+	PeroneUI *ui = handle;
+	return module_datadir(ui->session->nodes[ui->node].dsp[0].dsp->module);
 }
 
 static void parameter(void *handle, size_t index, float value) {
-	UI *ui = handle;
+	PeroneUI *ui = handle;
 	if (ui->closing)
 		return;
 	const Node *node = session_score(ui->session)->nodes + ui->node;
-	if (plugin_parameter(&node->config, &node->info, index, &value)) {
+	double adjusted = value;
+	if (plugin_parameter(&node->config, index, &adjusted)) {
 		ui->error = 1;
 		return;
 	}
-	edit_dsp(ui->session->nodes[ui->node].dsp[0].dsp, index, value);
+	edit_dsp(ui->session->nodes[ui->node].dsp[0].dsp, index, adjusted);
 }
 
 static void message(void *handle, size_t size, const void *data) {
-	UI *ui = handle;
+	PeroneUI *ui = handle;
 	if (!ui->closing && send_dsp(ui->session->nodes[ui->node].dsp[0].dsp, size, data))
 		ui->error = 1;
 }
 
-int ui_available(const Node *node) {
-	return node->info.ui && !access(node->info.ui, R_OK);
-}
+static void perone_close(void *view);
 
-int ui_open(UI **out, Session *session, int id) {
+static int perone_open_ui(void **out, Session *session, int id) {
 	*out = NULL;
 	const Node *node = session_score(session)->nodes + id;
 	if (!node->info.ui || (access(node->info.ui, F_OK) && errno == ENOENT))
 		return 0;
-	UI *ui = calloc(1, sizeof(*ui));
+	PeroneUI *ui = calloc(1, sizeof(*ui));
 	if (!ui)
 		return -1;
 	ui->session = session;
 	ui->node = id;
+	ui->shown = calloc(node->config.nparams, sizeof(double));
+	if (node->config.nparams && !ui->shown) {
+		free(ui);
+		return -1;
+	}
 	ui->library = dlopen(node->info.ui, RTLD_NOW | RTLD_LOCAL);
 	const char *error;
 	if (!ui->library) {
@@ -114,7 +118,7 @@ int ui_open(UI **out, Session *session, int id) {
 	if (!ui->instance || !(ui->widget = (Window)(uintptr_t)a->get_widget(ui->instance)))
 		goto fail;
 	for (int i = 0; i < node->config.nparams; ++i) {
-		ui->shown[i] = node->config.defaults[i];
+		ui->shown[i] = node->config.parameters[i].value;
 		read_dsp(session->nodes[id].dsp[0].dsp, i, &ui->shown[i]);
 		a->set_parameter(ui->instance, i, ui->shown[i]);
 	}
@@ -124,11 +128,12 @@ int ui_open(UI **out, Session *session, int id) {
 	return 0;
 fail:
 	fprintf(stderr, "[UI] %s: %s\n", node->path, error);
-	ui_close(ui);
+	perone_close(ui);
 	return -1;
 }
 
-void ui_show(UI *ui, int visible) {
+static void perone_show(void *view, int visible) {
+	PeroneUI *ui = view;
 	if (!ui)
 		return;
 	if (visible)
@@ -138,7 +143,8 @@ void ui_show(UI *ui, int visible) {
 	XFlush(ui->display);
 }
 
-int ui_poll(UI *ui) {
+static int perone_poll(void *view) {
+	PeroneUI *ui = view;
 	if (!ui)
 		return 0;
 	const Node *node = session_score(ui->session)->nodes + ui->node;
@@ -166,7 +172,7 @@ int ui_poll(UI *ui) {
 	XFlush(ui->display);
 	DSP *first = ui->session->nodes[ui->node].dsp[0].dsp;
 	for (int i = 0; i < node->config.nparams; ++i) {
-		float value;
+		double value;
 		if (read_dsp(first, i, &value) && isfinite(value) && value != ui->shown[i]) {
 			ui->api->set_parameter(ui->instance, i, value);
 			ui->shown[i] = value;
@@ -188,7 +194,8 @@ int ui_poll(UI *ui) {
 	return ui->error ? -1 : 0;
 }
 
-void ui_close(UI *ui) {
+static void perone_close(void *view) {
+	PeroneUI *ui = view;
 	if (!ui)
 		return;
 	ui->closing = 1;
@@ -201,5 +208,8 @@ void ui_close(UI *ui) {
 		XCloseDisplay(ui->display);
 	if (ui->library)
 		dlclose(ui->library);
+	free(ui->shown);
 	free(ui);
 }
+
+const UIOps perone_ui_ops = {perone_open_ui, perone_show, perone_poll, perone_close};

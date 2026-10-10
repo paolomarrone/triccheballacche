@@ -6,7 +6,7 @@ const host = await createHost(), perone = host.perone;
 const path = "build/test/effect.perone/wasm32/fixture.wasm";
 await perone.add(path, await readFile(path));
 const config = {path, sampleRate: 48000, capacity: 128, inputChannels: 1, outputChannels: 1,
-    midiBus: -1, parameters: [0, .5, 0], outputMask: [1, 0], toUi: 16, toDsp: 16};
+    midiBus: -1, parameters: [0, .5, 0], outputParameters: [1, 0, 0], toUi: 16, toDsp: 16};
 const left = perone.open(config), right = perone.open(config);
 const a = perone.instances.get(left), b = perone.instances.get(right);
 const process = p => { p.x[0].fill(.25); p.api.process(p.instance, p.inputs, p.outputs, 1); };

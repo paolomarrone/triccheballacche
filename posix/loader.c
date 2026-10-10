@@ -1,93 +1,9 @@
 #include "module.h"
-#include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <dlfcn.h>
 
 const size_t dsp_max_message = MAX_MESSAGE;
-
-struct Module {
-	Module *next;
-	void *handle;
-	const perone_api *api;
-	char *path, *bindir, *datadir;
-	size_t references;
-};
-
-static void release_module(Module *m) {
-	if (!m || --m->references)
-		return;
-	if (m->handle)
-		dlclose(m->handle);
-	free(m->path);
-	free(m->bindir);
-	free(m->datadir);
-	free(m);
-}
-
-void modules_free(Modules *modules) {
-	while (modules->head) {
-		Module *m = modules->head;
-		modules->head = m->next;
-		release_module(m);
-	}
-}
-
-static Module *acquire_module(Modules *modules, const char *path) {
-	char *resolved = realpath(path, NULL);
-	if (!resolved) {
-		fprintf(stderr, "[Loader] %s: cannot resolve plugin binary\n", path);
-		return NULL;
-	}
-	for (Module *m = modules ? modules->head : NULL; m; m = m->next)
-		if (!strcmp(m->path, resolved)) {
-			free(resolved);
-			++m->references;
-			return m;
-		}
-	Module *m = calloc(1, sizeof(*m));
-	if (!m) {
-		free(resolved);
-		return NULL;
-	}
-	m->references = 1;
-	m->path = resolved;
-	const char *error = "out of memory";
-	m->bindir = copy_string(resolved);
-	if (!m->bindir)
-		goto fail;
-	*strrchr(m->bindir, '/') = 0;
-	m->datadir = copy_string(m->bindir);
-	if (!m->datadir)
-		goto fail;
-	char *slash = strrchr(m->datadir, '/');
-	if (!slash) {
-		error = "plugin binary has no bundle directory";
-		goto fail;
-	}
-	*slash = 0;
-	m->handle = dlopen(resolved, RTLD_NOW | RTLD_LOCAL);
-	if (!m->handle) {
-		error = dlerror();
-		goto fail;
-	}
-	const perone_api *(*get_api)(uint32_t) = dlsym(m->handle, "perone_get_api");
-	if (!get_api || !(m->api = get_api(PERONE_ABI_VERSION))) {
-		error = "unsupported Perone ABI";
-		goto fail;
-	}
-	if (modules) {
-		++m->references;
-		m->next = modules->head;
-		modules->head = m;
-	}
-	return m;
-fail:
-	fprintf(stderr, "[Loader] %s: %s\n", path, error);
-	release_module(m);
-	return NULL;
-}
 
 int message_push(Messages *q, size_t size, const void *data) {
 	unsigned w = atomic_load_explicit(&q->write, memory_order_relaxed);
@@ -111,7 +27,7 @@ int message_pop(Messages *q, size_t *size, void *data) {
 	return 1;
 }
 
-static void message(void *handle, size_t size, const void *data) {
+void dsp_message(void *handle, size_t size, const void *data) {
 	DSP *dsp = handle;
 	if (atomic_load(&dsp->viewing) && message_push(&dsp->to_ui, size, data))
 		atomic_store(&dsp->overflow, 1);
@@ -126,7 +42,7 @@ void watch_dsp(DSP *dsp, int watching) {
 		atomic_store(&dsp->pending, 1);
 }
 
-void edit_dsp(DSP *dsp, size_t parameter, float value) {
+void edit_dsp(DSP *dsp, size_t parameter, double value) {
 	atomic_store(&dsp->wanted[parameter], value);
 	atomic_fetch_add(&dsp->requested[parameter], 1);
 	atomic_store(&dsp->pending, 1);
@@ -139,7 +55,7 @@ int send_dsp(DSP *dsp, size_t size, const void *data) {
 	return result;
 }
 
-int read_dsp(DSP *dsp, size_t parameter, float *value) {
+int read_dsp(DSP *dsp, size_t parameter, double *value) {
 	if (atomic_load(&dsp->applied[parameter]) != atomic_load(&dsp->requested[parameter]))
 		return 0;
 	*value = atomic_load(&dsp->values[parameter]);
@@ -150,108 +66,68 @@ int receive_dsp(DSP *dsp, size_t *size, void *data) {
 	return atomic_load(&dsp->overflow) ? -1 : message_pop(&dsp->to_ui, size, data);
 }
 
-static const char *bindir(void *handle) {
-	return ((DSP *)handle)->bindir;
-}
-
-static const char *datadir(void *handle) {
-	return ((DSP *)handle)->datadir;
-}
-
-DSP *open_dsp(Modules *modules, const char *path, const PluginConfig *config, unsigned sample_rate, size_t capacity) {
-	(void)capacity;
-	DSP *m = calloc(1, sizeof(*m));
-	if (!m)
+DSP *open_dsp(Modules *modules, const char *path, const PluginConfig *config, unsigned rate, size_t capacity) {
+	DSP *dsp = calloc(1, sizeof(*dsp));
+	if (!dsp)
 		return NULL;
-	m->config = *config;
-	atomic_init(&m->viewing, 0);
-	atomic_init(&m->pending, 0);
-	atomic_init(&m->overflow, 0);
-	for (int i = 0; i < MAX_PARAMS; ++i) {
-		atomic_init(&m->requested[i], 0);
-		atomic_init(&m->applied[i], 0);
-		atomic_init(&m->wanted[i], config->defaults[i]);
-		atomic_init(&m->values[i], config->defaults[i]);
-	}
-	atomic_init(&m->to_ui.read, 0);
-	atomic_init(&m->to_ui.write, 0);
-	atomic_init(&m->to_dsp.read, 0);
-	atomic_init(&m->to_dsp.write, 0);
-	m->to_ui.limit = config->to_ui;
-	m->to_dsp.limit = config->to_dsp;
-	const char *error = "cannot resolve plugin binary";
-	if (config->to_ui > MAX_MESSAGE || config->to_dsp > MAX_MESSAGE) {
-		error = "unsupported message size";
+	dsp->config = *config;
+	size_t n = config->nparams;
+	dsp->requested = calloc(n, sizeof(*dsp->requested));
+	dsp->applied = calloc(n, sizeof(*dsp->applied));
+	dsp->wanted = calloc(n, sizeof(*dsp->wanted));
+	dsp->values = calloc(n, sizeof(*dsp->values));
+	if (n && (!dsp->requested || !dsp->applied || !dsp->wanted || !dsp->values))
 		goto fail;
+	atomic_init(&dsp->viewing, 0);
+	atomic_init(&dsp->pending, 0);
+	atomic_init(&dsp->overflow, 0);
+	for (size_t i = 0; i < n; ++i) {
+		atomic_init(&dsp->requested[i], 0);
+		atomic_init(&dsp->applied[i], 0);
+		atomic_init(&dsp->wanted[i], config->parameters[i].value);
+		atomic_init(&dsp->values[i], config->parameters[i].value);
 	}
-	if ((config->to_ui && !(m->to_ui.data = malloc(MESSAGE_SLOTS * config->to_ui))) ||
-	    (config->to_dsp && !(m->to_dsp.data = malloc(MESSAGE_SLOTS * config->to_dsp)))) {
-		error = "out of memory";
+	dsp->to_ui.limit = config->to_ui;
+	dsp->to_dsp.limit = config->to_dsp;
+	atomic_init(&dsp->to_ui.read, 0);
+	atomic_init(&dsp->to_ui.write, 0);
+	atomic_init(&dsp->to_dsp.read, 0);
+	atomic_init(&dsp->to_dsp.write, 0);
+	if (config->to_ui > MAX_MESSAGE || config->to_dsp > MAX_MESSAGE)
 		goto fail;
-	}
-	m->module = acquire_module(modules, path);
-	if (!m->module) {
-		error = "cannot load Perone module";
+	if ((config->to_ui && !(dsp->to_ui.data = malloc(MESSAGE_SLOTS * config->to_ui))) ||
+	    (config->to_dsp && !(dsp->to_dsp.data = malloc(MESSAGE_SLOTS * config->to_dsp))))
 		goto fail;
-	}
-	m->api = m->module->api;
-	m->bindir = m->module->bindir;
-	m->datadir = m->module->datadir;
-	const perone_api *a = m->api;
-	error = "missing Perone function";
-	if (!a->alloc || !a->free || !a->init || !a->fini || !a->set_sample_rate || !a->mem_req || !a->mem_set ||
-	    !a->reset || !a->process || (config->midi >= 0 && !a->midi_msg_in) || (config->to_dsp && !a->msg_in))
+	dsp->module = module_open(modules, path, config->format);
+	if (!dsp->module)
 		goto fail;
-	for (int i = 0; i < config->nparams; ++i)
-		if ((config->outputs & (UINT64_C(1) << i)) ? !a->get_parameter : !a->set_parameter)
-			goto fail;
-	error = "cannot initialize Perone instance";
-	perone_callbacks callbacks = {m, bindir, datadir, message};
-	if (!(m->instance = a->alloc()) || a->init(m->instance, &callbacks))
+	if ((config->format == PLUGIN_CLAP ? clap_open : perone_open)(dsp, rate, capacity))
 		goto fail;
-	m->initialized = 1;
-	for (int i = 0; i < config->nparams; ++i)
-		if (!(config->outputs & (UINT64_C(1) << i)))
-			a->set_parameter(m->instance, i, config->defaults[i]);
-	a->set_sample_rate(m->instance, sample_rate);
-	size_t size = a->mem_req(m->instance);
-	if (size) {
-		if (!(m->memory = malloc(size)))
-			goto fail;
-		a->mem_set(m->instance, m->memory);
-	}
-	a->reset(m->instance);
-	return m;
+	return dsp;
 fail:
-	fprintf(stderr, "[Loader] %s: %s\n", path, error);
-	close_dsp(m);
+	fprintf(stderr, "[Plugin] %s: cannot initialize instance\n", path);
+	close_dsp(dsp);
 	return NULL;
 }
 
 void close_dsp(DSP *dsp) {
 	if (!dsp)
 		return;
-	if (dsp->initialized)
-		dsp->api->fini(dsp->instance);
-	free(dsp->memory);
-	if (dsp->instance)
-		dsp->api->free(dsp->instance);
-	release_module(dsp->module);
+	if (dsp->ops)
+		dsp->ops->close(dsp);
+	module_close(dsp->module);
 	free(dsp->to_ui.data);
 	free(dsp->to_dsp.data);
+	free(dsp->requested);
+	free(dsp->applied);
+	free(dsp->wanted);
+	free(dsp->values);
 	free(dsp);
 }
 
-void set_dsp(DSP *dsp, size_t parameter, float value) {
-	dsp->api->set_parameter(dsp->instance, parameter, value);
+void set_dsp(DSP *dsp, size_t parameter, double value) {
+	dsp->ops->set(dsp, parameter, value);
 	atomic_store(&dsp->values[parameter], value);
-}
-
-static void publish_outputs(DSP *dsp) {
-	if (atomic_load(&dsp->viewing))
-		for (int i = 0; i < dsp->config.nparams; ++i)
-			if (dsp->config.outputs & (UINT64_C(1) << i))
-				atomic_store(&dsp->values[i], dsp->api->get_parameter(dsp->instance, i));
 }
 
 void reset_dsp(DSP *dsp) {
@@ -261,23 +137,38 @@ void reset_dsp(DSP *dsp) {
 	atomic_store(&dsp->to_dsp.read, atomic_load(&dsp->to_dsp.write));
 	for (int i = 0; i < dsp->config.nparams; ++i)
 		atomic_store(&dsp->applied[i], atomic_load(&dsp->requested[i]));
-	dsp->api->reset(dsp->instance);
-	publish_outputs(dsp);
+	dsp->ops->reset(dsp);
 }
 
 void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message) {
-	dsp->api->midi_msg_in(dsp->instance, bus, message);
+	dsp->ops->midi(dsp, bus, message);
+}
+uint32_t latency_dsp(DSP *dsp) {
+	return dsp && dsp->ops->latency ? dsp->ops->latency(dsp) : 0;
+}
+int poll_dsp(DSP *dsp) {
+	return dsp && dsp->ops->poll ? dsp->ops->poll(dsp) : 0;
+}
+int restart_dsp(DSP *dsp) {
+	return dsp && dsp->ops->restart ? dsp->ops->restart(dsp) : 0;
+}
+int state_dsp(DSP *dsp, const char *path, int write) {
+	return dsp && dsp->ops->state ? dsp->ops->state(dsp, path, write) : -1;
+}
+int process_dsp(DSP *dsp, const float **inputs, float **outputs, size_t frames, const ProcessTime *time) {
+	return dsp->ops->process(dsp, inputs, outputs, frames, time);
 }
 
 void sync_dsp(DSP *dsp, DSP *paired) {
-	if (!dsp || !atomic_load(&dsp->pending))
+	if (!dsp)
 		return;
-	atomic_store(&dsp->pending, 0);
+	if (!atomic_exchange(&dsp->pending, 0))
+		goto sync;
 	for (int i = 0; i < dsp->config.nparams; ++i) {
 		unsigned request = atomic_load(&dsp->requested[i]);
 		if (request == atomic_load(&dsp->applied[i]))
 			continue;
-		float value = atomic_load(&dsp->wanted[i]);
+		double value = atomic_load(&dsp->wanted[i]);
 		set_dsp(dsp, i, value);
 		if (paired)
 			set_dsp(paired, i, value);
@@ -287,14 +178,15 @@ void sync_dsp(DSP *dsp, DSP *paired) {
 	size_t size;
 	unsigned char data[MAX_MESSAGE];
 	for (int i = 0; i < MESSAGE_SLOTS && message_pop(&dsp->to_dsp, &size, data); ++i) {
-		dsp->api->msg_in(dsp->instance, size, data);
+		if (dsp->ops->message)
+			dsp->ops->message(dsp, size, data);
 		if (paired)
-			paired->api->msg_in(paired->instance, size, data);
+			if (paired->ops->message)
+				paired->ops->message(paired, size, data);
 	}
-	publish_outputs(dsp);
-}
-
-void process_dsp(DSP *dsp, const float **inputs, float **outputs, size_t frames) {
-	dsp->api->process(dsp->instance, inputs, outputs, frames);
-	publish_outputs(dsp);
+sync:
+	if (dsp->ops->sync)
+		dsp->ops->sync(dsp);
+	if (paired && paired->ops->sync)
+		paired->ops->sync(paired);
 }

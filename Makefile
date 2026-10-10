@@ -15,6 +15,8 @@ JANET_INCLUDES = -I$(JANET)/src/include -I$(JANET)/src/conf
 SPORK ?= .deps/spork
 SPORK_REV = 0667f96b74de52747ffe5e19e185563ebf53816b
 WEBUI_REV = 52f9e75b92faf9a23fd150b3c60051c4ec85fc69
+CLAP_VERSION = 1.2.10
+CLAP ?= .deps/clap-$(CLAP_VERSION)
 WEBUI ?= .deps/webui-$(WEBUI_REV)
 PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
@@ -22,18 +24,18 @@ SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_P
 PLUGIN_SOURCES = plugin.c script.c trace.c
 SCORE_SOURCES = score_janet.c score.c score_view.c score_automation.c session.c sequence.c $(PLUGIN_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c transport.c
-PLUGIN_OBJECTS = $(addprefix build/obj/native/,plugin.o posix/loader.o script.o trace.o json.o janet.o)
+PLUGIN_OBJECTS = $(addprefix build/obj/native/,plugin.o posix/loader.o posix/module.o posix/perone.o posix/clap.o posix/clap_info.o posix/discovery.o json_write.o script.o trace.o json.o janet.o)
 SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o score_automation.o session.o sequence.o) $(PLUGIN_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
-NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host
-NATIVE_TESTS = $(addprefix build/test/,loader daw player routing score_view plugins ui view_json sequence)
-FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h tools/*.c test/*.c test/*.h test/perone/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
+NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host build/tools/plugin-scan
+NATIVE_TESTS = $(addprefix build/test/,loader daw player routing score_view plugins ui view_json sequence clap)
+FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h posix/*.c posix/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
 
 .PHONY: all cli gui tools clean format format-check
 all: cli
 cli: build/cli
 gui: build/gui
-tools: build/tools/perone-host
+tools: build/tools/perone-host build/tools/plugin-scan
 
 format:
 	clang-format -i $(FORMAT_SOURCES)
@@ -46,6 +48,12 @@ format-check:
 	mkdir -p .deps
 	curl -fL --retry 2 https://raw.githubusercontent.com/mackron/miniaudio/0.11.25/miniaudio.h -o $@.tmp
 	mv $@.tmp $@
+
+
+# CLAP is a header-only ABI; adapters stay outside the portable core.
+$(CLAP)/include/clap/clap.h:
+	git clone --depth 1 --branch $(CLAP_VERSION) https://github.com/free-audio/clap.git $(CLAP)
+
 
 $(JANET)/Makefile:
 	git clone --depth 1 --branch v$(JANET_VERSION) https://github.com/janet-lang/janet.git $(JANET)
@@ -83,9 +91,13 @@ build/obj/native/janet.o: build/generated/janet.c Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -MMD -MP -c $< -o $@
 
+CLAP_OBJECTS = $(addprefix build/obj/native/,posix/module.o posix/clap.o posix/clap_info.o posix/clap_ui.o tools/plugin-scan.o)
+$(CLAP_OBJECTS): override CPPFLAGS += -I$(CLAP)/include
+$(CLAP_OBJECTS): $(CLAP)/include/clap/clap.h
+
 build/obj/native/test/%.o: override CFLAGS += -UNDEBUG
-$(addprefix build/obj/native/,score_janet.o script.o trace.o posix/files.o posix/prepare.o posix/ui_x11.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
-build/obj/native/script.o: build/generated/perone.inc
+$(addprefix build/obj/native/,score_janet.o script.o trace.o posix/files.o posix/prepare.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
+build/obj/native/script.o: build/generated/perone.inc build/generated/plugin.inc
 build/obj/native/posix/files.o: build/generated/library.inc
 build/obj/native/score_janet.o: build/generated/daw.inc
 $(addprefix build/obj/native/,audio.o player.o posix/cli.o posix/export.o posix/gui.o tools/perone-host.o test/player.o): $(MINIAUDIO)
@@ -97,9 +109,13 @@ $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
 	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(LDLIBS) -o $@
 
 build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
-build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o posix/ui_x11.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
+build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o posix/ui.o posix/perone_ui.o posix/clap_ui.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS)
 build/tools/perone-host: build/obj/native/tools/perone-host.o $(PLUGIN_OBJECTS) build/obj/native/audio.o
-build/gui build/test/ui: LDLIBS += -lX11
+build/gui build/test/ui build/test/clap: private LDLIBS += -lX11
+
+build/tools/plugin-scan: $(addprefix build/obj/native/,tools/plugin-scan.o posix/clap.o posix/clap_info.o posix/module.o posix/loader.o posix/perone.o json_write.o)
+$(filter-out build/tools/plugin-scan,$(NATIVE_PROGRAMS)) $(filter-out build/test/score_view,$(NATIVE_TESTS)): | build/tools/plugin-scan
+
 
 # Only the GUI needs WebUI. Compile its two sources once, without an unused shared library.
 $(WEBUI)/include/webui.h:
@@ -159,6 +175,21 @@ $(MIXER_FIXTURE): test/perone/mixer.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -fPIC -fvisibility=hidden -shared $< -o $@
 
+build/test/fixture.clap: test/clap/plugin.c $(CLAP)/include/clap/clap.h Makefile
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I$(CLAP)/include -fPIC -shared $< -lX11 -o $@
+
+.PHONY: test-clap test-clap-ui
+test-clap: build/test/clap build/test/fixture.clap
+	./build/test/clap
+test-clap-ui: build/test/clap build/test/fixture.clap
+	./build/test/clap --ui
+build/test/clap: $(SCORE_OBJECTS) build/obj/native/posix/ui.o build/obj/native/posix/perone_ui.o build/obj/native/posix/clap_ui.o
+
+.PHONY: test-clap-editor
+test-clap-editor: gui build/test/fixture.clap
+	node test/clap-editor.mjs
+
 .PHONY: test test-plugins test-ui test-editor test-prog test-brickworks check-plugins prog
 test: $(addprefix build/test/,loader daw player routing score_view sequence) $(NATIVE_FIXTURES) $(MIXER_FIXTURE)
 	./build/test/loader
@@ -216,7 +247,7 @@ test-library-build: library cli build/test/loader | build/test
 # Wasm variants share sources, but keep separate objects for their memory models.
 EMCC ?= emcc
 WEB_FLAGS = -I. $(JANET_INCLUDES) -DJANET_SINGLE_THREADED -DPERONE_PLATFORM='"wasm32"' -DPERONE_SUFFIX='".wasm"'
-WEB_SOURCES = $(SCORE_SOURCES) $(VIEW_SOURCES) snapshot.c web/host.c web/loader.c
+WEB_SOURCES = $(SCORE_SOURCES) $(VIEW_SOURCES) snapshot.c web/host.c web/loader.c web/discovery.c
 WEB_OBJECTS = $(addprefix build/obj/web-offline/,$(WEB_SOURCES:.c=.o) janet.o json.o)
 PLAYER_OBJECTS = $(addprefix build/obj/web-player/,$(WEB_SOURCES:.c=.o) player.o web/player_api.o audio.o janet.o json.o)
 WEB_LINK = -lm --no-entry -sMODULARIZE -sEXPORT_ES6 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=2097152
@@ -248,7 +279,7 @@ build/obj/web-player/%.o: %.c Makefile | $(JANET)/Makefile
 
 $(PLAYER_OBJECTS): override WEB_FLAGS += $(PLAYER_FLAGS) -Ibuild/generated/web
 build/obj/web-offline/score_janet.o build/obj/web-player/score_janet.o: build/generated/daw.inc
-build/obj/web-offline/script.o build/obj/web-player/script.o: build/generated/perone.inc
+build/obj/web-offline/script.o build/obj/web-player/script.o: build/generated/perone.inc build/generated/plugin.inc
 
 build/obj/web-offline/janet.o build/obj/web-player/janet.o: build/generated/janet.c Makefile
 	mkdir -p $(dir $@)
@@ -348,7 +379,7 @@ clean:
 
 # Recheck configuration on each invocation; unchanged files keep their timestamps.
 # Capture global flags here so per-target additions cannot leak through prerequisites.
-build/config/native.compile: private CONFIG := $(CC) | $(CPPFLAGS) | $(CFLAGS) | $(SCRIPT_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(WEBUI) | $(BW_SOURCE)
+build/config/native.compile: private CONFIG := $(CC) | $(CPPFLAGS) | $(CFLAGS) | $(SCRIPT_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(WEBUI) | $(CLAP) | $(BW_SOURCE)
 build/config/native.link: private CONFIG := $(CC) | $(CFLAGS) | $(LDFLAGS) | $(LDLIBS) | $(TARGET_OS)
 build/config/web-offline.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(SPORK) | $(BW_SOURCE)
 build/config/web-player.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(PLAYER_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(BW_SOURCE)
@@ -368,7 +399,7 @@ $(CONFIG_FILES): FORCE
 	@rm -f $@.tmp
 
 NATIVE_OBJECTS = $(addprefix build/obj/native/,$(patsubst %.c,%.o,$(wildcard *.c posix/*.c tools/*.c test/*.c)) json.o janet.o vendor/webui.o vendor/civetweb.o vendor/wkwebview.o)
-$(NATIVE_OBJECTS) $(filter %$(PERONE_SUFFIX),$(NATIVE_FIXTURES)) $(MIXER_FIXTURE): build/config/native.compile
+$(NATIVE_OBJECTS) $(filter %$(PERONE_SUFFIX),$(NATIVE_FIXTURES)) $(MIXER_FIXTURE) build/test/fixture.clap: build/config/native.compile
 $(NATIVE_PROGRAMS) $(NATIVE_TESTS): build/config/native.link
 $(WEB_OBJECTS): build/config/web-offline.compile
 $(PLAYER_OBJECTS): build/config/web-player.compile

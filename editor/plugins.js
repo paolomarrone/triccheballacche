@@ -1,4 +1,4 @@
-import {create as generic} from "./perone-ui.js";
+import {create as generic} from "./parameter-ui.js";
 import {pluginControls} from "./plugin-controls.js";
 import {trackNodes} from "./graph.js";
 

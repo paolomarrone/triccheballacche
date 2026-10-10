@@ -3,7 +3,7 @@
 #include <string.h>
 
 #define SNAPSHOT_LIMIT (256u * 1024u * 1024u)
-#define SNAPSHOT_MAGIC UINT32_C(0x54424335)
+#define SNAPSHOT_MAGIC UINT32_C(0x54424336)
 
 typedef struct {
 	unsigned char *data;
@@ -97,14 +97,26 @@ static void transfer_score(Transfer *t, Score *s, Output *output) {
 		string(t, &n->path);
 		string(t, &n->name);
 		string(t, &n->key);
-		FIELD(t, n->config);
+		PluginConfig *c = &n->config;
+		FIELD(t, c->input);
+		FIELD(t, c->output);
+		FIELD(t, c->midi);
+		FIELD(t, c->input_offset);
+		FIELD(t, c->inputs);
+		FIELD(t, c->to_ui);
+		FIELD(t, c->to_dsp);
+		FIELD(t, c->format);
+		string(t, &c->id);
+		FIELD(t, c->nparams);
+		if (c->nparams < 0 || c->nparams > MAX_PARAMS) {
+			t->failed = 1;
+			return;
+		}
+		c->parameters = array(t, c->parameters, c->nparams, sizeof(Parameter));
 		string(t, &n->info.name);
 		string(t, &n->info.product);
 		string(t, &n->info.ui);
 		FIELD(t, n->info.resizable);
-		FIELD(t, n->info.minimum);
-		FIELD(t, n->info.maximum);
-		FIELD(t, n->info.integers);
 		FIELD(t, n->track);
 		FIELD(t, n->ninputs);
 		if (n->ninputs < 0 || n->ninputs > MAX_NODES || n->track < 0 || n->track > s->ntracks) {

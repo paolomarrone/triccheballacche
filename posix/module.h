@@ -1,43 +1,53 @@
 #ifndef MODULE_H
 #define MODULE_H
 #include "loader.h"
-#include "perone.h"
 #include <stdatomic.h>
 
 enum { MESSAGE_SLOTS = 64, MAX_MESSAGE = 4096 };
-
-// One producer and one consumer. Storage is allocated before processing.
 typedef struct {
 	atomic_uint read, write;
 	size_t sizes[MESSAGE_SLOTS], limit;
 	unsigned char *data;
 } Messages;
-
 int message_push(Messages *queue, size_t size, const void *data);
 int message_pop(Messages *queue, size_t *size, void *data);
-
-// One UI consumer per DSP. Attachment clears old notifications/overflow, preserving pending input.
-// The DSP must outlive every attachment; only the UI thread calls these control functions.
 void watch_dsp(DSP *dsp, int watching);
-// Validated input values only. Latest value wins; sync_dsp applies parameters in index order,
-// then messages in FIFO order. There is no combined parameter/message event order.
-void edit_dsp(DSP *dsp, size_t parameter, float value);
-int send_dsp(DSP *dsp, size_t size, const void *data); // 0 accepted, -1 full/invalid.
-// 1 current value, 0 while an edit awaits audio-thread acknowledgement.
-int read_dsp(DSP *dsp, size_t parameter, float *value);
-int receive_dsp(DSP *dsp, size_t *size, void *data); // 1 message, 0 empty, -1 overflow.
+void edit_dsp(DSP *dsp, size_t parameter, double value);
+int send_dsp(DSP *dsp, size_t size, const void *data);
+int read_dsp(DSP *dsp, size_t parameter, double *value);
+int receive_dsp(DSP *dsp, size_t *size, void *data);
+void dsp_message(void *dsp, size_t size, const void *data);
 
-// Native loader/UI internals. Only the audio thread calls the DSP while playing.
+typedef struct {
+	void (*close)(DSP *);
+	void (*set)(DSP *, size_t, double);
+	void (*reset)(DSP *);
+	void (*midi)(DSP *, size_t, const uint8_t *);
+	int (*process)(DSP *, const float **, float **, size_t, const ProcessTime *);
+	void (*sync)(DSP *); // Audio role, also while the device is stopped.
+	void (*message)(DSP *, size_t, const void *);
+	int (*poll)(DSP *);                     // Main thread. 1 requests a quiescent restart, -1 reports an error.
+	int (*restart)(DSP *);                  // Main thread, no concurrent audio calls.
+	uint32_t (*latency)(DSP *);             // Main thread, active.
+	int (*state)(DSP *, const char *, int); // Main thread, stopped; save if write != 0.
+} DspOps;
 struct DSP {
+	const DspOps *ops;
 	Module *module;
-	void *instance, *memory;
-	const perone_api *api;
-	const char *bindir, *datadir; // Borrowed from module.
-	int initialized;
-	PluginConfig config;
+	void *instance;
+	PluginConfig config; // Borrows the Plugin's owned parameter table.
 	atomic_int viewing, overflow, pending;
-	atomic_uint requested[MAX_PARAMS], applied[MAX_PARAMS];
-	_Atomic float wanted[MAX_PARAMS], values[MAX_PARAMS];
+	atomic_uint *requested, *applied;
+	_Atomic double *wanted, *values;
 	Messages to_ui, to_dsp;
 };
+
+Module *module_open(Modules *cache, const char *path, int format);
+void module_close(Module *module);
+void *module_symbol(Module *module, const char *symbol);
+const char *module_path(Module *module);
+const char *module_bindir(Module *module);
+const char *module_datadir(Module *module);
+int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity);
+int clap_open(DSP *dsp, unsigned sample_rate, size_t capacity);
 #endif

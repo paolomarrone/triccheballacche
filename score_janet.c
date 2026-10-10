@@ -56,11 +56,15 @@ static void options(Janet opts, const char *const *names) {
 }
 
 static Janet plugin(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 5);
-	PluginConfig config;
-	script_config(argv[1], argv[2], &config);
-	int id = checked(score_plugin(current, janet_getcstring(argv, 0), &config));
-	script_info(argv[3], argv[4], &current->nodes[id].info);
+	janet_fixarity(argc, 3);
+	PluginConfig config = {0};
+	Janet binary = janet_get(argv[0], janet_ckeywordv("binary"));
+	const char *path = janet_getcstring(&binary, 0);
+	script_config(argv[0], argv[1], &config);
+	int id = score_plugin(current, path, &config);
+	plugin_config_free(&config);
+	checked(id);
+	script_info(argv[0], argv[2], &current->nodes[id].info);
 	return janet_wrap_integer(id);
 }
 
