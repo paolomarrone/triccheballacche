@@ -9,7 +9,7 @@ typedef struct {
 	pthread_cond_t ready;
 	Score *score;
 	Output *output;
-	const char *path, *source;
+	const char *path, *source, *documents;
 	char **diagnostics;
 	ScoreView *view;
 	JanetVM *vm;
@@ -22,7 +22,7 @@ static void *evaluate(void *context) {
 	p->vm = janet_local_vm();
 	pthread_cond_signal(&p->ready);
 	pthread_mutex_unlock(&p->mutex);
-	int result = prepare_score(p->score, p->output, p->path, p->source, p->diagnostics, p->view);
+	int result = prepare_score(p->score, p->output, p->path, p->source, p->diagnostics, p->view, p->documents);
 	pthread_mutex_lock(&p->mutex);
 	p->result = result;
 	p->done = 1;
@@ -31,14 +31,15 @@ static void *evaluate(void *context) {
 	return NULL;
 }
 
-int prepare_background(
-    Score *score, Output *output, const char *path, const char *source, char **diagnostics, ScoreView *view) {
+int prepare_background(Score *score, Output *output, const char *path, const char *source, char **diagnostics,
+    ScoreView *view, const char *documents) {
 	Preparation p = {.mutex = PTHREAD_MUTEX_INITIALIZER,
 	    .ready = PTHREAD_COND_INITIALIZER,
 	    .score = score,
 	    .output = output,
 	    .path = path,
 	    .source = source,
+	    .documents = documents,
 	    .diagnostics = diagnostics,
 	    .view = view};
 	pthread_t thread;

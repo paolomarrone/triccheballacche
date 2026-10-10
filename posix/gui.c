@@ -219,7 +219,7 @@ static void command(Editor *editor, webui_event_t *event) {
 	int changed = 0;
 	if (!*path)
 		path = editor->entry;
-	if (webui_get_size_at(event, 2) > MAX_SOURCE) {
+	if (webui_get_size_at(event, 2) + webui_get_size_at(event, 3) > MAX_SOURCE) {
 		error = "Score too large (at most 8 MiB)";
 	} else if (!strcmp(op, "open")) {
 		error = file_read(path, &text);
@@ -241,7 +241,7 @@ static void command(Editor *editor, webui_event_t *event) {
 			error = "Out of memory";
 		if (!error) {
 			next->sample_rate = 48000;
-			if (prepare_background(next, &output, path, source, &diagnostics, &score))
+			if (prepare_background(next, &output, path, source, &diagnostics, &score, webui_get_string_at(event, 3)))
 				error = diagnostics ? diagnostics : next->error ? next->error : "Preparation failed";
 		}
 		if (!error && live) {

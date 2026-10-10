@@ -295,7 +295,8 @@ static Janet seal(int32_t argc, Janet *argv) {
 	return janet_wrap_nil();
 }
 
-int prepare_score(Score *s, Output *cfg, const char *path, const char *source, char **diagnostics, ScoreView *view) {
+int prepare_score(Score *s, Output *cfg, const char *path, const char *source, char **diagnostics, ScoreView *view,
+    const char *documents) {
 	if (diagnostics)
 		*diagnostics = NULL;
 	if (view)
@@ -340,6 +341,13 @@ int prepare_score(Score *s, Output *cfg, const char *path, const char *source, c
 #include "build/generated/daw.inc"
 	    ;
 	int result = janet_dostring(env, daw_source, "lib/daw.janet", NULL);
+	if (!result && documents && *documents) {
+		static const char document_source[] =
+#include "build/generated/documents.inc"
+		    ;
+		janet_def(env, "host/documents-json", janet_cstringv(documents), NULL);
+		result = janet_dostring(env, document_source, "lib/documents.janet", NULL);
+	}
 	if (!result && view)
 		result = janet_dostring(env,
 		    "(import ./lib/trace :as host-trace)"
@@ -371,7 +379,7 @@ int prepare_score(Score *s, Output *cfg, const char *path, const char *source, c
 
 int load_score(Session *s, Output *cfg, const char *path) {
 	Score score = {.sample_rate = s->sample_rate};
-	int result = prepare_score(&score, cfg, path, NULL, NULL, NULL);
+	int result = prepare_score(&score, cfg, path, NULL, NULL, NULL, NULL);
 	if (result)
 		s->error = score.error;
 	else

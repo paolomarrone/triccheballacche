@@ -12,7 +12,7 @@
     <button id="stop" title="Stop · Esc" aria-label="Stop" disabled>■</button>
     <button id="rewind" title="Return to start · Home in the timeline" aria-label="Return to start" disabled>|◀</button>
     <div id="file-bar">
-        <input id="path" type="text" aria-label="Score path" title="Enter a path and press Enter to open" spellcheck="false" placeholder="examples/gui.janet" disabled>
+        <input id="path" type="text" aria-label="Document or project path" title="Enter a path and press Enter to open" spellcheck="false" placeholder="examples/gui.janet" disabled>
         <span id="modified" title="Unsaved changes" aria-label="Unsaved changes"></span>
         <button id="open" class="icon" title="Open file" aria-label="Open file" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9V5h6l2 2h10v2M3 9h19l-4 11H3z"/></svg></button>
         <button id="save" class="icon" title="Save · Ctrl+S" aria-label="Save" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21H3V3h14l4 4v14zM7 3v6h9V3M7 21v-8h10v8"/></svg></button>
@@ -23,6 +23,11 @@
 </nav>
 <main>
     <div id="workspace">
+        <div id="document-bar">
+            <div id="document-tabs" role="tablist" aria-label="Project documents"></div>
+            <button id="new-document" class="icon" title="New document" aria-label="New document" disabled>+</button>
+            <button id="project" class="icon" popovertarget="project-menu" title="Project" aria-label="Project" disabled>⋯</button>
+        </div>
         <div id="sheet">
             <div id="gutter" aria-hidden="true"><pre id="numbers"></pre></div>
             <div id="input">
@@ -55,6 +60,14 @@
     </aside>
 </main>
 <div id="automation-parameters" popover="auto" role="group" aria-label="Automation parameters"></div>
+<div id="project-menu" popover="auto" aria-label="Project">
+    <p id="project-root"></p>
+    <label>Entry <select id="project-entry" aria-label="Project entry point"></select></label>
+    <button id="open-document">Open document…</button>
+    <button id="remove-document" title="Remove from the project; keep the saved file">Remove document</button>
+    <button id="save-project" title="Save all documents and project · Ctrl+Shift+S">Save project</button>
+    <button id="new-project">New project…</button>
+</div>
 <footer>
     <span id="state" role="status">Connecting…</span>
     <input id="time" type="number" min="0" step="any" value="0.00" aria-label="Position in seconds" title="Position in seconds · Enter to seek" disabled><span>s</span>
@@ -82,5 +95,14 @@
     <div id="file-list" aria-label="Files"></div>
     <p id="file-error" role="alert" hidden></p>
     <footer id="file-local" hidden><button id="file-upload">Choose from device…</button><input id="file-input" type="file" accept=".janet,text/plain" hidden></footer>
+</dialog>
+<dialog id="document-dialog" aria-labelledby="document-title">
+    <header><h2 id="document-title">New document</h2><button class="icon" data-close title="Cancel" aria-label="Cancel">×</button></header>
+    <form id="document-form">
+        <label id="document-label" for="document-name">Path relative to project folder</label>
+        <input id="document-name" type="text" spellcheck="false" autocomplete="off" required>
+        <p id="document-error" role="alert" hidden></p>
+        <button type="submit">Create</button>
+    </form>
 </dialog>
 </html>

@@ -1,5 +1,5 @@
 // Only source and metadata are needed for preparation; DSP/UI binaries stay in the playback host.
-export function prepareBackground(host, path, source, sampleRate) {
+export function prepareBackground(host, path, source, sampleRate, documents = "") {
     const files = [];
     function collect(directory) {
         for (const name of host.FS.readdir(directory)) {
@@ -35,7 +35,7 @@ export function prepareBackground(host, path, source, sampleRate) {
             } catch (error) { finish(error); }
             finally { host._free(pointer); }
         };
-        try { worker.postMessage({files, path, source, sampleRate}, files.map(file => file.bytes.buffer)); }
+        try { worker.postMessage({files, path, source, sampleRate, documents}, files.map(file => file.bytes.buffer)); }
         catch (error) { finish(error); }
     });
 }

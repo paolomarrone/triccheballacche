@@ -113,13 +113,31 @@ Editors use 48000 Hz.
 
 ## Use the editor
 
-Open a file with the path bar's folder icon, enter a path and press Enter, or
-choose an example. Save uses the disk on native; web Download saves a local copy
-and updates the session's files. Reloading the page restores the published files.
+Open a Janet file or `project.tb.json` with the folder icon or path bar, or choose
+an example. A single file starts a project with that file as its entry point.
+Tabs switch documents; **+** creates one, including paths such as `lib/notes.janet`.
+The **⋯** project menu opens existing documents, selects the entry point, creates
+projects and saves all files (Ctrl/Command+Shift+S). Removing a document from the
+project keeps its saved file. Each document retains its selection and undo history.
 
-- **Play** (Ctrl/Command+Space) evaluates changed code or resumes the prepared
-  score. Ctrl/Command+Enter forces evaluation, including changed imports.
-  Opening another file keeps audio running; Play starts it as a new session.
+Projects are ordinary folders. `project.tb.json` contains only
+`{"entry":"main.janet","files":["main.janet","lib/notes.janet"]}`; paths are relative
+to that file. Libraries are ordinary Janet modules: put `(def pitches [36 43 39])`
+in `lib/notes.janet`, then `(import ./lib/notes)` and use `notes/pitches` from
+`main.janet`. Modules can import other modules and be shared between projects.
+The CLI still takes the entry's `.janet` path.
+
+Save (Ctrl/Command+S) writes the current document. Native writes to disk; web
+stores saved files in this browser and downloads the current document. Save
+project stores every document and its manifest, without individual downloads.
+Browser storage is local to this site's origin; unsaved drafts are not recovered
+after closing the page. Cloud sync and version history are not implemented.
+
+- **Play** (Ctrl/Command+Space) evaluates the project's entry, including unsaved
+  edits in its modules, or resumes the prepared score. Switching tabs does not
+  change the entry. Ctrl/Command+Enter forces evaluation, including changes on
+  disk to imports outside the project. Opening another project keeps audio
+  running; Play starts it as a new session. Evaluation never saves drafts.
 - **Stop** (Esc) holds the position and DSP state. Click the ruler or enter
   seconds to seek; seeking resets effect history and retriggers spanning notes.
 - **Live updates** to `daw/score` enter on the next beat grid (`:quantum`, default
@@ -214,7 +232,7 @@ musical names keep their spelling. Formatting is in `.editorconfig` and
 | `make test-web` / `make test-browser` | Emscripten/Node.js; Chromium for browser. |
 | `make test-editor` | Native GUI build, Node.js, Chromium and an audio device. |
 | `make test-parameter-ui` | Node.js and Chromium; no audio build. |
-| `make test-live test-editor-ui test-score-space test-graph` | Native and browser prerequisites. |
+| `make test-projects test-live test-editor-ui test-score-space test-graph` | Native and browser prerequisites. |
 | `make test-library` | Native and Wasm production bundles, plus editor prerequisites. |
 | `make -C plugins/piano test` | Downloaded bank and Tibia; `test-web` also needs Emscripten/Node.js. |
 

@@ -256,9 +256,9 @@ static void test_live_clock(void) {
 		ScoreView view, next_view;
 		Transport transport = {0};
 		Output output;
-		assert(!prepare_score(&initial, &output, "test/sequence.janet", NULL, NULL, &view));
+		assert(!prepare_score(&initial, &output, "test/sequence.janet", NULL, NULL, &view, NULL));
 		assert(!session_activate(&s, &initial));
-		assert(!prepare_score(&next, &output, "test/sequence.janet", NULL, NULL, &next_view));
+		assert(!prepare_score(&next, &output, "test/sequence.janet", NULL, NULL, &next_view, NULL));
 		Player *p = player_new(&s);
 		assert(p);
 		transport_attach(&transport, &s, &view);
@@ -285,7 +285,7 @@ static void test_live_clock(void) {
 			assert(!player_start(p));
 			transport_started(&transport);
 			next.sample_rate = rates[i];
-			assert(!prepare_score(&next, &output, "test/sequence.janet", NULL, NULL, &next_view));
+			assert(!prepare_score(&next, &output, "test/sequence.janet", NULL, NULL, &next_view, NULL));
 			assert(!transport_update(&transport, &next, &next_view, player_position(p)));
 			uint64_t boundary = s.pending->at;
 			while (s.time <= boundary)
@@ -316,7 +316,7 @@ static void test_live_clock(void) {
 		free(state);
 		// A fresh session advances both revisions, even though its audio counter starts at zero.
 		initial.sample_rate = rates[i];
-		assert(!prepare_score(&initial, &output, "test/sequence.janet", NULL, NULL, &view));
+		assert(!prepare_score(&initial, &output, "test/sequence.janet", NULL, NULL, &view, NULL));
 		assert(!session_activate(&s, &initial));
 		transport_attach(&transport, &s, &view);
 		assert(transport.revision == 4 && transport.control_revision == 4 && transport.time == 0);

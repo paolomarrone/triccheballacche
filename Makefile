@@ -87,7 +87,7 @@ build/obj/native/test/%.o: override CFLAGS += -UNDEBUG
 $(addprefix build/obj/native/,score_janet.o script.o trace.o posix/files.o posix/prepare.o posix/ui_x11.o tools/perone-host.o test/loader.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
 build/obj/native/script.o: build/generated/perone.inc
 build/obj/native/posix/files.o: build/generated/library.inc
-build/obj/native/score_janet.o: build/generated/daw.inc
+build/obj/native/score_janet.o: build/generated/daw.inc build/generated/documents.inc
 $(addprefix build/obj/native/,audio.o player.o posix/cli.o posix/export.o posix/gui.o tools/perone-host.o test/player.o): $(MINIAUDIO)
 $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): override CPPFLAGS += -I$(WEBUI)/include
 $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): $(WEBUI)/include/webui.h
@@ -247,7 +247,7 @@ build/obj/web-player/%.o: %.c Makefile | $(JANET)/Makefile
 	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) -MMD -MP -c $< -o $@
 
 $(PLAYER_OBJECTS): override WEB_FLAGS += $(PLAYER_FLAGS) -Ibuild/generated/web
-build/obj/web-offline/score_janet.o build/obj/web-player/score_janet.o: build/generated/daw.inc
+build/obj/web-offline/score_janet.o build/obj/web-player/score_janet.o: build/generated/daw.inc build/generated/documents.inc
 build/obj/web-offline/script.o build/obj/web-player/script.o: build/generated/perone.inc
 
 build/obj/web-offline/janet.o build/obj/web-player/janet.o: build/generated/janet.c Makefile
@@ -311,6 +311,10 @@ test-browser: test-web
 
 test-live: gui test-web
 	node test/live-editor.mjs
+
+.PHONY: test-projects
+test-projects: gui build/web/player.mjs $(NATIVE_FIXTURES) $(WEB_FIXTURES) | build/test
+	node test/projects.mjs
 
 # Production bundles must already contain their separately compiled wasm32 binaries.
 test-polpo-web: build/web/offline.mjs build/web/player.mjs

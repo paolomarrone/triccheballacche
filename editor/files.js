@@ -16,7 +16,7 @@ export function files(request, open, upload) {
             current = directory.value = result.path;
             byId("file-upload").disabled = false;
             list.replaceChildren();
-            const entries = result.files.filter(file => file.directory || file.name.endsWith(".janet"));
+            const entries = result.files.filter(file => file.directory || file.name.endsWith(".janet") || file.name.endsWith(".tb.json"));
             entries.sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name));
             for (const file of entries) {
                 const button = document.createElement("button");
@@ -31,7 +31,7 @@ export function files(request, open, upload) {
             }
             if (!entries.length) {
                 const empty = document.createElement("p");
-                empty.textContent = "No Janet files or folders.";
+                empty.textContent = "No projects, Janet files or folders.";
                 list.append(empty);
             }
         } catch (cause) {

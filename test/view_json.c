@@ -11,7 +11,7 @@ int main(int argc, char **argv) {
 	Score session = {.sample_rate = atoi(argv[1])};
 	ScoreView view;
 	Output output;
-	assert(!prepare_score(&session, &output, "test/view-score.janet", NULL, NULL, &view));
+	assert(!prepare_score(&session, &output, "test/view-score.janet", NULL, NULL, &view, NULL));
 	score_free(&session);
 	const char *operations[] = {"score", "range", "range", "status", "origin", "range", "range", "range", "origin",
 	    "unknown", "automation", "automation", "automation", "automation", "automation", "automation", "automation",

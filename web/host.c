@@ -26,7 +26,8 @@ void web_score_free(WebScore *score) {
 	}
 }
 
-static WebScore *prepare(const char *path, const char *source, unsigned sample_rate, int project, int describe) {
+static WebScore *prepare(
+    const char *path, const char *source, unsigned sample_rate, int project, int describe, const char *documents) {
 	WebScore *score = calloc(1, sizeof(*score));
 	if (!score)
 		return NULL;
@@ -35,7 +36,7 @@ static WebScore *prepare(const char *path, const char *source, unsigned sample_r
 		web_score_free(score);
 		return NULL;
 	}
-	if (prepare_score(&score->description, &score->output, path, source, NULL, score->view) ||
+	if (prepare_score(&score->description, &score->output, path, source, NULL, score->view, documents) ||
 	    (!describe && session_activate(&score->session, &score->description))) {
 		fprintf(stderr, "Score failed: %s\n",
 		    score->description.error   ? score->description.error
@@ -48,11 +49,11 @@ static WebScore *prepare(const char *path, const char *source, unsigned sample_r
 }
 
 WebScore *score_new(const char *path, unsigned sample_rate) {
-	return prepare(path, NULL, sample_rate, 0, 0);
+	return prepare(path, NULL, sample_rate, 0, 0, NULL);
 }
 
 WebScore *score_prepare(const char *path, const char *source, unsigned sample_rate) {
-	return prepare(path, source, sample_rate, 1, 0);
+	return prepare(path, source, sample_rate, 1, 0, NULL);
 }
 
 size_t score_frames(WebScore *score) {
@@ -90,8 +91,8 @@ int score_listen(WebScore *score, int track, int flags) {
 	return session_listen(&score->session, track, flags);
 }
 
-WebScore *score_describe(const char *path, const char *source, unsigned sample_rate) {
-	return prepare(path, source, sample_rate, 1, 1);
+WebScore *score_describe(const char *path, const char *source, unsigned sample_rate, const char *documents) {
+	return prepare(path, source, sample_rate, 1, 1, documents);
 }
 
 static size_t packed_length;

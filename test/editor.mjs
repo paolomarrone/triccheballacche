@@ -33,7 +33,7 @@ try {
     await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {
         await call("Page.navigate", {url});
         await wait('document.querySelector("#play")?.disabled === false');
-        await call("Emulation.setDeviceMetricsOverride", {width: 900, height: 520, deviceScaleFactor: 1, mobile: false});
+        await call("Emulation.setDeviceMetricsOverride", {width: 900, height: 560, deviceScaleFactor: 1, mobile: false});
         await evaluate(`(() => {
             const call = webui.call.bind(webui);
             window.reports = []; window.ranges = []; window.origins = [];
@@ -63,7 +63,7 @@ try {
             const number = document.querySelector('#numbers span').getBoundingClientRect();
             return number.left >= gutter.left && number.right <= gutter.right;
         })()`), "Row numbers must remain inside the gutter");
-        assert(await evaluate('(document.querySelector("#sheet").clientHeight + document.querySelector("#timeline").clientHeight) > innerHeight * 0.82'), "Keep the editor dense");
+        assert(await evaluate('["sheet", "document-bar", "timeline"].reduce((height, id) => height + document.getElementById(id).clientHeight, 0) > innerHeight * 0.82'), "Keep the editor dense");
         const changed = source.replace("0.01", "0.02");
         await set("#code", changed);
         await click("#play");
@@ -91,7 +91,7 @@ try {
         await set("#code", changed);
         await wait(`document.querySelector('#marks [data-line="${producer}"]')`);
         await set("#path", `${directory}/another.janet`);
-        assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
+        assert(await evaluate('document.querySelector("#marks").childElementCount > 0'), "Typing a path does not change the active document");
         await set("#path", path);
         await wait(`document.querySelector('#marks [data-line="${producer}"]')`);
         // Gutter and marks follow the textarea's scroll without changing its text or selection.

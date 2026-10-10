@@ -1,13 +1,14 @@
 import {createPlayerHost, attachPlayer, closePlayer} from "./player.js";
 import {prepareBackground} from "./prepare.js";
 import {addFile} from "./host.js";
+import {storage} from "./storage.js";
 
-export const saveLabel = "Download", saveTitle = "Download a copy of the score · Ctrl+S";
+export const saveLabel = "Save and download", saveTitle = "Save locally and download this document · Ctrl+S";
 export const canUpload = true;
 const options = new URLSearchParams(location.search);
 const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();
-let library;
+let library, savedFiles;
 let host, player, transport = 0, failure = "", log = [];
 
 export async function connect() {
@@ -37,6 +38,9 @@ export async function connect() {
             path: file.path, text: file.path.endsWith(".json") ? host.FS.readFile(host.perone.path(file.path), {encoding: "utf8"}) : undefined
         }));
     library = {paths: [url.href], files: entries};
+    savedFiles = await storage();
+    for (const file of await savedFiles.files())
+        await addFile(host, file.path, new TextEncoder().encode(file.text));
     transport = host._transport_new();
     if (!transport) throw Error("Out of memory");
 }
@@ -57,14 +61,14 @@ async function stop() {
     if (player) await player.stop();
 }
 
-async function run(path, source, state, live) {
+async function run(path, source, state, live, documents) {
     if (live && state.queued) throw Error("Wait for the pending revision to become active");
     if (live && !(state.playing && state.live)) throw Error("Live updates require a playing live score");
     failure = "";
     log = [];
     let nextScore = 0, replacing = false;
     try {
-        nextScore = await prepareBackground(host, path, source, 48000);
+        nextScore = await prepareBackground(host, path, source, 48000, documents);
         if (live) {
             player.update(nextScore);
             host._web_score_free(nextScore);
@@ -140,12 +144,18 @@ export async function command(op, ...args) {
         } else if (op === "save") {
             const source = checkedText(args[1]);
             await addFile(host, path, new TextEncoder().encode(source));
-            const url = URL.createObjectURL(new Blob([source], {type: "text/plain;charset=utf-8"}));
-            const link = document.createElement("a");
-            link.href = url; link.download = path.split("/").at(-1);
-            link.click();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } else if (op === "run" || op === "update") result = await run(path, checkedText(args[1]), state, op === "update");
+            await savedFiles.save(host.perone.path(path), source);
+            if (args[2] !== "quiet") {
+                const url = URL.createObjectURL(new Blob([source], {type: "text/plain;charset=utf-8"}));
+                const link = document.createElement("a");
+                link.href = url; link.download = path.split("/").at(-1);
+                link.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+        } else if (op === "run" || op === "update") {
+            checkedText((args[1] || "") + (args[2] || ""));
+            result = await run(path, checkedText(args[1]), state, op === "update", args[2] || "");
+        }
         else if (op === "seek") {
             const seconds = Number(args[0]);
             if (!player) throw Error("Run a score before seeking");
@@ -188,6 +198,7 @@ export async function close() {
     player = undefined;
     if (transport) host._transport_free_web(transport);
     transport = 0;
+    savedFiles?.close();
 }
 
 export function uiUrl(node) {

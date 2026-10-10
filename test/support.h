@@ -5,7 +5,7 @@
 static inline int prepare_session(
     Session *s, Output *output, const char *path, const char *source, char **diagnostics, ScoreView *view) {
 	Score score = {.sample_rate = s->sample_rate};
-	int result = prepare_score(&score, output, path, source, diagnostics, view);
+	int result = prepare_score(&score, output, path, source, diagnostics, view, NULL);
 	if (result)
 		s->error = score.error;
 	else

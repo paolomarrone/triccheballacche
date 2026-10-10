@@ -1,6 +1,6 @@
 :root { color-scheme: light dark; font-family: system-ui, sans-serif; font-size: 13px; -webkit-user-select: none; user-select: none; --muted: light-dark(#666, #aaa); --border: light-dark(#ccc, #444); --active: light-dark(#fff0ba, #493d20); --accent: light-dark(#946000, #edc56c); }
 * { box-sizing: border-box; }
-input, textarea, [contenteditable=true], #errors, #file-error { -webkit-user-select: text; user-select: text; }
+input, textarea, [contenteditable=true], #errors, #file-error, #document-error { -webkit-user-select: text; user-select: text; }
 body { margin: 0; padding: 6px; height: 100dvh; display: flex; flex-direction: column; gap: 5px; }
 nav, footer { display: flex; align-items: center; gap: 5px; }
 body > nav { flex-wrap: wrap; }
@@ -29,7 +29,7 @@ footer { color: var(--muted); font-size: 12px; }
 
 #split { flex: 0 0 5px; margin: -3px 0; cursor: row-resize; touch-action: none; }
 #split:hover, #split:focus-visible { background: var(--border); }
-#timeline { display: flex; flex-direction: column; flex: 0 1 240px; min-height: 100px; border: 1px solid var(--border); }
+#timeline { display: flex; flex-direction: column; flex: 0 1 min(240px, 50%); min-height: 100px; border: 1px solid var(--border); }
 #timeline-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px; border-bottom: 1px solid var(--border); }
 #note-info { margin-left: auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 12px; }
 #timeline-body { flex: 1; min-height: 0; position: relative; }
@@ -40,6 +40,19 @@ footer { color: var(--muted); font-size: 12px; }
 #lanes-space { pointer-events: none; }
 
 #workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; gap: 5px; }
+#document-bar { display: flex; gap: 3px; min-height: 28px; }
+#document-tabs { display: flex; flex: 1; min-width: 0; overflow-x: auto; }
+#document-tabs button { flex: 0 0 auto; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; font-size: 12px; }
+#document-tabs button[aria-selected=true] { color: CanvasText; border-color: var(--accent); background: var(--active); }
+#project-menu { margin: 45px 10px auto auto; width: 300px; padding: 10px; border: 1px solid var(--border); background: Canvas; color: CanvasText; }
+#project-menu p { margin: 0 0 10px; overflow-wrap: anywhere; font: 11px monospace; color: var(--muted); }
+#project-menu label { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+#project-entry { flex: 1; min-width: 0; }
+#project-menu > button { display: block; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; padding: 7px; }
+#project-menu > button:hover { background: var(--active); }
+#document-dialog { width: min(440px, calc(100vw - 24px)); }
+#document-form { display: grid; gap: 10px; padding: 12px; }
+#document-form button { justify-self: end; }
 #plugins { display: flex; flex-direction: column; flex: 0 0 360px; min-width: 0; max-width: 65%; border: 1px solid var(--border); }
 #plugin-list { overflow: auto; min-height: 0; }
 .plugin { border-bottom: 1px solid var(--border); }
@@ -112,5 +125,5 @@ dialog h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
 #file-list button { display: block; width: 100%; padding: 5px 8px; border: 0; text-align: left; background: transparent; color: inherit; overflow-wrap: anywhere; }
 #file-list button:hover { background: var(--active); }
 #file-list p { padding: 0 8px; color: var(--muted); }
-#file-error { margin: 0; padding: 8px; color: light-dark(#a32e20, #ff9b8e); }
+#file-error, #document-error { margin: 0; padding: 8px; color: light-dark(#a32e20, #ff9b8e); }
 #file-local { padding: 8px; border-top: 1px solid var(--border); }

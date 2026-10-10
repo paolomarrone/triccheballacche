@@ -26,7 +26,7 @@ static void prepare(Score *s, ScoreView *view, int finite, int changed) {
 	}
 	Output cfg;
 	char *diagnostics;
-	int result = prepare_score(s, &cfg, "test/live-test.janet", code, &diagnostics, view);
+	int result = prepare_score(s, &cfg, "test/live-test.janet", code, &diagnostics, view, NULL);
 	if (result)
 		fprintf(stderr, "%s\n", diagnostics ? diagnostics : s->error);
 	assert(!result && !diagnostics);
@@ -130,7 +130,7 @@ static void test_note_obligations(void) {
 	snprintf(code, sizeof(code), base, "[[0 6 [:note tone 60 100]]]");
 	assert(!prepare_session(&a, &output, "test/notes.janet", code, NULL, NULL));
 	snprintf(code, sizeof(code), base, "[[2.5 3.5 [:note tone 60 100]] [5.8 7 [:note tone 60 100]]]");
-	assert(!prepare_score(&b, &output, "test/notes.janet", code, NULL, NULL));
+	assert(!prepare_score(&b, &output, "test/notes.janet", code, NULL, NULL, NULL));
 	advance(&a, 12000);
 	assert(!session_update(&a, &b, 12000, 1, NULL));
 	float audio[2];
@@ -182,7 +182,7 @@ static void test_identity(void) {
 	char *gain = strstr(code, "0.25");
 	assert(gain);
 	memcpy(gain, "0.75", 4);
-	assert(!prepare_score(&b, &output, "test/identity.janet", code, NULL, &view));
+	assert(!prepare_score(&b, &output, "test/identity.janet", code, NULL, &view, NULL));
 	advance(&a, 1000);
 	int mapping[MAX_NODES];
 	assert(!session_update(&a, &b, 1000, 1, mapping));
@@ -198,7 +198,7 @@ static void test_identity(void) {
 	b = (Score){.sample_rate = 48000};
 	char *key = strstr(code, ":tone");
 	memcpy(key, ":nope", 5);
-	assert(!prepare_score(&b, &output, "test/identity.janet", code, NULL, NULL));
+	assert(!prepare_score(&b, &output, "test/identity.janet", code, NULL, NULL, NULL));
 	assert(session_update(&a, &b, 50000, 2, NULL));
 	assert(!atomic_load(&a.pending) && a.nodes[0].dsp[0].dsp == synth);
 	session_free(&a);
@@ -331,7 +331,7 @@ static void test_seek_retriggers(void) {
 	float audio[2];
 	assert(!session_render(&s, audio, 1) && audio[0] == 0); // A short retrigger ended; the older long note stays off.
 	Score next = {.sample_rate = 48000};
-	assert(!prepare_score(&next, &output, "test/retrigger.janet", code, NULL, NULL));
+	assert(!prepare_score(&next, &output, "test/retrigger.janet", code, NULL, NULL, NULL));
 	assert(!session_update(&s, &next, s.time, 1, NULL) && s.pending);
 	assert(!session_seek(&s, 48000) && !s.pending);
 	score_free(&next);
@@ -353,7 +353,7 @@ static void test_loop_origins(void) {
 		Output output;
 		char code[2048];
 		snprintf(code, sizeof(code), "%s%s", head, scores[i]);
-		assert(!prepare_score(&s, &output, "test/loop-origins.janet", code, NULL, &view));
+		assert(!prepare_score(&s, &output, "test/loop-origins.janet", code, NULL, &view, NULL));
 		assert(view.nodes[0].events[0].norigins == (i ? 1 : 2));
 		score_view_free(&view);
 		score_free(&s);
@@ -392,7 +392,7 @@ static void test_prepared_ownership(void) {
 	const char *code = "(def tone (daw/plugin \"build/test/fixture.perone\")) "
 	                   "(daw/output (daw/track tone)) (daw/note tone 0 1 60) (daw/end 2)";
 	assert(!setenv("PERONE_TEST_FAIL", "alloc", 1));
-	assert(!prepare_score(&score, &output, "test/ownership.janet", code, NULL, &view));
+	assert(!prepare_score(&score, &output, "test/ownership.janet", code, NULL, &view, NULL));
 	Cue *cues = score.sequence.cues;
 	char *product = score.nodes[0].info.product;
 	assert(product && score.nodes[0].info.maximum[1] == 1);
@@ -477,7 +477,7 @@ static void test_finite_projection(void) {
 	    "(daw/output (daw/track tone)) (daw/tempo 60) "
 	    "(daw/score {:length 4 :streams [{:offset 0 :events [[-1 1 [:note tone 60 100]] [0 2 [:note tone 60 100]] "
 	    "[3 4 [:note tone 60 100]]]}]} {:duration 1.5})";
-	assert(!prepare_score(&score, &output, "test/cropped.janet", code, NULL, &view));
+	assert(!prepare_score(&score, &output, "test/cropped.janet", code, NULL, &view, NULL));
 	assert(!view.repeating && score_view_summary(&view, 0, 0, 1.5).count == 1);
 	assert(!score_view_summary(&view, 0, 1.5, 4).count);
 	int found = 0;
@@ -524,7 +524,7 @@ static void test_concurrent_revisions(void) {
 	assert(!pthread_create(&thread, NULL, render_thread, &audio));
 	for (unsigned i = 1; i <= 100; ++i) {
 		Score next = {.sample_rate = 48000};
-		assert(!prepare_score(&next, &output, "test/concurrent.janet", code, NULL, NULL));
+		assert(!prepare_score(&next, &output, "test/concurrent.janet", code, NULL, NULL, NULL));
 		assert(!session_update(&session, &next, atomic_load(&audio.position) + 4096, i, NULL));
 		assert(!next.nnodes && !next.sequence.cues);
 		while (atomic_load(&session.revision) != i || atomic_load(&session.pending))

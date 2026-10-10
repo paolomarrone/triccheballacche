@@ -19,8 +19,9 @@ for (const rate of [44100, 48000]) {
     assert.equal(native.status, 0, native.stderr);
     const expected = native.stdout.trim().split("\n").map(JSON.parse);
     for (const transfer of [false, true]) {
-        let score = host.ccall(transfer ? "score_describe" : "score_prepare", "number", ["string", "string", "number"],
-            ["test/view-score.janet", readFileSync("test/view-score.janet", "utf8"), rate]);
+        let score = host.ccall(transfer ? "score_describe" : "score_prepare", "number",
+            ["string", "string", "number", ...(transfer ? ["string"] : [])],
+            ["test/view-score.janet", readFileSync("test/view-score.janet", "utf8"), rate, ...(transfer ? [""] : [])]);
         assert(score);
         if (transfer) {
             const bytes = host._score_pack_web(score), length = host._score_pack_length();

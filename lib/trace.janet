@@ -34,7 +34,7 @@
               :let [source (frame :source)]
               :when (and (string? source) (frame :source-line)
                          (not (frame :c))
-                         (not (find |(= source $) [self pattern-source entry "core.janet" "lib/daw.janet"])))]
+                         (not (find |(= source $) [self pattern-source entry "core.janet" "lib/daw.janet" "lib/documents.janet"])))]
           {:file source :line (frame :source-line) :column (frame :source-column)
            :tail (not (not (frame :tail)))})))
     (or (location-ids frames)

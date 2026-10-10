@@ -148,8 +148,10 @@ try {
             const finiteRevision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
             await set("#path", `${directory}/renamed.janet`);
             await click("#play");
-            await wait(`Number(document.querySelector('#timeline').dataset.revision) > ${finiteRevision}`);
-            assert(await evaluate('document.querySelector("#errors").hidden'), "Changing the path evaluates even when the text is unchanged");
+            await wait('!document.querySelector("#play").disabled');
+            assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), finiteRevision,
+                "Typing in the path bar does not change the project's entry; Enter opens a file");
+            assert(await evaluate('document.querySelector("#errors").hidden'));
 
             // A different file also replaces a live session with a revision still queued.
             await open(entry);

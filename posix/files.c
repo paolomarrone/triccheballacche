@@ -37,6 +37,24 @@ const char *file_read(const char *path, char **text) {
 }
 
 const char *file_save(const char *path, const char *text) {
+	if (!*path)
+		return "Empty document path";
+	// New project documents may introduce subdirectories.
+	char *parents = copy_string(path);
+	if (!parents)
+		return "Out of memory";
+	for (char *p = parents + 1; *p; ++p) {
+		if (*p != '/')
+			continue;
+		*p = 0;
+		int result = mkdir(parents, 0755);
+		*p = '/';
+		if (result && errno != EEXIST) {
+			free(parents);
+			return "Cannot create document directory";
+		}
+	}
+	free(parents);
 	// Follow an existing symlink and preserve permissions; publish only a complete write.
 	char *resolved = realpath(path, NULL);
 	const char *target = resolved ? resolved : path;

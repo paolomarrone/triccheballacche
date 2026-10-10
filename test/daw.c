@@ -57,6 +57,32 @@ static void test_buffer_score(void) {
 	puts("OK: unsaved score, relative imports, source paths, owned diagnostics and reuse after errors");
 }
 
+static void test_documents(void) {
+	const char *source = "(import ./draft/a) (assert (= a/value 7)) "
+	                     "(import ./draft/a :as again) (assert (= again/value 7)) "
+	                     "(def p (daw/plugin \"build/test/fixture.perone\")) "
+	                     "(daw/output (daw/track p)) (daw/end 1)";
+	const char *documents = "{\"test/draft/a.janet\":\"(import ./b) (def value (+ b/value 2))\","
+	                        "\"test/draft/b.janet\":\"(def value 5)\"}";
+	Score score = {0};
+	Output output;
+	char *diagnostics;
+	int result = prepare_score(&score, &output, "test/project.janet", source, &diagnostics, NULL, documents);
+	if (diagnostics)
+		fputs(diagnostics, stderr);
+	assert(!result && !diagnostics);
+	score_free(&score);
+	const char *bad[] = {"{\"test/draft/a.janet\":\"(\"}", "{\"test/draft/a.janet\":\"unknown-binding\"}",
+	    "{\"test/draft/a.janet\":\"(error \\\"module error\\\")\"}", "{\"test/draft/a.janet\":\"(import ./a)\"}"};
+	for (size_t i = 0; i < sizeof(bad) / sizeof(*bad); ++i) {
+		assert(prepare_score(&score, &output, "test/project.janet", source, &diagnostics, NULL, bad[i]));
+		assert(diagnostics && strstr(diagnostics, "test/draft/a.janet"));
+		free(diagnostics);
+		score_free(&score);
+	}
+	puts("OK: unsaved nested modules, normal import cache, errors and circular imports");
+}
+
 static void test_source_trace(void) {
 	for (unsigned rate = 44100; rate <= 48000; rate += 3900) {
 		Session plain = {.sample_rate = rate}, traced = {.sample_rate = rate};
@@ -621,6 +647,7 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 
 int main(void) {
 	test_buffer_score();
+	test_documents();
 	test_source_trace();
 	test_sample_rate();
 	test_external_metadata();
