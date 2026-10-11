@@ -3,6 +3,12 @@
 (import ../lib/music)
 (import ../lib/pattern :as p)
 
+# Regression for Janet's NaN-to-integer cast when compiling numeric constants (UBSan).
+(assert (nan? ((fn [] math/nan))))
+(each value [math/nan math/inf (- math/inf) -32769 -32768 0 32767 32768 0.5]
+  (def f (eval (tuple 'fn [] value)))
+  (assert (if (nan? value) (nan? (f)) (= value (f)))))
+
 (defn rejects [f]
   (assert (try (do (f) false) ([_] true)) "expected an API error"))
 

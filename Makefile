@@ -88,7 +88,7 @@ $(JANET)/Makefile:
 $(JANET)/build/c/janet.c: $(JANET)/Makefile
 	$(MAKE) -C $(JANET) HOSTCC="$(CC)" build/c/janet.c
 
-# Janet 1.42.1 does not mark top-level dynamic bindings during collection.
+# Janet 1.42.1: keep dynamic bindings alive and avoid NaN-to-integer casts.
 # Use the same corrected runtime for native and Wasm; leave the download untouched.
 build/generated/janet.c: $(JANET)/build/c/janet.c patches/janet.patch Makefile
 	mkdir -p $(dir $@)
