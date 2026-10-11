@@ -270,9 +270,12 @@ int main(int argc, char **argv) {
 			edit_dsp(synth, 0, i / 2000.0);
 		session_sync(&s);
 		assert(!session_render(&s, audio, 3) && audio[0] == .25);
-		midi_dsp(synth, 0, (const uint8_t[]){0xb0, 7, 127});
+		midi_dsp(synth, 0, (const uint8_t[]){0xb0, 7, 127}, 3);
 		assert(!session_render(&s, audio, 3) && audio[0] == .5);
 		assert(read_dsp(synth, 0, &value) && value == 1);
+		midi_dsp(synth, 0, (const uint8_t[]){0xc3, 3}, 2);
+		assert(!session_render(&s, audio, 3));
+		assert(read_dsp(synth, 1, &value) && value == 3);
 		restart_test(&s);
 		state_test(&s);
 		if (ui && !offline)

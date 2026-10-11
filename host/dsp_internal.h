@@ -25,7 +25,7 @@ typedef struct {
 	void (*close)(DSP *);
 	void (*set)(DSP *, size_t, double);
 	void (*reset)(DSP *);
-	void (*midi)(DSP *, size_t, const uint8_t *);
+	void (*midi)(DSP *, size_t, const uint8_t *, size_t);
 	int (*process)(DSP *, const float **, float **, size_t, const ProcessTime *);
 	void (*sync)(DSP *);                      // Audio role, also while the device is stopped.
 	void (*idle)(DSP *, const ProcessTime *); // Control thread, no concurrent rendering.
@@ -45,7 +45,11 @@ struct DSP {
 	atomic_uint *requested, *applied;
 	_Atomic double *wanted, *values;
 	Messages to_ui, to_dsp;
+	MidiBuffer midi_output;
+	size_t midi_frames;
 };
+
+int dsp_midi_output(DSP *dsp, uint32_t frame, const uint8_t *data, size_t size);
 
 int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity);
 int clap_open(DSP *dsp, unsigned sample_rate, size_t capacity);

@@ -1,4 +1,3 @@
-#include "host/dsp_internal.h"
 #include "score_janet.h"
 #include "script.h"
 #include <assert.h>
@@ -13,7 +12,7 @@ static double measure(Plugin *e, int *crossings) {
 	*crossings = 0;
 	for (size_t left = DEFAULT_SAMPLE_RATE; left;) {
 		size_t n = left < 257 ? left : 257;
-		render_plugin(e, out, NULL, n);
+		render_plugin(e, out, NULL, n, NULL, NULL);
 		for (size_t i = 0; i < n; ++i) {
 			assert(isfinite(out[i]));
 			energy += out[i] * out[i];
@@ -36,18 +35,18 @@ static void test_synth(void) {
 	int crossings;
 	assert(measure(&e, &crossings) < 1e-12);
 	const uint8_t note[] = {0x90, 69, 100};
-	e.dsp->api->midi_msg_in(e.dsp->instance, e.config.midi, note);
+	midi_dsp(e.dsp, e.config.midi, note, 3);
 	const uint8_t bends[][3] = {{0xe0, 0, 64}, {0xe0, 0, 0}, {0xe0, 127, 127}, {0xe0, 0, 64}};
 	const int expected[] = {440, 220, 880, 440};
 	for (size_t i = 0; i < 4; ++i) {
-		e.dsp->api->midi_msg_in(e.dsp->instance, e.config.midi, bends[i]);
-		render_plugin(&e, warmup, NULL, 4096);
+		midi_dsp(e.dsp, e.config.midi, bends[i], 3);
+		render_plugin(&e, warmup, NULL, 4096, NULL, NULL);
 		assert(measure(&e, &crossings) > 1e-6);
 		assert(abs(crossings - expected[i]) <= 2);
 	}
 	const uint8_t off[] = {0x90, 69, 0};
-	e.dsp->api->midi_msg_in(e.dsp->instance, e.config.midi, off);
-	render_plugin(&e, warmup, NULL, 4096);
+	midi_dsp(e.dsp, e.config.midi, off, 3);
+	render_plugin(&e, warmup, NULL, 4096, NULL, NULL);
 	assert(measure(&e, &crossings) < 1e-12);
 	close_plugin(&e);
 	puts("OK: synth defaults, note on/off, pitch bend 440/220/880/440 Hz");
@@ -99,16 +98,16 @@ static void test_effect(void) {
 	Plugin e = {0};
 	assert(!open_bundle(&e, "plugins/tibia_test/build/plugin.perone", DEFAULT_SAMPLE_RATE));
 	float in[8193] = {1}, out[8193];
-	render_plugin(&e, out, in, 8193);
+	render_plugin(&e, out, in, 8193, NULL, NULL);
 	assert(out[0] > 0 && out[0] < 1);
 	for (size_t i = 0; i < 8193; ++i)
 		assert(isfinite(out[i]));
-	e.dsp->api->set_parameter(e.dsp->instance, 3, 1);
-	render_plugin(&e, out, in, 8193);
+	set_dsp(e.dsp, 3, 1);
+	render_plugin(&e, out, in, 8193, NULL, NULL);
 	for (size_t i = 0; i < 8193; ++i)
 		assert(out[i] == in[i]);
-	e.dsp->api->set_parameter(e.dsp->instance, 1, 1e6f);
-	render_plugin(&e, out, NULL, 8193);
+	set_dsp(e.dsp, 1, 1e6f);
+	render_plugin(&e, out, NULL, 8193, NULL, NULL);
 	close_plugin(&e);
 	puts("OK: effect memory, audio input, bypass, delay bounds");
 }
@@ -118,8 +117,7 @@ static void test_brickworks_effect(void) {
 	float in[512] = {1}, out[512];
 	assert(!open_bundle(&e, "plugins/fx_svf/build/plugin.perone", DEFAULT_SAMPLE_RATE));
 	assert(e.config.input == 1 && e.config.midi == -1);
-	assert(!e.dsp->api->get_parameter && !e.dsp->api->midi_msg_in);
-	render_plugin(&e, out, in, 512);
+	render_plugin(&e, out, in, 512, NULL, NULL);
 	double energy = 0;
 	for (size_t i = 0; i < 512; ++i) {
 		assert(isfinite(out[i]));
@@ -127,7 +125,7 @@ static void test_brickworks_effect(void) {
 	}
 	assert(energy > 0);
 	close_plugin(&e);
-	puts("OK: unmodified Brickworks effect, audio buses and absent optional functions");
+	puts("OK: unmodified Brickworks effect and audio buses");
 }
 
 static void test_echo_drums(void) {
@@ -135,14 +133,14 @@ static void test_echo_drums(void) {
 	float input[1025] = {1}, out[1025];
 	input[200] = .25f;
 	assert(!open_bundle(&echo, "plugins/echo/build/plugin.perone", DEFAULT_SAMPLE_RATE));
-	echo.dsp->api->set_parameter(echo.dsp->instance, 0, 1); // 1 ms -> 44 samples.
-	echo.dsp->api->set_parameter(echo.dsp->instance, 3, 1);
-	echo.dsp->api->set_parameter(echo.dsp->instance, 4, 0);
-	echo.dsp->api->set_parameter(echo.dsp->instance, 5, 0);
-	echo.dsp->api->set_parameter(echo.dsp->instance, 6, 0);
-	render_plugin(&echo, out, input, 100);
+	set_dsp(echo.dsp, 0, 1); // 1 ms -> 44 samples.
+	set_dsp(echo.dsp, 3, 1);
+	set_dsp(echo.dsp, 4, 0);
+	set_dsp(echo.dsp, 5, 0);
+	set_dsp(echo.dsp, 6, 0);
+	render_plugin(&echo, out, input, 100, NULL, NULL);
 	set_dsp(echo.dsp, 0, 2);
-	render_plugin(&echo, out + 100, input + 100, 925);
+	render_plugin(&echo, out + 100, input + 100, 925, NULL, NULL);
 	for (int i = 0; i < 1025; ++i)
 		assert(out[i] == (i == 44 ? 1 : i == 288 ? .25f : 0));
 	close_plugin(&echo);
@@ -167,7 +165,7 @@ static void test_echo_drums(void) {
 	assert(!memcmp(x, y, sizeof(x)));
 	Plugin *drums = a.nodes[0].dsp;
 	for (int i = 0; i < 100; ++i)
-		midi_dsp(drums->dsp, drums->config.midi, (const uint8_t[]){0x90, i % 7, 127});
+		midi_dsp(drums->dsp, drums->config.midi, (const uint8_t[]){0x90, i % 7, 127}, 3);
 	set_dsp(drums->dsp, 0, 0);
 	assert(!session_render(&a, x, 2000));
 	for (int i = 0; i < 4000; ++i)
@@ -183,11 +181,11 @@ static void test_shape(void) {
 	assert(!open_bundle(&e, "plugins/shape/build/plugin.perone", DEFAULT_SAMPLE_RATE));
 	for (int i = 0; i < 32; ++i)
 		in[i] = 1;
-	e.dsp->api->set_parameter(e.dsp->instance, 2, .5f);
-	render_plugin(&e, out, in, 3);
+	set_dsp(e.dsp, 2, .5f);
+	render_plugin(&e, out, in, 3, NULL, NULL);
 	set_dsp(e.dsp, 0, .5f);
 	set_dsp(e.dsp, 2, 0);
-	render_plugin(&e, out + 3, in + 3, 29);
+	render_plugin(&e, out + 3, in + 3, 29, NULL, NULL);
 	for (int i = 0; i < 32; ++i)
 		assert(fabsf(out[i] - (i < 3 ? tanhf(1) * powf(.5f, i + 1) : tanhf(.5f))) < 1e-6f);
 	close_plugin(&e);

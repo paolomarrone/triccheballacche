@@ -81,7 +81,7 @@ int vst_layout(Vst *v, int *input, int *output, int *midi) {
 	int counts[2], slots[2] = {0};
 	for (int dir = 0; dir < 2; ++dir) {
 		counts[dir] = c->lpVtbl->getBusCount(c, Steinberg_Vst_MediaTypes_kAudio, dir);
-		if (counts[dir] < 0 || counts[dir] > (dir ? 64 : MAX_INPUTS) || (dir && !counts[dir]))
+		if (counts[dir] < 0 || counts[dir] > (dir ? 64 : MAX_INPUTS))
 			return -1;
 		for (int i = 0; i < counts[dir]; ++i) {
 			struct Steinberg_Vst_BusInfo b;
@@ -104,8 +104,8 @@ int vst_layout(Vst *v, int *input, int *output, int *midi) {
 	if (slots[0] > MAX_INPUTS || slots[1] > 256)
 		return -1;
 	int events = c->lpVtbl->getBusCount(c, Steinberg_Vst_MediaTypes_kEvent, Steinberg_Vst_BusDirections_kInput);
-	if (events < 0 || events > 1 ||
-	    c->lpVtbl->getBusCount(c, Steinberg_Vst_MediaTypes_kEvent, Steinberg_Vst_BusDirections_kOutput))
+	v->midi_output = c->lpVtbl->getBusCount(c, Steinberg_Vst_MediaTypes_kEvent, Steinberg_Vst_BusDirections_kOutput);
+	if (events < 0 || events > 1 || v->midi_output < 0 || v->midi_output > 1 || (!*output && !v->midi_output))
 		return -1;
 	if (events)
 		*midi = 0;
@@ -175,10 +175,10 @@ static int metadata(Vst *v, Json *j, const char *path, const struct Steinberg_PC
 	if (gui)
 		json_print(j, ",\"ui-binary\":\"vst3\"");
 	json_print(j,
-	    ",\"layout\":{\"input-channels\":%d,\"output-channels\":%d,\"midi-bus\":%d,"
+	    ",\"layout\":{\"input-channels\":%d,\"output-channels\":%d,\"midi-bus\":%d,\"midi-output-bus\":%d,"
 	    "\"input-offset\":0,\"input-slots\":%d,\"dsp-to-ui-size\":0,\"ui-to-dsp-size\":0},"
 	    "\"product\":{\"format\":\"vst3\",\"id\":\"%s\",\"name\":",
-	    input, output, midi, v->input_slots, id);
+	    input, output, midi, v->midi_output - 1, v->input_slots, id);
 	json_string(j, info->name);
 	json_print(j, ",\"vendor\":");
 	json_string(j, vendor);

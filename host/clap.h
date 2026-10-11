@@ -17,6 +17,7 @@ typedef union {
 	clap_event_param_value_t parameter;
 	clap_event_note_t note;
 	clap_event_midi_t midi;
+	clap_event_midi_sysex_t sysex;
 } ClapEvent;
 typedef struct {
 	clap_id id;
@@ -27,6 +28,10 @@ typedef struct {
 	uint32_t period;
 	uint64_t next;
 } ClapTimer;
+typedef struct {
+	int32_t id;
+	int16_t channel, key;
+} ClapNote;
 typedef struct ClapPlatform ClapPlatform;
 typedef struct Clap {
 	DSP *dsp;
@@ -43,6 +48,11 @@ typedef struct Clap {
 	clap_param_info_t *info;
 	ClapParameter *by_id;
 	uint32_t nparams, dialect;
+	int midi_output;
+	uint8_t sysex[MIDI_BYTES];
+	unsigned sysex_used;
+	ClapNote held[MIDI_EVENTS]; // Resolve CLAP wildcard releases into concrete MIDI notes.
+	unsigned nheld;
 	uint32_t ninputs, noutputs, input_slots, output_slots;
 	clap_audio_buffer_t *inputs, *outputs;
 	float **input_channels, **output_channels, *silence, *scratch;

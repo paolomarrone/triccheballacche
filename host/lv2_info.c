@@ -188,9 +188,12 @@ int lv2_describe(Lv2Description *d, LilvWorld *world, const char *id) {
 				p->capacity = ((uint32_t)fmax(LV2_ATOM_DEFAULT, minimum) + 7u) & ~7u;
 			lilv_node_free(size);
 			if (p->midi) {
-				if (!p->input)
-					reject(d, "MIDI output routing is not supported (port %u)", i);
-				else if (d->midi >= 0)
+				if (!p->input) {
+					if (d->midi_output)
+						reject(d, "Multiple MIDI outputs are not supported");
+					else
+						d->midi_output = i + 1;
+				} else if (d->midi >= 0)
 					reject(d, "Multiple MIDI inputs are not supported");
 				else
 					d->midi = i;
@@ -202,8 +205,8 @@ int lv2_describe(Lv2Description *d, LilvWorld *world, const char *id) {
 	lilv_node_free(main[1]);
 	if (d->error[0])
 		return -1;
-	if (!d->main_outputs)
-		return reject(d, "Plugins without audio outputs are not supported");
+	if (!d->main_outputs && !d->midi_output)
+		return reject(d, "Plugins without audio or MIDI outputs are not supported");
 	if (d->main_outputs > 2 || d->main_inputs > 2)
 		return reject(
 		    d, "Main audio buses must be mono or stereo (got %d inputs, %d outputs)", d->main_inputs, d->main_outputs);
@@ -231,10 +234,10 @@ int lv2_metadata(Lv2Description *d, Json *j, const char *path) {
 		json_string(j, d->ui_error);
 	}
 	json_print(j,
-	    ",\"layout\":{\"input-channels\":%d,\"output-channels\":%d,\"midi-bus\":%d,"
+	    ",\"layout\":{\"input-channels\":%d,\"output-channels\":%d,\"midi-bus\":%d,\"midi-output-bus\":%d,"
 	    "\"input-offset\":0,\"input-slots\":%d,\"dsp-to-ui-size\":0,\"ui-to-dsp-size\":0},"
 	    "\"product\":{\"format\":\"lv2\",\"id\":",
-	    d->main_inputs, d->main_outputs, d->midi, d->inputs);
+	    d->main_inputs, d->main_outputs, d->midi, d->midi_output - 1, d->inputs);
 	json_string(j, id);
 	json_print(j, ",\"name\":");
 	json_string(j, name ? lilv_node_as_string(name) : id);

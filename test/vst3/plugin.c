@@ -146,7 +146,7 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE io_mode(void *self, Steinberg_Vs
 static Steinberg_int32 SMTG_STDMETHODCALLTYPE bus_count(
     void *self, Steinberg_Vst_MediaType type, Steinberg_Vst_BusDirection dir) {
 	Instance *p = ((Interface *)self)->owner;
-	return type == 0 ? (dir == 1 || p->effect ? 2 : 1) : (!p->effect && dir == 0);
+	return type == 0 ? (dir == 1 || p->effect ? 2 : 1) : !p->effect;
 }
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE bus_info(void *self, Steinberg_Vst_MediaType type,
     Steinberg_Vst_BusDirection dir, Steinberg_int32 index, struct Steinberg_Vst_BusInfo *b) {
@@ -276,6 +276,7 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE process(void *self, struct Stein
 		assert(!b->inputEvents->lpVtbl->getEvent(b->inputEvents, i, &event));
 		assert(event.sampleOffset == 0 && event.busIndex == 0 && b->numSamples > 0);
 		p->note = event.type == Steinberg_Vst_Event_EventTypes_kNoteOnEvent;
+		assert(b->outputEvents && !b->outputEvents->lpVtbl->addEvent(b->outputEvents, &event));
 	}
 	for (int i = 0; i < b->numSamples; ++i) {
 		for (int channel = 0; channel < 2; ++channel) {
@@ -319,7 +320,8 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE param_info(
 	    .flags = index == 3 ? Steinberg_Vst_ParameterInfo_ParameterFlags_kIsReadOnly
 	                        : Steinberg_Vst_ParameterInfo_ParameterFlags_kCanAutomate};
 	if (index == 1)
-		p->flags |= Steinberg_Vst_ParameterInfo_ParameterFlags_kIsList;
+		p->flags |= Steinberg_Vst_ParameterInfo_ParameterFlags_kIsList |
+		    Steinberg_Vst_ParameterInfo_ParameterFlags_kIsProgramChange;
 	text(p->title, names[index]);
 	return Steinberg_kResultOk;
 }

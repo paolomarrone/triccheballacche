@@ -46,10 +46,11 @@ int clap_parameters(Clap *c) {
 int clap_layout(Clap *c, int *input, int *output, int *midi) {
 	*input = *output = 0;
 	*midi = -1;
-	if (!c->audio || !c->audio->count || !c->audio->get)
+	if (c->audio && (!c->audio->count || !c->audio->get))
 		return -1;
-	uint32_t ni = c->audio->count(c->plugin, true), no = c->audio->count(c->plugin, false);
-	if (!no || ni > MAX_INPUTS || no > 64)
+	uint32_t ni = c->audio ? c->audio->count(c->plugin, true) : 0,
+	         no = c->audio ? c->audio->count(c->plugin, false) : 0;
+	if (ni > MAX_INPUTS || no > 64)
 		return -1;
 	uint32_t slots[2] = {0};
 	for (int in = 0; in < 2; ++in) {
@@ -88,22 +89,30 @@ int clap_layout(Clap *c, int *input, int *output, int *midi) {
 	c->input_slots = slots[1];
 	c->output_slots = slots[0];
 	if (c->notes) {
-		// Note outputs are not routed.
-		if (!c->notes->count || !c->notes->get || c->notes->count(c->plugin, true) > 1)
+		c->midi_output = 0;
+		if (!c->notes->count || !c->notes->get || c->notes->count(c->plugin, true) > 1 ||
+		    c->notes->count(c->plugin, false) > 1)
 			return -1;
 		if (c->notes->count(c->plugin, true)) {
 			clap_note_port_info_t p;
 			if (!c->notes->get(c->plugin, 0, true, &p))
 				return -1;
-			c->dialect = p.supported_dialects & CLAP_NOTE_DIALECT_CLAP ? CLAP_NOTE_DIALECT_CLAP
-			    : p.supported_dialects & CLAP_NOTE_DIALECT_MIDI        ? CLAP_NOTE_DIALECT_MIDI
+			c->dialect = p.supported_dialects & CLAP_NOTE_DIALECT_MIDI ? CLAP_NOTE_DIALECT_MIDI
+			    : p.supported_dialects & CLAP_NOTE_DIALECT_CLAP        ? CLAP_NOTE_DIALECT_CLAP
 			                                                           : 0;
 			if (!c->dialect)
 				return -1;
 			*midi = 0;
 		}
+		if (c->notes->count(c->plugin, false)) {
+			clap_note_port_info_t p;
+			if (!c->notes->get(c->plugin, 0, false, &p) ||
+			    !(p.supported_dialects & (CLAP_NOTE_DIALECT_MIDI | CLAP_NOTE_DIALECT_CLAP)))
+				return -1;
+			c->midi_output = 1;
+		}
 	}
-	return 0;
+	return *output || c->midi_output ? 0 : -1;
 }
 int clap_metadata(Clap *c, Json *j, const char *path) {
 	int input, output, midi;
@@ -117,9 +126,9 @@ int clap_metadata(Clap *c, Json *j, const char *path) {
 	if (gui)
 		json_print(j, ",\"ui-binary\":\"clap\"");
 	json_print(j,
-	    ",\"layout\":{\"input-channels\":%d,\"output-channels\":%d,\"midi-bus\":%d,"
+	    ",\"layout\":{\"input-channels\":%d,\"output-channels\":%d,\"midi-bus\":%d,\"midi-output-bus\":%d,"
 	    "\"input-offset\":0,\"input-slots\":%d,\"dsp-to-ui-size\":0,\"ui-to-dsp-size\":0},\"product\":{\"format\":\"clap\",\"name\":",
-	    input, output, midi, c->input_slots);
+	    input, output, midi, c->midi_output - 1, c->input_slots);
 	json_string(j, c->plugin->desc->name);
 	json_print(j, ",\"id\":");
 	json_string(j, c->plugin->desc->id);

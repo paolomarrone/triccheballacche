@@ -29,6 +29,7 @@ typedef struct {
 
 typedef struct {
 	int inputs[MAX_NODES], ninputs;
+	int midi_inputs[MAX_NODES], nmidi_inputs, midi_in, midi_out;
 	unsigned upstream, downstream;
 	char *label;
 	char *name, *bundle, *product; // Product JSON is encoded by Janet before teardown.

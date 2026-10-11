@@ -50,7 +50,10 @@
               :name (get-in entry [:product :name])
               :error (entry :error) :ui-error (entry :ui-error)
               :kind (unless (entry :error)
-                (if (>= (get-in entry [:layout :midi-bus]) 0) "Instrument" "Effect"))})))
+                (cond
+                  (= (get-in entry [:layout :output-channels]) 0) "MIDI"
+                  (>= (get-in entry [:layout :midi-bus]) 0) "Instrument"
+                  "Effect"))})))
         ([err] (array/push plugins {:format (string format) :path path :name path :error (string err)}))))))
 (examples "examples")
 (string (json/encode {:paths (array/concat @[] ["plugins" brickworks asid tibia] paths) :files files :plugins plugins}))

@@ -70,6 +70,34 @@ int score_through(Score *s, int source, int effect) {
 	return effect;
 }
 
+int score_midi(Score *s) {
+	if (s->sealed || s->nnodes == MAX_NODES)
+		return fail(s, "sealed score or node limit reached");
+	s->nodes[s->nnodes] = (Node){.midi_source = 1, .config = {.midi = 0, .midi_output = 1}};
+	return s->nnodes++;
+}
+int score_midi_through(Score *s, int source, int target) {
+	if (!handle(s, source) || !handle(s, target) || !s->nodes[source].config.midi_output ||
+	    s->nodes[target].config.midi < 0)
+		return fail(s, "expected MIDI output and input");
+	Node *n = s->nodes + target;
+	for (int i = 0; i < n->nmidi_inputs; ++i)
+		if (n->midi_inputs[i] == source)
+			return fail(s, "duplicate MIDI connection");
+	int *inputs = realloc(n->midi_inputs, (n->nmidi_inputs + 1) * sizeof(int));
+	if (!inputs)
+		return fail(s, "out of memory");
+	n->midi_inputs = inputs;
+	inputs[n->nmidi_inputs++] = source;
+	return target;
+}
+int score_midi_output(Score *s, int source) {
+	if (!handle(s, source) || !s->nodes[source].config.midi_output)
+		return fail(s, "expected MIDI output");
+	s->nodes[source].midi_output = 1;
+	return source;
+}
+
 int score_mix(Score *s, const int *inputs, int count) {
 	if (s->sealed || s->nnodes == MAX_NODES || count < 1 || count > MAX_NODES)
 		return fail(s, "sealed score or invalid mix size");
@@ -136,7 +164,7 @@ rollback:
 // Validate and order only at sealing: plugins may be declared before their inputs.
 static int visit(Score *s, int id, unsigned char *state) {
 	if (state[id] == 1)
-		return fail(s, "audio graph contains a cycle");
+		return fail(s, "audio/MIDI graph contains a cycle");
 	if (state[id] == 2)
 		return 0;
 	state[id] = 1;
@@ -153,9 +181,19 @@ static int visit(Score *s, int id, unsigned char *state) {
 			return -1;
 		n->upstream |= s->nodes[input].upstream;
 	}
-	n->channels = n->path ? n->config.output : 2;
+	for (int i = 0; i < n->nmidi_inputs; ++i) {
+		int source = n->midi_inputs[i];
+		if (source < 0 || source >= s->nnodes || !s->nodes[source].config.midi_output || n->config.midi < 0)
+			return fail(s, "invalid MIDI connection");
+		if (visit(s, source, state))
+			return -1;
+	}
+	for (int i = 0; i < n->ninputs; ++i)
+		if (!s->nodes[n->inputs[i]].channels)
+			return fail(s, "MIDI stream used as audio");
+	n->channels = n->midi_source ? 0 : n->path ? n->config.output : 2;
 	if (n->path && n->ninputs && s->nodes[n->inputs[0]].channels == 2 && n->config.input == 1) {
-		if (n->config.format != PLUGIN_PERONE)
+		if (n->config.format != PLUGIN_PERONE || n->config.midi >= 0 || n->config.midi_output)
 			return fail(s, "a mono plugin requires a mono signal");
 		if (n->channels == 2)
 			return fail(s, "a mono-to-stereo effect requires a mono signal");
@@ -167,12 +205,15 @@ static int visit(Score *s, int id, unsigned char *state) {
 }
 
 static int compile(Score *s) {
-	if (!s->has_output)
-		return fail(s, "missing audio output");
 	unsigned char state[MAX_NODES] = {0};
 	s->norder = 0;
-	if (visit(s, s->output, state))
+	if (s->has_output && visit(s, s->output, state))
 		return -1;
+	for (int i = 0; i < s->nnodes; ++i)
+		if (s->nodes[i].midi_output && visit(s, i, state))
+			return -1;
+	if (!s->norder)
+		return fail(s, "missing audio or MIDI output");
 	if (s->norder != s->nnodes)
 		return fail(s, "node does not reach the output");
 	for (int i = 0; i < s->nnodes; ++i) {
@@ -191,9 +232,14 @@ static int valid_cue(Score *s, Cue c) {
 	if (s->sealed || c.node < 0 || c.node >= s->nnodes || c.stream < 0 || c.stream >= 65536)
 		return fail(s, "invalid event source or sealed score");
 	const Node *n = s->nodes + c.node;
-	if (c.parameter < 0) {
-		if (c.parameter != -1 || !n->path || n->config.midi < 0 || c.pitch < 0 || c.pitch > 127 || c.velocity < 1 ||
-		    c.velocity > 127 || c.end <= c.start)
+	if (c.parameter == -2) {
+		int status = c.midi[0] & 0xf0;
+		if (n->config.midi < 0 || c.start != c.end || c.midi_size > 3 || !midi_valid(c.midi, c.midi_size) ||
+		    status < 0xa0 || status > 0xe0)
+			return fail(s, "expected a short MIDI controller message (use note for notes)");
+	} else if (c.parameter < 0) {
+		if (c.parameter != -1 || n->config.midi < 0 || c.pitch < 0 || c.pitch > 127 || c.velocity < 1 ||
+		    c.velocity > 127 || c.channel < 0 || c.channel > 15 || c.end <= c.start)
 			return fail(s, "invalid note");
 	} else if (valid(s, c.node, c.parameter, c.value) || c.start != c.end ||
 	    !(n->config.parameters[c.parameter].flags & PARAM_AUTOMATABLE)) {
@@ -268,6 +314,8 @@ void score_remap(Score *s, const int *mapping) {
 		*n = nodes[i];
 		for (int j = 0; j < n->ninputs; ++j)
 			n->inputs[j] = mapping[n->inputs[j]];
+		for (int j = 0; j < n->nmidi_inputs; ++j)
+			n->midi_inputs[j] = mapping[n->midi_inputs[j]];
 	}
 	for (int i = 0; i < s->ntracks + s->has_master; ++i) {
 		Track *t = i < s->ntracks ? s->tracks + i : &s->master;
@@ -278,7 +326,8 @@ void score_remap(Score *s, const int *mapping) {
 	}
 	for (int i = 0; i < s->norder; ++i)
 		s->order[i] = mapping[s->order[i]];
-	s->output = mapping[s->output];
+	if (s->has_output)
+		s->output = mapping[s->output];
 	for (size_t i = 0; i < s->sequence.count; ++i)
 		s->sequence.cues[i].node = mapping[s->sequence.cues[i].node];
 }
@@ -293,6 +342,7 @@ void score_free(Score *s) {
 		free(n->name);
 		free(n->key);
 		free(n->inputs);
+		free(n->midi_inputs);
 	}
 	*s = (Score){0};
 }

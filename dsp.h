@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "state.h"
+#include "midi.h"
 
 enum { MAX_PARAMS = 65536, MAX_INPUTS = 8 };
 enum { PLUGIN_PERONE, PLUGIN_CLAP, PLUGIN_LV2, PLUGIN_VST3, PLUGIN_FORMATS };
@@ -20,6 +21,7 @@ extern const size_t dsp_max_message;
 typedef struct {
 	int input, output;              // Channel counts of the main audio buses.
 	int midi, input_offset, inputs; // MIDI bus index; main input offset and flattened input count.
+	int midi_output;                // Output MIDI bus index + 1; zero means absent.
 	int nparams, format;
 	char *id; // Format-native plugin identity; NULL for Perone.
 	Parameter *parameters;
@@ -46,7 +48,9 @@ DSP *open_dsp(Modules *modules, const char *path, const PluginConfig *config, un
 void close_dsp(DSP *dsp); // NULL is allowed.
 void set_dsp(DSP *dsp, size_t parameter, double value);
 void reset_dsp(DSP *dsp);
-void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message);
+void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message, size_t size);
+// Last process call, borrowed until the next one; NULL for formats without MIDI output.
+const MidiBuffer *midi_output_dsp(DSP *dsp);
 // Apply pending host edits before rendering either instance of a mono pair. NULL is allowed.
 void sync_dsp(DSP *dsp, DSP *paired);
 void idle_dsp(DSP *dsp, const ProcessTime *time); // Service messages with audio stopped, without advancing time.

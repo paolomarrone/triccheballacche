@@ -37,7 +37,8 @@ their C++ duplicates. No sibling repositories are needed for the commands above.
 | `make tools` | `build/tools/perone-host` and `build/tools/plugin-scan`: plugin diagnostics. |
 
 The native editor needs X11 development libraries and, on Linux, GTK 3 and
-WebKitGTK 4.1 (or 4.0) runtime libraries. WebUI is fetched automatically.
+WebKitGTK 4.1 (or 4.0) runtime libraries. MIDI device support needs CMake and
+ALSA development headers on Linux. WebUI and PortMidi are fetched automatically.
 
 ```sh
 make gui
@@ -100,7 +101,7 @@ on intervals; automation uses `[:param node parameter value]` on points.
 Loops stay compact: playback and the timeline query repetitions as needed.
 Janet evaluates once per revision, never inside the audio callback.
 
-For absolute seconds, use `daw/note`, `daw/param` and `daw/end`.
+For absolute seconds, use `daw/note`, `daw/param`, `daw/midi-event` and `daw/end`.
 `daw/schedule start bpm pattern` places a finite pattern in that same timeline.
 `daw/info` and `daw/product` expose parameter and product metadata.
 Function descriptions live in [lib/daw.janet](lib/daw.janet),
@@ -111,6 +112,40 @@ Export defaults to stereo float32 WAV without clipping or normalization.
 Allow time for release and effect tails. Playback ignores export normalization.
 The CLI defaults to 44100 Hz; its last argument selects the sample rate.
 Editors use 48000 Hz.
+
+## MIDI
+
+[examples/midi.janet](examples/midi.janet) combines a repeating phrase and a
+keyboard input. In **Settings → MIDI**, discover devices and connect each input
+or output to a score node. Press Play to send/receive; Stop releases device-held
+notes and cancels pending output. Reevaluate a new graph to clear device bindings;
+live musical revisions retain them. Desktop Refresh rescans and disconnects ports.
+Native uses PortMidi; the browser uses Web MIDI and asks for device/SysEx access.
+Browser support and permission are required; MIDI is optional for ordinary playback.
+
+```janet
+(def keys (daw/midi :keys))
+(daw/midi-through keys synth)    # Source output → target input; audio is separate.
+(daw/midi-output keys)           # Also keep this stream for an external device.
+(daw/note keys 0 0.5 60 100 3)   # Optional channel, 0–15; default 0.
+(daw/midi-event keys 0 [0xb3 1 64])
+```
+
+Use `[:midi node [bytes...]]` on pattern points for CC, pressure, pitch bend and
+program changes, or `[:note node pitch velocity channel]` for notes. Routing
+supports fan-in, fan-out and MIDI-only plugins; cycles across audio/MIDI are
+rejected. Plugin events preserve sample offsets through the graph. Device input
+enters at the next audio block; output scheduling follows the audio clock, with
+OS/browser timer precision. Offline rendering excludes devices.
+
+CLAP, LV2 and VST3 expose at most one MIDI input/output. MIDI 1.0 messages and
+SysEx up to 1 KiB are routed in bounded buffers (256 events / 16 KiB per stream).
+Overflow stops playback. Perone currently accepts short input messages only;
+its ABI has no MIDI output or SysEx entry. CLAP note-only ports receive notes;
+raw controllers require the MIDI dialect. VST3 controllers use the plugin's MIDI
+mapping and program parameters. MIDI 2.0, per-note expression, recording and
+`.mid` import/export are not implemented. Device bindings are session settings,
+not saved in Janet or presets.
 
 ## Use the editor
 
@@ -278,13 +313,12 @@ then restores the previous mode. Changes run with audio stopped and rebuild
 latency compensation. A plugin that rejects offline rendering prevents export.
 
 For CLAP, LV2 and VST3, the audio graph routes the main mono/stereo buses. Additional inputs
-receive silence (VST3 auxiliary buses stay inactive); additional outputs and note outputs
-are not routed. Plugins with more than one note input are currently rejected. CLAP note outputs may remain
-disconnected; LV2 and VST3 plugins with note outputs are rejected. Mono
+receive silence (VST3 auxiliary buses stay inactive); additional audio outputs
+are not routed. MIDI inputs and outputs use separate graph connections. Mono
 effects are not duplicated implicitly on stereo signals. Parallel paths are
 latency-compensated with buffers allocated before rendering; total output latency
 and effect tails still need room in the score's duration. Per-note expression,
-plugin-driven note routing and whole-project persistence are not implemented.
+whole-project persistence are not implemented.
 Settings lists unavailable plugins with their rejection reason. Unsupported LV2
 GUI requirements are reported separately and do not prevent using the DSP.
 Plugin state uses a bounded memory buffer, independently of score snapshots.
@@ -348,6 +382,9 @@ Formatting is in `.editorconfig` and
 | `make test-lv2-ui` / `make test-lv2-editor` | X11 display; Node.js/Chromium and audio for the editor. |
 | `make test-vst3` | X11 headers/library for the fixture; no display needed. |
 | `make test-vst3-ui` / `make test-vst3-editor` | X11 display; Node.js/Chromium and audio for the editor. |
+| `make test-midi` | Format fixtures; MIDI routing, timestamps, channels, controls and seek. |
+| `make test-midi-devices` | PortMidi virtual ports; skips if the system cannot create them. |
+| `make test-midi-ui` | Native/browser editors, Chromium and an audio device. |
 | `make format-check` | clang-format 21. |
 | `make test-build` / `make test-build-web` | Node.js; also Emscripten for web. |
 | `make test-plugins` / `make test-brickworks` | Corresponding prebuilt bundles. |
@@ -367,7 +404,7 @@ Use one `make -j` invocation for concurrent targets sharing a build directory.
 
 Dependency versions are pinned in [Makefile](Makefile),
 [plugins/library.mk](plugins/library.mk) and [tools/lv2-deps.sh](tools/lv2-deps.sh).
-`MINIAUDIO`, `JANET`, `SPORK`, `WEBUI`, `CLAP`, `VST3` and `LV2_DEPS` accept explicit paths.
+`MINIAUDIO`, `JANET`, `SPORK`, `WEBUI`, `CLAP`, `VST3`, `PORTMIDI` and `LV2_DEPS` accept explicit paths.
 Fixes live in [patches/](patches/); the build applies them
 to generated copies, leaving downloaded sources intact.
 

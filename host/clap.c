@@ -241,6 +241,30 @@ static const clap_event_header_t *event_get(const clap_input_events_t *list, uin
 	Clap *c = list->ctx;
 	return index < c->count ? &c->events[index].header : NULL;
 }
+// Both CLAP and raw MIDI events may address the same output voices.
+static bool midi_output(Clap *c, uint32_t frame, const uint8_t *data, size_t size, int32_t id) {
+	int type = data[0] & 0xf0, channel = data[0] & 15;
+	int on = size == 3 && type == 0x90 && data[2];
+	if (on && c->nheld == MIDI_EVENTS) {
+		atomic_fetch_or(&c->requests, CLAP_HOST_ERROR);
+		return false;
+	}
+	if (dsp_midi_output(c->dsp, frame, data, size))
+		return false;
+	if (on)
+		c->held[c->nheld++] = (ClapNote){id, channel, data[1]};
+	else if (data[0] == 0xff)
+		c->nheld = 0;
+	else if (type == 0x80 || type == 0x90 || (type == 0xb0 && (data[1] == 120 || data[1] == 123)))
+		for (unsigned i = 0; i < c->nheld;) {
+			ClapNote *note = c->held + i;
+			if (note->channel == channel && (type == 0xb0 || note->key == data[1]))
+				memmove(note, note + 1, (--c->nheld - i) * sizeof(*note));
+			else
+				++i;
+		}
+	return true;
+}
 static bool event_push(const clap_output_events_t *list, const clap_event_header_t *event) {
 	Clap *c = list->ctx;
 	if (event->space_id != CLAP_CORE_EVENT_SPACE_ID)
@@ -254,6 +278,46 @@ static bool event_push(const clap_output_events_t *list, const clap_event_header
 			return false;
 		if (c->dsp)
 			atomic_store(&c->dsp->values[i], value);
+		return true;
+	}
+	if (event->type == CLAP_EVENT_MIDI && event->size >= sizeof(clap_event_midi_t)) {
+		const clap_event_midi_t *e = (const void *)event;
+		return e->port_index == 0 && midi_output(c, event->time, e->data, midi_size(e->data[0]), -1);
+	}
+	if (event->type == CLAP_EVENT_MIDI_SYSEX && event->size >= sizeof(clap_event_midi_sysex_t)) {
+		const clap_event_midi_sysex_t *e = (const void *)event;
+		return e->port_index == 0 && !dsp_midi_output(c->dsp, event->time, e->buffer, e->size);
+	}
+	if ((event->type == CLAP_EVENT_NOTE_ON || event->type == CLAP_EVENT_NOTE_OFF ||
+	        event->type == CLAP_EVENT_NOTE_CHOKE) &&
+	    event->size >= sizeof(clap_event_note_t)) {
+		const clap_event_note_t *e = (const void *)event;
+		int on = event->type == CLAP_EVENT_NOTE_ON, choke = event->type == CLAP_EVENT_NOTE_CHOKE;
+		int minimum = on ? 0 : -1;
+		if (e->port_index < minimum || e->port_index > 0 || e->channel < minimum || e->channel > 15 ||
+		    e->key < minimum || e->key > 127 || e->note_id < -1 ||
+		    (!choke && (!isfinite(e->velocity) || e->velocity < 0 || e->velocity > 1)))
+			return false;
+		uint8_t velocity = choke ? 0 : lround(e->velocity * 127);
+		if (on) {
+			uint8_t data[] = {0x90 | e->channel, e->key, velocity ? velocity : 1};
+			return midi_output(c, event->time, data, 3, e->note_id);
+		}
+		int concrete = e->channel >= 0 && e->key >= 0 && e->note_id == -1;
+		if (concrete && dsp_midi_output(c->dsp, event->time, (uint8_t[]){0x80 | e->channel, e->key, velocity}, 3))
+			return false;
+		for (unsigned i = 0; i < c->nheld;) {
+			ClapNote *note = c->held + i;
+			if ((e->note_id >= 0 && e->note_id != note->id) || (e->channel >= 0 && e->channel != note->channel) ||
+			    (e->key >= 0 && e->key != note->key)) {
+				++i;
+				continue;
+			}
+			uint8_t data[] = {0x80 | note->channel, note->key, velocity};
+			if (!concrete && dsp_midi_output(c->dsp, event->time, data, 3))
+				return false;
+			memmove(note, note + 1, (--c->nheld - i) * sizeof(*note));
+		}
 		return true;
 	}
 	return event->type == CLAP_EVENT_PARAM_GESTURE_BEGIN || event->type == CLAP_EVENT_PARAM_GESTURE_END ||
@@ -286,7 +350,7 @@ static void clear_events(Clap *c) {
 	for (uint32_t i = 0; i < c->count; ++i)
 		if (c->events[i].header.type == CLAP_EVENT_PARAM_VALUE)
 			c->pending[parameter_index(c, c->events[i].parameter.param_id)] = 0;
-	c->count = 0;
+	c->count = c->sysex_used = 0;
 }
 static void flush_controls(DSP *dsp) {
 	Clap *c = dsp->instance;
@@ -320,15 +384,19 @@ static void reset(DSP *dsp) {
 			c->pending[parameter_index(c, c->events[i].parameter.param_id)] = count;
 		}
 	c->count = count;
+	c->sysex_used = 0;
 	flush_controls(dsp); // Controls requiring process() remain queued for the next block.
 	audio_owner = c;
 	c->plugin->reset(c->plugin);
 	audio_owner = NULL;
 	c->steady = 0;
+	c->nheld = 0;
 }
-static void midi(DSP *dsp, size_t bus, const uint8_t *message) {
+static void midi(DSP *dsp, size_t bus, const uint8_t *message, size_t size) {
 	Clap *c = dsp->instance;
 	if (c->dialect == CLAP_NOTE_DIALECT_CLAP) {
+		if ((message[0] & 0xf0) != 0x90 && (message[0] & 0xf0) != 0x80)
+			return;
 		int on = (message[0] & 0xf0) == 0x90 && message[2];
 		ClapEvent *e = event_new(c, on ? CLAP_EVENT_NOTE_ON : CLAP_EVENT_NOTE_OFF, sizeof(clap_event_note_t));
 		if (!e)
@@ -338,12 +406,25 @@ static void midi(DSP *dsp, size_t bus, const uint8_t *message) {
 		e->note.channel = message[0] & 15;
 		e->note.key = message[1];
 		e->note.velocity = message[2] / 127.0;
+	} else if (message[0] == 0xf0) {
+		if (size > sizeof(c->sysex) - c->sysex_used) {
+			atomic_fetch_or(&c->requests, CLAP_HOST_ERROR);
+			return;
+		}
+		ClapEvent *e = event_new(c, CLAP_EVENT_MIDI_SYSEX, sizeof(clap_event_midi_sysex_t));
+		if (!e)
+			return;
+		e->sysex.port_index = bus;
+		e->sysex.buffer = c->sysex + c->sysex_used;
+		e->sysex.size = size;
+		memcpy(c->sysex + c->sysex_used, message, size);
+		c->sysex_used += size;
 	} else {
 		ClapEvent *e = event_new(c, CLAP_EVENT_MIDI, sizeof(clap_event_midi_t));
 		if (!e)
 			return;
 		e->midi.port_index = bus;
-		memcpy(e->midi.data, message, 3);
+		memcpy(e->midi.data, message, size);
 	}
 }
 static int process(DSP *dsp, const float **inputs, float **outputs, size_t frames, const ProcessTime *time) {
@@ -438,7 +519,8 @@ static int compatible(Clap *c) {
 	const PluginConfig *config = &c->dsp->config;
 	int input, output, midi;
 	if (clap_layout(c, &input, &output, &midi) || input != config->input || output != config->output ||
-	    midi != config->midi || (c->params ? c->params->count(c->plugin) : 0) != (uint32_t)config->nparams)
+	    midi != config->midi || c->midi_output != config->midi_output ||
+	    (c->params ? c->params->count(c->plugin) : 0) != (uint32_t)config->nparams)
 		return -1;
 	for (uint32_t i = 0; i < c->nparams; ++i) {
 		clap_param_info_t info;
@@ -488,8 +570,10 @@ static int flush_inactive_controls(DSP *dsp) {
 			c->events[parameters++] = c->events[i];
 		else
 			notes[count++] = c->events[i];
+	unsigned used = c->sysex_used;
 	c->count = parameters;
 	flush_controls(dsp);
+	c->sysex_used = used;
 	memcpy(c->events, notes, count * sizeof(*notes));
 	c->count = count;
 	free(notes);
@@ -577,8 +661,8 @@ int clap_open(DSP *dsp, unsigned rate, size_t capacity) {
 	c->output_channels = calloc(c->output_slots, sizeof(float *));
 	c->silence = calloc(capacity, sizeof(float));
 	c->scratch = calloc(c->output_slots * capacity, sizeof(float));
-	if ((c->ninputs && !c->inputs) || !c->outputs || (c->input_slots && !c->input_channels) || !c->output_channels ||
-	    !c->silence || !c->scratch)
+	if ((c->ninputs && !c->inputs) || (c->noutputs && !c->outputs) || (c->input_slots && !c->input_channels) ||
+	    (c->output_slots && !c->output_channels) || !c->silence || (c->output_slots && !c->scratch))
 		return -1;
 	for (uint32_t i = 0; i < c->output_slots; ++i)
 		c->output_channels[i] = c->scratch + i * capacity;

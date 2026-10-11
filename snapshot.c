@@ -3,7 +3,7 @@
 #include <string.h>
 
 #define SNAPSHOT_LIMIT (256u * 1024u * 1024u)
-#define SNAPSHOT_MAGIC UINT32_C(0x54424336)
+#define SNAPSHOT_MAGIC UINT32_C(0x54424337)
 
 typedef struct {
 	unsigned char *data;
@@ -86,6 +86,7 @@ static void transfer_score(Transfer *t, Score *s, Output *output) {
 	FIELD(t, s->ntracks);
 	FIELD(t, s->has_master);
 	FIELD(t, s->output);
+	FIELD(t, s->has_output);
 	if (t->failed || s->nnodes < 1 || s->nnodes > MAX_NODES || s->ntracks < 0 || s->ntracks > MAX_TRACKS ||
 	    s->output < 0 || s->output >= s->nnodes || s->has_master < 0 || s->has_master > 1) {
 		s->nnodes = s->ntracks = 0;
@@ -101,6 +102,7 @@ static void transfer_score(Transfer *t, Score *s, Output *output) {
 		FIELD(t, c->input);
 		FIELD(t, c->output);
 		FIELD(t, c->midi);
+		FIELD(t, c->midi_output);
 		FIELD(t, c->input_offset);
 		FIELD(t, c->inputs);
 		FIELD(t, c->to_ui);
@@ -118,6 +120,14 @@ static void transfer_score(Transfer *t, Score *s, Output *output) {
 		string(t, &n->info.ui);
 		FIELD(t, n->info.resizable);
 		FIELD(t, n->track);
+		FIELD(t, n->midi_source);
+		FIELD(t, n->midi_output);
+		FIELD(t, n->nmidi_inputs);
+		if (n->nmidi_inputs < 0 || n->nmidi_inputs > MAX_NODES) {
+			t->failed = 1;
+			return;
+		}
+		n->midi_inputs = array(t, n->midi_inputs, n->nmidi_inputs, sizeof(int));
 		FIELD(t, n->ninputs);
 		if (n->ninputs < 0 || n->ninputs > MAX_NODES || n->track < 0 || n->track > s->ntracks) {
 			t->failed = 1;
@@ -221,7 +231,6 @@ int score_unpack(Score *s, Output *output, ScoreView *view, const void *data, si
 	transfer_score(&t, s, output);
 	if (t.failed)
 		return -1;
-	s->has_output = 1;
 	if (score_end(s, s->frames) || score_view_init(view, s))
 		return -1;
 	annotations(&t, view);

@@ -85,9 +85,13 @@ static void reset(DSP *dsp) {
 	sync(dsp);
 }
 
-static void midi(DSP *dsp, size_t bus, const uint8_t *message) {
+static void midi(DSP *dsp, size_t bus, const uint8_t *message, size_t size) {
 	Perone *p = dsp->instance;
-	p->api->midi_msg_in(p->instance, bus, message);
+	if (size <= 3) {
+		uint8_t bytes[3] = {0};
+		memcpy(bytes, message, size);
+		p->api->midi_msg_in(p->instance, bus, bytes);
+	}
 }
 
 static void message(DSP *dsp, size_t size, const void *data) {
@@ -204,8 +208,9 @@ int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity) {
 	const perone_api *(*get_api)(uint32_t) = library_symbol(module->library, "perone_get_api");
 	const perone_api *a = get_api ? get_api(PERONE_ABI_VERSION) : NULL;
 	const PluginConfig *config = &dsp->config;
-	if (!a || !a->alloc || !a->free || !a->init || !a->fini || !a->set_sample_rate || !a->mem_req || !a->mem_set ||
-	    !a->reset || !a->process || (config->midi >= 0 && !a->midi_msg_in) || (config->to_dsp && !a->msg_in))
+	if (config->midi_output || !a || !a->alloc || !a->free || !a->init || !a->fini || !a->set_sample_rate ||
+	    !a->mem_req || !a->mem_set || !a->reset || !a->process || (config->midi >= 0 && !a->midi_msg_in) ||
+	    (config->to_dsp && !a->msg_in))
 		return -1;
 	for (int i = 0; i < config->nparams; ++i)
 		if ((config->parameters[i].flags & PARAM_OUTPUT) ? !a->get_parameter : !a->set_parameter)

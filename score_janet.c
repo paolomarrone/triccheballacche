@@ -136,6 +136,26 @@ static Janet through(int32_t argc, Janet *argv) {
 	return janet_wrap_integer(checked(score_through(current, handle(argv[0]), handle(argv[1]))));
 }
 
+static Janet midi_source(int32_t argc, Janet *argv) {
+	janet_arity(argc, 0, 1);
+	int id = checked(score_midi(current));
+	if (argc) {
+		const char *key = (const char *)janet_getkeyword(argv, 0);
+		node_key(id, key);
+		if (!(current->nodes[id].name = copy_string(key)))
+			janet_panic("out of memory");
+	}
+	return janet_wrap_integer(id);
+}
+static Janet midi_through(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 2);
+	return janet_wrap_integer(checked(score_midi_through(current, handle(argv[0]), handle(argv[1]))));
+}
+static Janet midi_output(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 1);
+	return janet_wrap_integer(checked(score_midi_output(current, handle(argv[0]))));
+}
+
 static Janet mix(int32_t argc, Janet *argv) {
 	janet_arity(argc, 1, 2);
 	JanetView inputs = janet_getindexed(argv, 0);
@@ -162,10 +182,38 @@ static Janet connect_output(int32_t argc, Janet *argv) {
 }
 
 static Janet note(int32_t argc, Janet *argv) {
-	janet_arity(argc, 4, 5);
-	int id = handle(argv[0]), pitch = janet_getinteger(argv, 3), velocity = argc == 5 ? janet_getinteger(argv, 4) : 100;
+	janet_arity(argc, 4, 6);
+	int id = handle(argv[0]), pitch = janet_getinteger(argv, 3), velocity = argc >= 5 ? janet_getinteger(argv, 4) : 100;
 	double time = number(argv[1], 0, 3600), length = number(argv[2], 0, 3600);
-	checked(score_note(current, id, sample(time), sample(time + length), pitch, velocity));
+	checked(score_cue(current,
+	    (Cue){.node = id,
+	        .start = (double)sample(time) / current->sample_rate,
+	        .end = (double)sample(time + length) / current->sample_rate,
+	        .parameter = -1,
+	        .pitch = pitch,
+	        .velocity = velocity,
+	        .channel = argc == 6 ? janet_getinteger(argv, 5) : 0}));
+	return janet_wrap_nil();
+}
+
+static void midi_bytes(Cue *c, Janet data) {
+	JanetView bytes = janet_getindexed(&data, 0);
+	if (bytes.len < 1 || bytes.len > 3)
+		janet_panic("expected 1..3 MIDI bytes");
+	c->midi_size = bytes.len;
+	for (int i = 0; i < bytes.len; ++i) {
+		int byte = janet_getinteger(bytes.items, i);
+		if (byte < 0 || byte > 255)
+			janet_panic("invalid MIDI byte");
+		c->midi[i] = byte;
+	}
+}
+static Janet midi_event(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 3);
+	Cue c = {.node = handle(argv[0]), .start = number(argv[1], 0, 3600), .parameter = -2};
+	c.end = c.start;
+	midi_bytes(&c, argv[2]);
+	checked(score_cue(current, c));
 	return janet_wrap_nil();
 }
 
@@ -274,14 +322,17 @@ static Janet sequence_begin(int32_t argc, Janet *argv) {
 }
 
 static Janet cue(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 8);
+	janet_arity(argc, 8, 9);
 	Cue c = {.node = handle(argv[0]),
 	    .start = number(argv[1], -1e9, 1e9),
 	    .end = number(argv[2], -1e9, 1e9),
 	    .period = number(argv[3], 0, 1e9),
 	    .parameter = janet_getinteger(argv, 4),
 	    .stream = janet_getinteger(argv, 7)};
-	if (c.parameter < 0) {
+	if (c.parameter == -2)
+		midi_bytes(&c, argv[5]);
+	else if (c.parameter < 0) {
+		c.channel = argc == 9 ? janet_getinteger(argv, 8) : 0;
 		c.pitch = janet_getinteger(argv, 5);
 		c.velocity = janet_getinteger(argv, 6);
 	} else
@@ -312,7 +363,8 @@ int prepare_score(Score *s, Output *cfg, const char *path, const char *source, c
 	    {"key", identity, NULL},
 	    {"plugin", plugin, "(native/plugin binary layout defaults bundle json) -> plugin handle"},
 	    {"track", track, "(native/track source &opt {:effects [...] :gain 1 :pan 0}) -> mixer handle"},
-	    {"master", master, "(native/master signal &opt options) -> mixer handle"},
+	    {"master", master, "(native/master signal &opt options) -> mixer handle"}, {"midi-event", midi_event, NULL},
+	    {"midi", midi_source, NULL}, {"midi-through", midi_through, NULL}, {"midi-output", midi_output, NULL},
 	    {"through", through, "(native/through signal effect) -> effect handle"},
 	    {"mix", mix, "(native/mix signals &opt {:gain 1 :pan 0}) -> mixer handle"},
 	    {"output", connect_output, "(native/output signal) Select the final audio output."},

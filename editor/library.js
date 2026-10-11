@@ -1,7 +1,10 @@
+import {midiSettings} from "./midi.js";
+
 // Catalog data is shared by Settings and the examples dropdown; browsing never creates DSPs.
 export function library(request, open, fail) {
     const byId = id => document.getElementById(id);
     const dialog = byId("settings-dialog"), examples = byId("examples"), list = byId("catalog-list");
+    const midi = midiSettings(request, fail);
     let data, loading, enabled = false, used = new Map();
 
     function element(tag, text, className) {
@@ -63,7 +66,13 @@ export function library(request, open, fail) {
     }
 
     byId("settings").onclick = () => { dialog.showModal(); load(); };
-    byId("settings-plugins").onclick = () => byId("settings-catalog").focus();
+    for (const category of ["plugins", "midi"]) byId(`settings-${category}-tab`).onclick = () => {
+        for (const name of ["plugins", "midi"]) {
+            byId(name === "plugins" ? "settings-catalog" : "settings-midi").hidden = name !== category;
+            byId(`settings-${name}-tab`).setAttribute("aria-current", name === category ? "page" : "false");
+        }
+        if (category === "midi") midi.show();
+    };
     examples.onchange = () => {
         const path = examples.value;
         examples.value = "";
@@ -78,6 +87,7 @@ export function library(request, open, fail) {
             examples.disabled = !value || !data;
         },
         score(score) {
+            midi.score(score);
             used = new Map();
             for (const node of score.nodes) if (node.bundle) {
                 const key = node.product?.id ? `${node.bundle}\n${node.product.id}` : node.bundle;

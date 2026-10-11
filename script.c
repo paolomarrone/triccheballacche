@@ -70,6 +70,8 @@ void script_config(Janet bundle, Janet defaults, PluginConfig *config) {
 	    .to_ui = layout_integer(layout, "dsp-to-ui-size"),
 	    .to_dsp = layout_integer(layout, "ui-to-dsp-size"),
 	    .nparams = params.len};
+	Janet midi_output = janet_get(layout, janet_ckeywordv("midi-output-bus"));
+	config->midi_output = janet_checktype(midi_output, JANET_NIL) ? 0 : janet_getinteger(&midi_output, 0) + 1;
 	Janet id = janet_get(bundle, janet_ckeywordv("id"));
 	if (!janet_checktype(id, JANET_NIL)) {
 		Janet product = janet_get(bundle, janet_ckeywordv("product"));

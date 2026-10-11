@@ -29,7 +29,7 @@ int sequence_add(Sequence *s, Cue cue) {
 static int before(const Sequencer *s, SequenceCursor a, SequenceCursor b) {
 	if (a.time != b.time)
 		return a.time < b.time;
-	int pa = s->sequence->cues[a.cue].parameter < 0, pb = s->sequence->cues[b.cue].parameter < 0;
+	int pa = s->sequence->cues[a.cue].parameter == -1, pb = s->sequence->cues[b.cue].parameter == -1;
 	if (pa != pb)
 		return pa < pb;
 	int sa = s->sequence->cues[a.cue].stream, sb = s->sequence->cues[b.cue].stream;
@@ -103,7 +103,7 @@ int sequence_valid(const Sequence *s, unsigned rate) {
 		const Cue *c = s->cues + i;
 		if (!isfinite(c->start) || !isfinite(c->end) || !isfinite(c->period) || c->period < 0 || c->end < c->start ||
 		    fabs(c->start * rate) >= 0x1p52 || fabs(c->end * rate) >= 0x1p52 || (c->period && c->period * rate < 1) ||
-		    (c->parameter < 0 &&
+		    (c->parameter == -1 &&
 		        (llround(c->end * rate) <= llround(c->start * rate) || (c->period && (c->end - c->start) * rate < 1))))
 			return 0;
 	}

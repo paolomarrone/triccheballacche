@@ -19,11 +19,14 @@ typedef struct {
 	Modules *modules; // Optional borrowed cache; NULL gives this instance a private module reference.
 	PluginConfig config;
 	ProcessTime time;
+	unsigned sample_rate;
 } Plugin;
 
 void close_plugin(Plugin *e);
 int plugin_config_valid(const PluginConfig *config);
 int open_plugin(Plugin *e, const char *path, const PluginConfig *config, unsigned sample_rate);
-// Interleaved buffers sized by module input/output channels; NULL input is silence.
-int render_plugin(Plugin *e, float *out, const float *in, size_t frames);
+// Interleaved audio; NULL input is silence. MIDI buffers are optional and caller-owned.
+// MIDI timestamps are relative to this render; emitted events append to the output buffer.
+int render_plugin(
+    Plugin *e, float *out, const float *in, size_t frames, const MidiBuffer *messages, MidiBuffer *emitted);
 #endif

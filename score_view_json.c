@@ -18,6 +18,11 @@ static void metadata(Json *json, const ScoreView *view, unsigned revision) {
 		json_string(json, node->name);
 		json_print(json, ",\"label\":");
 		json_string(json, node->label);
+		json_print(json, ",\"midiIn\":%s,\"midiOut\":%s,\"midiInputs\":[", node->midi_in ? "true" : "false",
+		    node->midi_out ? "true" : "false");
+		for (int j = 0; j < node->nmidi_inputs; ++j)
+			json_print(json, "%s%d", j ? "," : "", node->midi_inputs[j]);
+		json_print(json, "]");
 		json_print(json, ",\"upstream\":%u,\"downstream\":%u,\"inputs\":[", node->upstream, node->downstream);
 		for (int j = 0; j < node->ninputs; ++j)
 			json_print(json, "%s%d", j ? "," : "", node->inputs[j]);

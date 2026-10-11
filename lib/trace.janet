@@ -143,11 +143,19 @@
   # schedule was compiled before these replacements, so scheduled notes are not recorded twice.
   (replace 'daw/note
     (fn [note]
-      (fn [node time duration pitch &opt velocity]
+      (fn [node time duration pitch &opt velocity channel]
         (def source (origin))
         (def order (native/event-count node))
-        (def result (if (nil? velocity) (note node time duration pitch) (note node time duration pitch velocity)))
+        (def result (note node time duration pitch (or velocity 100) (or channel 0)))
         (array/push emitted [time (+ time duration) [source] :note node order])
+        result)))
+  (replace 'daw/midi-event
+    (fn [send]
+      (fn [node time data]
+        (def source (origin))
+        (def order (native/event-count node))
+        (def result (send node time data))
+        (array/push emitted [time time [source] :midi node order])
         result)))
   (replace 'daw/param
     (fn [param]

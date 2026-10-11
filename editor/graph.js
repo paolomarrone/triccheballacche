@@ -5,7 +5,7 @@ export function trackNodes(score, track) {
     function visit(id) {
         if (seen.has(id) || boundaries.has(id)) return;
         seen.add(id);
-        for (const input of score.nodes[id].inputs) visit(input);
+        for (const input of [...score.nodes[id].inputs, ...(score.nodes[id].midiInputs || [])]) visit(input);
         nodes.push(id);
     }
     visit(track[1]);
@@ -212,13 +212,13 @@ export function signalGraph(score) {
     }
     const nodes = new Map();
     score.nodes.forEach((node, id) => {
-        if (!implicit.has(id)) nodes.set(id, {id, inputs: node.inputs.map(resolve), outputs: []});
+        if (!implicit.has(id)) nodes.set(id, {id, inputs: [...node.inputs.map(resolve), ...(node.midiInputs || [])], outputs: []});
     });
     const edges = [];
     for (const node of nodes.values())
         node.inputs.forEach((from, slot) => {
             nodes.get(from).outputs.push(node.id);
-            edges.push({from, to: node.id, slot});
+            edges.push({from, to: node.id, slot, ...(slot >= score.nodes[node.id].inputs.length ? {midi: true} : {})});
         });
     return {nodes, edges};
 }

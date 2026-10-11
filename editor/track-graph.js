@@ -48,7 +48,7 @@ export function trackGraph(panel, select) {
             svg.replaceChildren(); panel.replaceChildren(svg);
             for (const {id} of rows.nodes.values()) {
                 const model = score.nodes[id], node = graph.nodes.get(id);
-                const kind = model.product ? node.inputs.length ? "effect" : "instrument" : "mix";
+                const kind = !model.product && model.midiOut ? "midi" : model.product ? model.inputs.length ? "effect" : "instrument" : "mix";
                 const card = document.createElement("button");
                 card.className = `routing-node ${kind}`;
                 card.dataset.node = id;
@@ -60,7 +60,7 @@ export function trackGraph(panel, select) {
             }
             for (const edge of graph.edges) {
                 const path = document.createElementNS(svg.namespaceURI, "path");
-                path.setAttribute("class", "routing-cable");
+                path.setAttribute("class", "routing-cable" + (edge.midi ? " midi" : ""));
                 path.dataset.from = edge.from; path.dataset.to = edge.to;
                 svg.append(path); cables.push({...edge, path});
             }

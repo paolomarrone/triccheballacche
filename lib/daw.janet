@@ -56,6 +56,10 @@
   (put daw/nodes id daw/mixer-parameters)
   id)
 
+(def daw/midi-event native/midi-event) # (node seconds [status data...]); controller messages only.
+(def daw/midi native/midi) # (&opt id); a reusable MIDI stream, without a device dependency.
+(def daw/midi-through native/midi-through) # (source target); merges/forks independently of audio.
+(def daw/midi-output native/midi-output) # (node); keep a MIDI output that does not reach the audio output.
 (def daw/through native/through)
 (def daw/output native/output)
 
@@ -73,8 +77,17 @@
 (def daw/note native/note)
 (def daw/end native/end)
 
+(defn- daw/check-command [command]
+  (assert (indexed? command) "expected an event command")
+  (def n (length command))
+  (assert (case (get command 0)
+    :note (<= 4 n 5)
+    :param (= n 4)
+    :midi (= n 3)
+    false) "expected [:note node pitch velocity &opt channel], [:param node key value] or [:midi node bytes]"))
+
 (defn daw/schedule
-  "Emit a beat pattern at start seconds and bpm. Values are [:note node pitch velocity] or [:param node key value]."
+  "Emit a beat pattern at start seconds and bpm. Values are [:note node pitch velocity &opt channel], [:param node key value] or [:midi node bytes]."
   [start bpm pattern]
   (assert (and (number? start) (<= 0 start 3600)) "start must be between 0 and 3600 seconds")
   (assert (and (number? bpm) (= (- bpm bpm) 0) (> bpm 0)) "BPM must be finite and positive")
@@ -84,19 +97,22 @@
   (assert (<= start end 3600) "pattern end must be within 3600 seconds")
   (each item items
     (def [a b command] item)
-    (assert (and (indexed? command) (= (length command) 4)) "invalid scheduled event")
+    (daw/check-command command)
     (def time (+ start (* unit a)))
     (def until (+ start (* unit b)))
     (assert (<= 0 time until 3600) "event must be within 0..3600 seconds")
-    (def [kind node key value] command)
+    (def [kind node key value channel] command)
     (case kind
       :note (do
         (assert (< a b) "note must have positive duration")
-        (daw/note node time (- until time) key value))
+        (daw/note node time (- until time) key value (or channel 0)))
+      :midi (do
+        (assert (= a b) "MIDI controller must be a point event")
+        (daw/midi-event node time key))
       :param (do
         (assert (= a b) "parameter must be a point event")
         (daw/param node time key value))
-      (error "expected :note or :param command")))
+      (error "expected :note, :param or :midi command")))
   end)
 
 (var- daw/bpm 120)
@@ -119,15 +135,16 @@
   (eachp [si source] sources
     (def period (* unit (or (source :period) 0)))
     (each [a b command] (source :events)
-      (assert (and (indexed? command) (= (length command) 4)) "expected a note or parameter command")
-      (def [kind node key value] command)
+      (daw/check-command command)
+      (def [kind node key value channel] command)
       (def start (* unit (+ (source :offset) a)))
       (def end (* unit (+ (source :offset) b)))
       (case kind
-        :note (native/cue node start end period -1 key value si)
+        :note (native/cue node start end period -1 key value si (or channel 0))
+        :midi (native/cue node start end period -2 key 0 si)
         :param (do
           (assert (= a b) "parameter must be a point event")
           (def p (daw/parameter (daw/info node) key))
           (native/cue node start end period (p :index) (plugin/value p value) 0 si))
-        (error "expected :note or :param"))))
+        (error "expected :note, :param or :midi"))))
   (native/seal (or (options :duration) (when (pattern :length) (* unit (pattern :length))))))

@@ -130,8 +130,8 @@ static void test_view(const char *bundle, int tibia) {
 	float input[BLOCK], before[BLOCK], after[BLOCK], right[BLOCK];
 	for (int i = 0; i < BLOCK; ++i)
 		input[i] = i % 2 ? .1f : -.1f;
-	render_plugin(node->dsp, before, input, BLOCK);
-	render_plugin(node->dsp + 1, right, input, BLOCK);
+	render_plugin(node->dsp, before, input, BLOCK, NULL, NULL);
+	render_plugin(node->dsp + 1, right, input, BLOCK, NULL, NULL);
 	pump(ui);
 	if (tibia) {
 		mouse(ui, ButtonPress, 300, 65);
@@ -145,8 +145,8 @@ static void test_view(const char *bundle, int tibia) {
 	assert(!read_dsp(dsp, 0, &value));
 	assert(atomic_load(&dsp->values[0]) == config.parameters[0].value); // The UI has not called the DSP.
 	sync_dsp(dsp, node->dsp[1].dsp);
-	render_plugin(node->dsp, after, input, BLOCK);
-	render_plugin(node->dsp + 1, right, input, BLOCK);
+	render_plugin(node->dsp, after, input, BLOCK, NULL, NULL);
+	render_plugin(node->dsp + 1, right, input, BLOCK, NULL, NULL);
 	assert(!memcmp(after, right, sizeof(after)));
 	assert(memcmp(after, before, sizeof(after)));
 	assert(atomic_load(&dsp->values[0]) < config.parameters[0].value);
@@ -155,9 +155,9 @@ static void test_view(const char *bundle, int tibia) {
 	int output = tibia ? 5 : 4;
 	assert(ui->shown[output] == atomic_load(&dsp->values[output]));
 	// An edit arriving between L and R must wait for the next shared block boundary.
-	render_plugin(node->dsp, after, input, BLOCK);
+	render_plugin(node->dsp, after, input, BLOCK, NULL, NULL);
 	ui->callbacks.set_parameter(ui, 0, config.parameters[0].value);
-	render_plugin(node->dsp + 1, right, input, BLOCK);
+	render_plugin(node->dsp + 1, right, input, BLOCK, NULL, NULL);
 	assert(!memcmp(after, right, sizeof(after)) && !read_dsp(dsp, 0, &value));
 	sync_dsp(dsp, node->dsp[1].dsp);
 	assert(atomic_load(&dsp->values[0]) == config.parameters[0].value);
@@ -166,12 +166,12 @@ static void test_view(const char *bundle, int tibia) {
 	// A scheduled parameter reaches both the DSP and UI at its sample boundary, without a gesture.
 	float automation = tibia ? -12 : 60;
 	for (int i = 0; i < 2; ++i)
-		render_plugin(node->dsp + i, after, input, 31);
+		render_plugin(node->dsp + i, after, input, 31, NULL, NULL);
 	pump(ui);
 	assert(ui->shown[0] == config.parameters[0].value);
 	for (int i = 0; i < 2; ++i) {
 		set_dsp(node->dsp[i].dsp, 0, automation);
-		render_plugin(node->dsp + i, after, input, 1);
+		render_plugin(node->dsp + i, after, input, 1, NULL, NULL);
 		assert(atomic_load(&node->dsp[i].dsp->values[0]) == automation);
 		assert(read_dsp(node->dsp[i].dsp, 0, &value) && value == automation);
 	}
@@ -182,7 +182,7 @@ static void test_view(const char *bundle, int tibia) {
 		mouse(ui, ButtonRelease, 510, 438);
 		assert(atomic_load(&dsp->to_dsp.write) - atomic_load(&dsp->to_dsp.read) == 1);
 		sync_dsp(dsp, node->dsp[1].dsp);
-		render_plugin(node->dsp, after, input, BLOCK);
+		render_plugin(node->dsp, after, input, BLOCK, NULL, NULL);
 		// The GUI's reset message reaches the DSP, whose reply starts counting again.
 		char data[MAX_MESSAGE + 1];
 		size_t size;

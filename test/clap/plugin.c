@@ -155,12 +155,25 @@ static void events(Plugin *p, const clap_input_events_t *in, const clap_output_e
 			p->values[n] = v->value;
 		} else if (event->type == CLAP_EVENT_NOTE_ON) {
 			p->held = 1;
-			assert(!out->try_push(out, event)); // The note output is disconnected.
+			clap_event_note_t note = *(const clap_event_note_t *)event;
+			note.note_id = note.key;
+			if (getenv("CLAP_TEST_MIXED")) {
+				clap_event_midi_t raw = {.header = {.size = sizeof(raw), .type = CLAP_EVENT_MIDI},
+				    .data = {0x90 | note.channel, note.key, 100}};
+				assert(out->try_push(out, &raw.header));
+			} else
+				assert(out->try_push(out, &note.header));
 		} else if (event->type == CLAP_EVENT_NOTE_OFF) {
 			p->held = 0;
+			clap_event_note_t release = *(const clap_event_note_t *)event;
+			release.note_id = getenv("CLAP_TEST_MIXED") ? -1 : release.key;
+			release.port_index = release.channel = release.key = -1;
+			assert(out->try_push(out, &release.header)); // Resolve a wildcard release by note ID.
 			clap_event_note_t ended = *(const clap_event_note_t *)event;
 			ended.header.type = CLAP_EVENT_NOTE_END;
 			assert(out->try_push(out, &ended.header));
+		} else if (event->type == CLAP_EVENT_MIDI || event->type == CLAP_EVENT_MIDI_SYSEX) {
+			assert(out->try_push(out, event));
 		} else
 			assert(0);
 	}
@@ -237,7 +250,7 @@ static bool note_info(const clap_plugin_t *plugin, uint32_t index, bool input, c
 	if (index || self(plugin)->effect)
 		return false;
 	*info = (clap_note_port_info_t){.id = input ? 80 : 81,
-	    .supported_dialects = CLAP_NOTE_DIALECT_CLAP,
+	    .supported_dialects = getenv("CLAP_TEST_MIDI") ? CLAP_NOTE_DIALECT_MIDI : CLAP_NOTE_DIALECT_CLAP,
 	    .preferred_dialect = CLAP_NOTE_DIALECT_CLAP};
 	return true;
 }

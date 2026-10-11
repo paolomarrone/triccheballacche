@@ -9,7 +9,8 @@ enum { MAX_CUES = 1048576 };
 // Times are seconds; conversion to samples always uses the absolute occurrence.
 typedef struct {
 	double start, end, period;
-	int node, parameter, pitch, velocity, stream;
+	int node, parameter, pitch, velocity, stream, channel;
+	uint8_t midi[3], midi_size; // parameter -2: MIDI controller event; -1: note.
 	double value;
 } Cue;
 

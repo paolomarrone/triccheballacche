@@ -115,6 +115,24 @@ static void midi_mapping(Vst *v) {
 			    : -1;
 		}
 	vst_release(mapping);
+	Steinberg_Vst_IUnitInfo *units = vst_query(v->controller, Steinberg_Vst_IUnitInfo_iid);
+	for (int channel = 0; channel < 16; ++channel) {
+		v->midi_map[channel][130] = -1;
+		if (v->midi < 0)
+			continue;
+		Steinberg_Vst_UnitID unit = Steinberg_Vst_kRootUnitId;
+		if (units &&
+		    units->lpVtbl->getUnitByBus(units, Steinberg_Vst_MediaTypes_kEvent, Steinberg_Vst_BusDirections_kInput,
+		        v->midi, channel, &unit) != Steinberg_kResultOk)
+			unit = Steinberg_Vst_kRootUnitId;
+		for (int i = 0; i < v->nparams; ++i)
+			if (v->info[i].unitId == unit &&
+			    (v->info[i].flags & Steinberg_Vst_ParameterInfo_ParameterFlags_kIsProgramChange)) {
+				v->midi_map[channel][130] = i;
+				break;
+			}
+	}
+	vst_release(units);
 }
 int vst_create(Vst *v, Module *module, const char *id) {
 	static Steinberg_Vst_IComponentHandlerVtbl handler = {
@@ -329,9 +347,72 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE events_get(
 	return Steinberg_kResultOk;
 }
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE events_add(void *s, struct Steinberg_Vst_Event *event) {
-	(void)s;
-	(void)event;
-	return Steinberg_kNotImplemented; // Input list; event output buses are rejected during discovery.
+	VstEvents *list = s;
+	DSP *dsp = list->output;
+	if (!dsp || !event || event->busIndex != 0 || event->sampleOffset < 0)
+		return Steinberg_kInvalidArgument;
+	uint8_t bytes[3];
+	int channel, pitch, status;
+	double value;
+	switch (event->type) {
+	case Steinberg_Vst_Event_EventTypes_kNoteOnEvent:
+		channel = event->Steinberg_Vst_Event_noteOn.channel;
+		pitch = event->Steinberg_Vst_Event_noteOn.pitch;
+		value = event->Steinberg_Vst_Event_noteOn.velocity;
+		status = 0x90;
+		break;
+	case Steinberg_Vst_Event_EventTypes_kNoteOffEvent:
+		channel = event->Steinberg_Vst_Event_noteOff.channel;
+		pitch = event->Steinberg_Vst_Event_noteOff.pitch;
+		value = event->Steinberg_Vst_Event_noteOff.velocity;
+		status = 0x80;
+		break;
+	case Steinberg_Vst_Event_EventTypes_kPolyPressureEvent:
+		channel = event->Steinberg_Vst_Event_polyPressure.channel;
+		pitch = event->Steinberg_Vst_Event_polyPressure.pitch;
+		value = event->Steinberg_Vst_Event_polyPressure.pressure;
+		status = 0xa0;
+		break;
+	case Steinberg_Vst_Event_EventTypes_kDataEvent: {
+		const struct Steinberg_Vst_DataEvent *e = &event->Steinberg_Vst_Event_data;
+		return e->type == Steinberg_Vst_DataEvent_DataTypes_kMidiSysEx &&
+		        !dsp_midi_output(dsp, event->sampleOffset, e->bytes, e->size)
+		    ? Steinberg_kResultOk
+		    : Steinberg_kInvalidArgument;
+	}
+	case Steinberg_Vst_Event_EventTypes_kLegacyMIDICCOutEvent: {
+		const struct Steinberg_Vst_LegacyMIDICCOutEvent *e = &event->Steinberg_Vst_Event_midiCCOut;
+		if (e->channel < 0 || e->channel > 15 || e->value < 0)
+			return Steinberg_kInvalidArgument;
+		bytes[0] = 0xb0 | e->channel;
+		bytes[1] = e->controlNumber;
+		bytes[2] = e->value;
+		if (e->controlNumber >= 128) {
+			int type = e->controlNumber == 128 ? 0xd0
+			    : e->controlNumber == 129      ? 0xe0
+			    : e->controlNumber == 130      ? 0xc0
+			    : e->controlNumber == 131      ? 0xa0
+			                                   : 0;
+			if (!type)
+				return Steinberg_kNotImplemented;
+			bytes[0] = type | e->channel;
+			bytes[1] = e->value;
+			bytes[2] = e->value2;
+		}
+		return dsp_midi_output(dsp, event->sampleOffset, bytes, midi_size(bytes[0])) ? Steinberg_kInvalidArgument
+		                                                                             : Steinberg_kResultOk;
+	}
+	default:
+		return Steinberg_kNotImplemented;
+	}
+	if (channel < 0 || channel > 15 || pitch < 0 || pitch > 127 || !isfinite(value) || value < 0 || value > 1)
+		return Steinberg_kInvalidArgument;
+	bytes[0] = status | channel;
+	bytes[1] = pitch;
+	bytes[2] = lround(value * 127);
+	if (status == 0x90 && !bytes[2])
+		bytes[2] = 1;
+	return dsp_midi_output(dsp, event->sampleOffset, bytes, 3) ? Steinberg_kInvalidArgument : Steinberg_kResultOk;
 }
 static void set(DSP *dsp, size_t index, double value) {
 	Vst *v = dsp->instance;
@@ -353,26 +434,29 @@ static int start_processing(Vst *v) {
 static void reset(DSP *dsp) {
 	Vst *v = dsp->instance;
 	v->events.count = 0;
+	midi_clear(&v->sysex);
 	stop_processing(v);
 	if (start_processing(v))
 		atomic_fetch_or(&v->requests, VST_ERROR);
 }
-static void midi(DSP *dsp, size_t bus, const uint8_t *m) {
+static void midi(DSP *dsp, size_t bus, const uint8_t *m, size_t size) {
 	Vst *v = dsp->instance;
 	if ((int)bus != v->midi)
 		return;
 	int status = m[0] & 0xf0, channel = m[0] & 15;
-	int cc = status == 0xb0 ? m[1] : status == 0xd0 ? 128 : status == 0xe0 ? 129 : -1;
-	if (cc >= 0 && cc < 130) {
+	int cc = status == 0xb0 ? m[1] : status == 0xd0 ? 128 : status == 0xe0 ? 129 : status == 0xc0 ? 130 : -1;
+	if (cc >= 0) {
 		int i = v->midi_map[channel][cc];
 		if (i >= 0 && !(dsp->config.parameters[i].flags & PARAM_OUTPUT)) {
-			double value = status == 0xe0 ? (m[1] + 128 * m[2]) / 16383.0 : (status == 0xd0 ? m[1] : m[2]) / 127.0;
+			double value = status == 0xc0 ? fmin(m[1], vst_scale(v->info + i)) / vst_scale(v->info + i)
+			    : status == 0xe0          ? (m[1] + 128 * m[2]) / 16383.0
+			                              : (status == 0xd0 ? m[1] : m[2]) / 127.0;
 			value *= vst_scale(v->info + i);
 			set_dsp(dsp, i, v->info[i].stepCount ? round(value) : value);
 		}
 		return;
 	}
-	if (status != 0x80 && status != 0x90 && status != 0xa0)
+	if (m[0] != 0xf0 && status != 0x80 && status != 0x90 && status != 0xa0)
 		return;
 	if (v->events.count == 256) {
 		atomic_fetch_or(&v->requests, VST_ERROR);
@@ -380,7 +464,16 @@ static void midi(DSP *dsp, size_t bus, const uint8_t *m) {
 	}
 	struct Steinberg_Vst_Event *e = v->events.events + v->events.count++;
 	*e = (struct Steinberg_Vst_Event){.busIndex = bus};
-	if (status == 0x90 && m[2]) {
+	if (m[0] == 0xf0) {
+		unsigned offset = v->sysex.used;
+		if (midi_add(&v->sysex, 0, m, size)) {
+			atomic_fetch_or(&v->requests, VST_ERROR);
+			return;
+		}
+		e->type = Steinberg_Vst_Event_EventTypes_kDataEvent;
+		e->Steinberg_Vst_Event_data = (struct Steinberg_Vst_DataEvent){
+		    size, Steinberg_Vst_DataEvent_DataTypes_kMidiSysEx, v->sysex.data + offset};
+	} else if (status == 0x90 && m[2]) {
 		e->type = Steinberg_Vst_Event_EventTypes_kNoteOnEvent;
 		e->Steinberg_Vst_Event_noteOn = (struct Steinberg_Vst_NoteOnEvent){
 		    .channel = channel, .pitch = m[1], .velocity = m[2] / 127.f, .noteId = -1};
@@ -430,6 +523,7 @@ static int process(DSP *dsp, const float **inputs, float **outputs, size_t frame
 	    .inputParameterChanges = &v->in.api,
 	    .outputParameterChanges = &v->out.api,
 	    .inputEvents = &v->events.api,
+	    .outputEvents = &v->output_events.api,
 	    .processContext = &context};
 	int result = v->processor->lpVtbl->process(v->processor, &block);
 	for (int i = 0; i < v->out.count; ++i) {
@@ -448,6 +542,7 @@ static int process(DSP *dsp, const float **inputs, float **outputs, size_t frame
 	changes_clear(&v->in);
 	changes_clear(&v->out);
 	v->events.count = 0;
+	midi_clear(&v->sysex);
 	return result != Steinberg_kResultOk || (atomic_load(&v->requests) & VST_ERROR) ? -1 : 0;
 }
 static void idle(DSP *dsp, const ProcessTime *time) {
@@ -456,10 +551,13 @@ static void idle(DSP *dsp, const ProcessTime *time) {
 		return;
 	// A seek may have queued notes. A zero-frame parameter flush must not consume them.
 	int notes = v->events.count;
+	unsigned used = v->sysex.used, count = v->sysex.count;
 	v->events.count = 0;
 	if (process(dsp, NULL, NULL, 0, time))
 		atomic_fetch_or(&v->requests, VST_ERROR);
 	v->events.count = notes;
+	v->sysex.used = used;
+	v->sysex.count = count;
 }
 void vst_update_controller(Vst *v) {
 	DSP *dsp = v->dsp;
@@ -496,7 +594,7 @@ static int compatible(Vst *v) {
 	const PluginConfig *c = &v->dsp->config;
 	int input, output, midi;
 	if (vst_layout(v, &input, &output, &midi) || input != c->input || output != c->output || midi != c->midi ||
-	    v->input_slots != c->inputs || v->nparams != c->nparams ||
+	    v->midi_output != c->midi_output || v->input_slots != c->inputs || v->nparams != c->nparams ||
 	    (v->controller && v->controller->lpVtbl->getParameterCount(v->controller) != v->nparams))
 		return -1;
 	for (int i = 0; i < v->nparams; ++i) {
@@ -527,6 +625,10 @@ static int activate(Vst *v) {
 	if (v->midi >= 0 &&
 	    v->component->lpVtbl->activateBus(v->component, Steinberg_Vst_MediaTypes_kEvent,
 	        Steinberg_Vst_BusDirections_kInput, v->midi, 1) != Steinberg_kResultOk)
+		return -1;
+	if (v->midi_output &&
+	    v->component->lpVtbl->activateBus(v->component, Steinberg_Vst_MediaTypes_kEvent,
+	        Steinberg_Vst_BusDirections_kOutput, 0, 1) != Steinberg_kResultOk)
 		return -1;
 	midi_mapping(v);
 	if (v->component->lpVtbl->setActive(v->component, 1) != Steinberg_kResultOk)
@@ -682,7 +784,8 @@ int vst3_open(DSP *dsp, unsigned rate, size_t capacity) {
 		return -1;
 	v->rate = rate;
 	v->block = capacity;
-	v->events.api.lpVtbl = &events;
+	v->events.api.lpVtbl = v->output_events.api.lpVtbl = &events;
+	v->output_events.output = dsp;
 	if (vst_arrange(v) || compatible(v) || changes_init(&v->in, v) || changes_init(&v->out, v))
 		return -1;
 	v->inputs = calloc(v->ninputs, sizeof(*v->inputs));
@@ -691,8 +794,8 @@ int vst3_open(DSP *dsp, unsigned rate, size_t capacity) {
 	v->output_channels = calloc(v->output_slots, sizeof(float *));
 	v->silence = calloc(capacity, sizeof(float));
 	v->scratch = calloc(v->output_slots * capacity, sizeof(float));
-	if ((v->ninputs && !v->inputs) || !v->outputs || (v->input_slots && !v->input_channels) || !v->output_channels ||
-	    !v->silence || !v->scratch)
+	if ((v->ninputs && !v->inputs) || (v->noutputs && !v->outputs) || (v->input_slots && !v->input_channels) ||
+	    (v->output_slots && !v->output_channels) || !v->silence || (v->output_slots && !v->scratch))
 		return -1;
 	for (int dir = 0; dir < 2; ++dir) {
 		int offset = 0;

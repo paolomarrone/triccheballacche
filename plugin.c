@@ -4,11 +4,11 @@
 #include <stdlib.h>
 
 int plugin_config_valid(const PluginConfig *c) {
-	if (c->input < 0 || c->input > 2 || c->output < 1 || c->output > 2 || c->inputs < c->input ||
+	if (c->input < 0 || c->input > 2 || c->output < 0 || c->output > 2 || c->inputs < c->input ||
 	    c->inputs > MAX_INPUTS || c->input_offset < 0 || c->input_offset > MAX_INPUTS ||
-	    c->input_offset + c->input > c->inputs || c->midi < -1 || c->nparams < 0 || c->nparams > MAX_PARAMS ||
-	    (c->nparams && !c->parameters) || c->format < 0 || c->format >= PLUGIN_FORMATS ||
-	    (c->format != PLUGIN_PERONE && (!c->id || !*c->id)))
+	    c->input_offset + c->input > c->inputs || c->midi_output < 0 || (!c->output && !c->midi_output) ||
+	    c->midi < -1 || c->nparams < 0 || c->nparams > MAX_PARAMS || (c->nparams && !c->parameters) || c->format < 0 ||
+	    c->format >= PLUGIN_FORMATS || (c->format != PLUGIN_PERONE && (!c->id || !*c->id)))
 		return 0;
 	for (int i = 0; i < c->nparams; ++i)
 		if (!(c->parameters[i].flags & PARAM_OUTPUT) && !isfinite(c->parameters[i].value))
@@ -27,6 +27,7 @@ int open_plugin(Plugin *e, const char *path, const PluginConfig *c, unsigned sam
 		return -1;
 	}
 	e->dsp = dsp;
+	e->sample_rate = sample_rate;
 	return 0;
 }
 
@@ -36,13 +37,25 @@ void close_plugin(Plugin *e) {
 	*e = (Plugin){0};
 }
 
-// Adapt interleaved audio to the plugin's planar buffers.
-int render_plugin(Plugin *e, float *out, const float *in, size_t frames) {
+// Split at MIDI events and adapt interleaved audio to the plugin's planar buffers.
+int render_plugin(
+    Plugin *e, float *out, const float *in, size_t frames, const MidiBuffer *messages, MidiBuffer *emitted) {
 	static const float silence[BLOCK];
 	float input[2][BLOCK], output[2][BLOCK];
 	const PluginConfig *c = &e->config;
-	while (frames) {
-		size_t n = frames < BLOCK ? frames : BLOCK;
+	if ((messages && messages->failed) || (emitted && emitted->failed))
+		return -1;
+	size_t at = 0;
+	unsigned event = 0;
+	while (at < frames) {
+		while (messages && event < messages->count && messages->events[event].frame == at) {
+			const MidiEvent *m = messages->events + event++;
+			midi_dsp(e->dsp, c->midi, messages->data + m->offset, m->size);
+		}
+		size_t end = messages && event < messages->count ? messages->events[event].frame : frames;
+		if (end > frames || end <= at)
+			return -1;
+		size_t n = end - at < BLOCK ? end - at : BLOCK;
 		const float *x[MAX_INPUTS] = {0}; // Optional disconnected buses receive NULL.
 		if (c->input)
 			x[c->input_offset] = in ? in : silence;
@@ -59,19 +72,26 @@ int render_plugin(Plugin *e, float *out, const float *in, size_t frames) {
 		}
 		if (c->output == 2)
 			y[0] = output[0];
-		if (process_dsp(e->dsp, c->inputs ? x : NULL, y, n, &e->time))
+		ProcessTime time = e->time;
+		time.frame += at;
+		time.beat += (double)at * time.bpm / (60 * e->sample_rate);
+		if (process_dsp(e->dsp, c->inputs ? x : NULL, c->output ? y : NULL, n, &time))
+			return -1;
+		const MidiBuffer *midi = midi_output_dsp(e->dsp);
+		if (emitted && midi && midi_merge(emitted, midi, at))
 			return -1;
 		if (c->output == 2)
 			for (size_t i = 0; i < n; ++i) {
 				out[2 * i] = y[0][i];
 				out[2 * i + 1] = y[1][i];
 			}
-		frames -= n;
-		out += n * c->output;
+		at += n;
+		if (out)
+			out += n * c->output;
 		if (in)
 			in += n * c->input;
 	}
-	return 0;
+	return messages && event != messages->count ? -1 : 0;
 }
 
 void plugin_info_free(PluginInfo *info) {

@@ -35,7 +35,7 @@ typedef struct {
 	const LilvPlugin *plugin;
 	Lv2Port *ports;
 	uint32_t count;
-	int inputs, outputs, main_inputs, main_outputs, midi, latency, nparams;
+	int inputs, outputs, main_inputs, main_outputs, midi, midi_output, latency, nparams;
 	char error[256], ui_error[256];
 } Lv2Description;
 typedef struct Lv2Runtime Lv2Runtime;
@@ -45,7 +45,7 @@ typedef struct {
 	LilvInstance *instance;
 	LV2_URID_Map map;
 	LV2_URID_Unmap unmap;
-	LV2_URID sequence, chunk, midi, event_transfer;
+	LV2_URID sequence, chunk, midi, event_transfer, frame_time;
 	LV2_URID position, frame, speed, tempo, beat;
 	LV2_Atom_Forge forge;
 	LV2_Log_Log log;

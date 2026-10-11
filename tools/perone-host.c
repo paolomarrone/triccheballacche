@@ -26,11 +26,11 @@ static void render_demo(Host *host, float *out, const float *in, size_t frames) 
 		size_t second = host->time / DEFAULT_SAMPLE_RATE;
 		size_t offset = host->time % DEFAULT_SAMPLE_RATE;
 		if (!host->capture && p->config.midi >= 0 && !offset && second < 8)
-			midi_dsp(p->dsp, p->config.midi, messages[second]);
+			midi_dsp(p->dsp, p->config.midi, messages[second], 3);
 		size_t n = DEFAULT_SAMPLE_RATE - offset;
 		if (n > frames)
 			n = frames;
-		render_plugin(p, out, in, n);
+		render_plugin(p, out, in, n, NULL, NULL);
 		out += n * p->config.output;
 		if (in)
 			in += n * p->config.input;

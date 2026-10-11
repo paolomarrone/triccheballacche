@@ -11,8 +11,15 @@ typedef struct {
 } InputState;
 
 typedef struct {
+	MidiBuffer messages;
+	uint8_t external_notes[16 * 128];
+	uint16_t external_channels;
+} MidiInput;
+typedef struct {
 	Plugin dsp[2]; // Independent L/R instances for a mono effect on stereo audio.
 	float values[2];
+	MidiInput *midi_in;
+	MidiBuffer *midi_out;
 	InputState *inputs; // Per-edge solo fades and latency compensation.
 } NodeState;
 
@@ -38,10 +45,12 @@ typedef struct {
 	float *audio;
 	_Atomic(Revision *) active, pending, retired;
 	atomic_uint revision;
-	uint64_t (*held)[128]; // Note-off obligations survive a musical revision.
+	uint64_t (*held)[16 * 128]; // Note-off obligations survive a musical revision.
 	uint64_t next_off;
 	const char *error;
-	int offline; // Changed by session_offline(), with audio stopped.
+	MidiQueue *midi_in, *midi_out;      // Control producer/audio consumer, and the reverse.
+	atomic_int midi_capture[MAX_NODES]; // Device subscriptions, read by the audio thread.
+	int offline;                        // Changed by session_offline(), with audio stopped.
 } Session;
 
 // The control thread may borrow this until collect/free; audio owns the active cursor.
@@ -58,6 +67,10 @@ int session_update(Session *s, Score *score, uint64_t earliest, unsigned revisio
 void session_collect(Session *s);
 // Discard an unplayed revision after stopping the callback.
 void session_cancel(Session *s);
+// Control thread, including during rendering. Messages enter at the next audio block.
+int session_midi(Session *s, int node, const uint8_t *data, size_t size);
+// Audio and device producer stopped. Discard queued device events and release external notes on resume.
+void session_midi_panic(Session *s);
 int session_render(Session *s, float *stereo, size_t frames);
 // Safe during rendering; the caller owns session lifetime.
 int session_listen(Session *s, int track, int flags);

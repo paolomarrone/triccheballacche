@@ -27,7 +27,7 @@ void score_view_free(ScoreView *view) {
 int score_view_init(ScoreView *view, const Score *score) {
 	*view = (ScoreView){.nnodes = score->nnodes,
 	    .ntracks = score->ntracks,
-	    .output = score->output,
+	    .output = score->has_output ? score->output : -1,
 	    .repeating = 0,
 	    .sample_rate = score->sample_rate,
 	    .end = score->frames == UINT64_MAX ? 0 : (double)score->frames / score->sample_rate};
@@ -39,8 +39,15 @@ int score_view_init(ScoreView *view, const Score *score) {
 	// track or a sum: group rows do not duplicate the notes of their input tracks.
 	for (int i = 0; i < view->ntracks; ++i) {
 		int *id = &view->tracks[i].source;
-		while (!score->nodes[*id].track && score->nodes[*id].ninputs == 1)
-			*id = score->nodes[*id].inputs[0];
+		while (!score->nodes[*id].track) {
+			const Node *n = score->nodes + *id;
+			if (n->ninputs == 1)
+				*id = n->inputs[0];
+			else if (!n->event_count && n->nmidi_inputs == 1)
+				*id = n->midi_inputs[0];
+			else
+				break;
+		}
 	}
 	if (score->has_master) {
 		view->tracks[view->ntracks] = score->master;
@@ -58,6 +65,11 @@ int score_view_init(ScoreView *view, const Score *score) {
 			memcpy(node->parameters, source->config.parameters, node->nparams * sizeof(Parameter));
 		if (source->info.product && !(node->product = copy_string(source->info.product)))
 			return -1;
+		node->midi_in = source->config.midi >= 0;
+		node->midi_out = !!source->config.midi_output;
+		node->nmidi_inputs = source->nmidi_inputs;
+		for (int j = 0; j < source->nmidi_inputs; ++j)
+			node->midi_inputs[j] = source->midi_inputs[j];
 		node->ninputs = source->ninputs;
 		for (int j = 0; j < source->ninputs; ++j)
 			node->inputs[j] = source->inputs[j];
@@ -69,6 +81,7 @@ int score_view_init(ScoreView *view, const Score *score) {
 		node->name = copy_string(source->info.name ? source->info.name
 		        : name                             ? name + 1
 		        : source->path                     ? source->path
+		        : source->midi_source              ? "MIDI"
 		                                           : "Mixer");
 		if (source->path) {
 			node->bundle = copy_string(source->path);
@@ -95,7 +108,9 @@ int score_view_init(ScoreView *view, const Score *score) {
 		    .end = c->end,
 		    .period = c->period,
 		    .order = node->count,
-		    .pitch = c->parameter < 0 ? c->pitch : -1,
+		    .pitch = c->parameter == -1 ? c->pitch
+		        : c->parameter == -2    ? -2
+		                                : -1,
 		    .velocity = c->velocity,
 		    .parameter = c->parameter,
 		    .stream = c->stream,
@@ -326,8 +341,11 @@ void score_view_remap(ScoreView *view, const int *mapping) {
 		*n = nodes[i];
 		for (int j = 0; j < n->ninputs; ++j)
 			n->inputs[j] = mapping[n->inputs[j]];
+		for (int j = 0; j < n->nmidi_inputs; ++j)
+			n->midi_inputs[j] = mapping[n->midi_inputs[j]];
 	}
-	view->output = mapping[view->output];
+	if (view->output >= 0)
+		view->output = mapping[view->output];
 	for (int i = 0; i < view->ntracks; ++i) {
 		Track *t = view->tracks + i;
 		if (t->source >= 0)

@@ -10,6 +10,7 @@ typedef struct {
 	PluginInfo info;
 	char *path, *name, *key;
 	int *inputs, ninputs, channels;
+	int *midi_inputs, nmidi_inputs, midi_source, midi_output;
 	unsigned upstream, downstream; // Compiled track ancestry for solo routing.
 	size_t event_count;            // Builder index for source annotations.
 	int track;                     // Track index + 1, or zero for other nodes.
@@ -33,6 +34,9 @@ typedef struct {
 
 unsigned score_rate(Score *s);
 int score_plugin(Score *s, const char *path, const PluginConfig *config);
+int score_midi(Score *s); // A MIDI stream: accepts score/device events and forwards them.
+int score_midi_through(Score *s, int source, int target);
+int score_midi_output(Score *s, int source);
 int score_set(Score *s, int id, int param, double value);
 int score_through(Score *s, int source, int effect);
 int score_mix(Score *s, const int *inputs, int count);

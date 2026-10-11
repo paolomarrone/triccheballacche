@@ -152,8 +152,8 @@ static void test_mono_adapter(void) {
 	out[8194] = 123;
 	const DspOps api = {.process = mock_process};
 	DSP dsp = {.ops = &api, .instance = &value};
-	Plugin e = {.dsp = &dsp, .config = {.input = 1, .inputs = 1, .output = 1}};
-	render_plugin(&e, out + 1, NULL, 8193);
+	Plugin e = {.dsp = &dsp, .sample_rate = 48000, .config = {.input = 1, .inputs = 1, .output = 1}};
+	render_plugin(&e, out + 1, NULL, 8193, NULL, NULL);
 	for (int i = 0; i < 8193; ++i)
 		assert(out[i + 1] == 3);
 	assert(out[0] == 123 && out[8194] == 123);
@@ -180,13 +180,13 @@ static void test_stereo_adapter(void) {
 	const DspOps api = {.process = stereo_process, .set = mock_param};
 	DSP dsp = {.ops = &api, .instance = &value};
 	PluginConfig config = {.input = 2, .inputs = 2, .output = 2, .midi = -1};
-	Plugin e = {.dsp = &dsp, .config = config};
+	Plugin e = {.dsp = &dsp, .sample_rate = 48000, .config = config};
 	out[0] = out[FRAMES * 2 + 1] = 123;
-	render_plugin(&e, out + 1, input, FRAMES);
+	render_plugin(&e, out + 1, input, FRAMES, NULL, NULL);
 	assert(out[0] == 123 && out[FRAMES * 2 + 1] == 123);
 	for (size_t i = 0; i < FRAMES;) {
 		size_t n = FRAMES - i < 43 ? FRAMES - i : 43;
-		render_plugin(&e, split + 2 * i, input + 2 * i, n);
+		render_plugin(&e, split + 2 * i, input + 2 * i, n, NULL, NULL);
 		i += n;
 	}
 	for (int i = 0; i < FRAMES; ++i) {
@@ -194,7 +194,7 @@ static void test_stereo_adapter(void) {
 		assert(out[2 * i + 1] == i + v && out[2 * i + 2] == -2 * i - v);
 		assert(split[2 * i] == out[2 * i + 1] && split[2 * i + 1] == out[2 * i + 2]);
 	}
-	render_plugin(&e, split, NULL, 3);
+	render_plugin(&e, split, NULL, 3, NULL, NULL);
 	for (int i = 0; i < 3; ++i)
 		assert(split[2 * i] == 4 && split[2 * i + 1] == -4);
 	puts("OK: stereo channel separation, large buffers, block invariance and silent input");
@@ -210,12 +210,47 @@ static void test_disconnected_inputs(void) {
 	const DspOps api = {.process = disconnected_process};
 	DSP dsp = {.ops = &api, .instance = &value};
 	PluginConfig config = {.input = 2, .output = 2, .inputs = 4, .input_offset = 1, .midi = -1};
-	Plugin e = {.dsp = &dsp, .config = config};
-	render_plugin(&e, out, in, 2);
+	Plugin e = {.dsp = &dsp, .sample_rate = 48000, .config = config};
+	render_plugin(&e, out, in, 2, NULL, NULL);
 	assert(out[0] == 3 && out[1] == 2 && out[2] == 5 && out[3] == 4);
-	render_plugin(&e, out, NULL, 2);
+	render_plugin(&e, out, NULL, 2, NULL, NULL);
 	assert(out[0] == 1 && out[1] == -1);
 	puts("OK: disconnected optional inputs preserve flattened bus positions");
+}
+
+typedef struct {
+	uint64_t frame;
+	int messages, fail;
+} Clock;
+static void clock_midi(DSP *dsp, size_t bus, const uint8_t *data, size_t size) {
+	Clock *clock = dsp->instance;
+	assert(!bus && size == 3 && data[0] == 0xb0);
+	++clock->messages;
+}
+static int clock_process(DSP *dsp, const float **in, float **out, size_t frames, const ProcessTime *time) {
+	(void)in;
+	(void)out;
+	Clock *clock = dsp->instance;
+	assert(time->frame == 24000 + clock->frame);
+	assert(fabs(time->beat - (1 + (double)clock->frame / 24000)) < 1e-12);
+	clock->frame += frames;
+	return clock->fail;
+}
+static void test_render_clock(void) {
+	Clock clock = {0};
+	const DspOps api = {.process = clock_process, .midi = clock_midi};
+	DSP dsp = {.ops = &api};
+	dsp.instance = &clock;
+	Plugin plugin = {.dsp = &dsp, .sample_rate = 48000, .time = {.frame = 24000, .beat = 1, .bpm = 120}};
+	MidiBuffer messages = {0};
+	assert(!midi_add(&messages, 7, (uint8_t[]){0xb0, 1, 20}, 3));
+	assert(!midi_add(&messages, 520, (uint8_t[]){0xb0, 1, 60}, 3));
+	assert(!render_plugin(&plugin, NULL, NULL, 1025, &messages, NULL));
+	assert(clock.frame == 1025 && clock.messages == 2 && plugin.time.frame == 24000 && plugin.time.beat == 1);
+	clock = (Clock){.fail = 1};
+	assert(render_plugin(&plugin, NULL, NULL, 1025, &messages, NULL) == -1);
+	assert(plugin.time.frame == 24000 && plugin.time.beat == 1);
+	puts("OK: audio/MIDI sub-block clocks and failed renders preserve the caller's transport");
 }
 
 static void test_lifecycle(void) {
@@ -235,7 +270,7 @@ static void test_lifecycle(void) {
 	assert(open_bundle(&e, path, DEFAULT_SAMPLE_RATE) < 0 && e.dsp == original);
 	assert(e.config.nparams == 3 && (e.config.parameters[0].flags & PARAM_OUTPUT));
 	float out[6];
-	render_plugin(&e, out, NULL, 3);
+	render_plugin(&e, out, NULL, 3, NULL, NULL);
 	assert(out[0] == .5f && out[1] == -.5f);
 	watch_dsp(e.dsp, 1);
 	sync_dsp(e.dsp, NULL);
@@ -263,7 +298,7 @@ static void test_notifications(void) {
 	for (int i = 0; i <= MESSAGE_SLOTS; ++i) {
 		assert(!send_dsp(dsp, 1, &sent));
 		sync_dsp(dsp, NULL);
-		render_plugin(&e, audio, NULL, 1);
+		render_plugin(&e, audio, NULL, 1, NULL, NULL);
 	}
 	assert(receive_dsp(dsp, &size, received) == -1);
 	watch_dsp(dsp, 0);
@@ -271,26 +306,26 @@ static void test_notifications(void) {
 	assert(!receive_dsp(dsp, &size, received));
 	assert(!send_dsp(dsp, 1, &sent));
 	sync_dsp(dsp, NULL);
-	render_plugin(&e, audio, NULL, 1);
+	render_plugin(&e, audio, NULL, 1, NULL, NULL);
 	assert(receive_dsp(dsp, &size, received) == 1 && size == 1 && received[0] == sent);
 	// Detaching discards notifications, without cancelling edits already accepted by the DSP.
 	edit_dsp(dsp, 1, .25f);
 	assert(!send_dsp(dsp, 1, &sent));
 	watch_dsp(dsp, 0);
 	sync_dsp(dsp, NULL);
-	render_plugin(&e, audio, NULL, 1);
+	render_plugin(&e, audio, NULL, 1, NULL, NULL);
 	watch_dsp(dsp, 1);
 	assert(!receive_dsp(dsp, &size, received));
 	assert(read_dsp(dsp, 1, &value) && value == .25f && audio[0] == .25f);
 	assert(!send_dsp(dsp, 1, &sent));
 	sync_dsp(dsp, NULL);
-	render_plugin(&e, audio, NULL, 1); // Leave a notification and another input queued across rewind.
+	render_plugin(&e, audio, NULL, 1, NULL, NULL); // Leave a notification and another input queued across rewind.
 	assert(!send_dsp(dsp, 1, &sent));
 	edit_dsp(dsp, 1, .75f);
 	set_dsp(dsp, 1, .5f);
 	reset_dsp(dsp);
 	sync_dsp(dsp, NULL);
-	render_plugin(&e, audio, NULL, 1);
+	render_plugin(&e, audio, NULL, 1, NULL, NULL);
 	assert(!receive_dsp(dsp, &size, received));
 	assert(read_dsp(dsp, 1, &value) && value == .5f && audio[0] == .5f);
 	close_plugin(&e);
@@ -312,7 +347,8 @@ static void test_modules(void) {
 	modules_free(&modules);
 	modules_free(&modules);
 	float out[2];
-	render_plugin(&first, out, NULL, 1); // An instance also keeps its binary alive after releasing the cache.
+	render_plugin(
+	    &first, out, NULL, 1, NULL, NULL); // An instance also keeps its binary alive after releasing the cache.
 	assert(out[0] == .5f && out[1] == -.5f);
 	close_plugin(&first);
 	puts("OK: canonical module reuse, independent instances and cache/instance lifetime ordering");
@@ -324,18 +360,18 @@ static void test_bundle(const char *path) {
 	const PluginConfig *c = &e.config;
 	float in[BLOCK * 2], out[BLOCK * 2];
 	if (c->midi >= 0)
-		midi_dsp(e.dsp, c->midi, (const uint8_t[]){0x90, 60, 100});
+		midi_dsp(e.dsp, c->midi, (const uint8_t[]){0x90, 60, 100}, 3);
 	double energy = 0;
 	for (int pos = 0; pos < 8193;) {
 		if (pos == 4097 && c->midi >= 0)
-			midi_dsp(e.dsp, c->midi, (const uint8_t[]){0x80, 60, 0});
+			midi_dsp(e.dsp, c->midi, (const uint8_t[]){0x80, 60, 0}, 3);
 		int n = 8193 - pos < BLOCK ? 8193 - pos : BLOCK;
 		if (pos < 4097 && pos + n > 4097)
 			n = 4097 - pos;
 		for (int i = 0; i < n; ++i)
 			for (int ch = 0; ch < c->input; ++ch)
 				in[i * c->input + ch] = .2f * sinf((pos + i) * (ch ? .09f : .06f));
-		render_plugin(&e, out, c->input ? in : NULL, n);
+		render_plugin(&e, out, c->input ? in : NULL, n, NULL, NULL);
 		for (int i = 0; i < n * c->output; ++i) {
 			assert(isfinite(out[i]));
 			energy += out[i] * out[i];
@@ -405,6 +441,7 @@ int main(int argc, char **argv) {
 	test_mono_adapter();
 	test_stereo_adapter();
 	test_disconnected_inputs();
+	test_render_clock();
 	test_lifecycle();
 	test_modules();
 	test_notifications();

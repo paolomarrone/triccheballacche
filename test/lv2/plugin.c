@@ -193,12 +193,66 @@ static void cleanup(LV2_Handle handle) {
 	assert(!((Plugin *)handle)->active);
 	free(handle);
 }
+typedef struct {
+	const LV2_Atom_Sequence *input;
+	LV2_Atom_Sequence *output;
+	LV2_URID sequence, midi, frame_time;
+	uint64_t time;
+} MidiPlugin;
+static LV2_Handle midi_instantiate(
+    const LV2_Descriptor *api, double rate, const char *bundle, const LV2_Feature *const *features) {
+	(void)api;
+	(void)rate;
+	(void)bundle;
+	MidiPlugin *p = calloc(1, sizeof(*p));
+	LV2_URID_Map *map = (void *)feature(features, LV2_URID__map);
+	assert(p && map);
+	p->sequence = map->map(map->handle, LV2_ATOM__Sequence);
+	p->frame_time = map->map(map->handle, LV2_ATOM__frameTime);
+	p->midi = map->map(map->handle, LV2_MIDI__MidiEvent);
+	return p;
+}
+static void midi_connect(LV2_Handle handle, uint32_t port, void *data) {
+	MidiPlugin *p = handle;
+	if (port == 0)
+		p->input = data;
+	else {
+		assert(port == 1);
+		p->output = data;
+	}
+}
+static void midi_activate(LV2_Handle handle) {
+	((MidiPlugin *)handle)->time = 0;
+}
+static void midi_run(LV2_Handle handle, uint32_t frames) {
+	MidiPlugin *p = handle;
+	uint32_t capacity = p->output->atom.size;
+	*p->output = (LV2_Atom_Sequence){.atom = {sizeof(LV2_Atom_Sequence_Body), p->sequence}, .body.unit = p->frame_time};
+	LV2_ATOM_SEQUENCE_FOREACH(p->input, e) {
+		assert(e->body.type == p->midi);
+		assert(lv2_atom_sequence_append_event(p->output, capacity, e));
+	}
+	// Autonomous events at non-block boundaries exercise output timestamps.
+	for (int i = 0; i < 2; ++i) {
+		uint64_t at = i ? 101 : 37;
+		if (p->time <= at && at < p->time + frames) {
+			struct {
+				LV2_Atom_Event event;
+				uint8_t data[8];
+			} e = {.event = {.time.frames = at - p->time, .body = {3, p->midi}},
+			    .data = {i ? 0x80 : 0x90, 67, i ? 0 : 100}};
+			assert(lv2_atom_sequence_append_event(p->output, capacity, &e.event));
+		}
+	}
+	p->time += frames;
+}
 LV2_SYMBOL_EXPORT const LV2_Descriptor *lv2_descriptor(uint32_t index) {
 	static const LV2_Descriptor plugins[] = {
 	    {BASE "synth", instantiate, connect, activate, run, deactivate, cleanup, extension},
 	    {BASE "effect", instantiate, connect, activate, run, deactivate, cleanup, extension},
-	    {BASE "gtk", instantiate, connect, activate, run, deactivate, cleanup, extension}};
-	return index < 3 ? plugins + index : NULL;
+	    {BASE "gtk", instantiate, connect, activate, run, deactivate, cleanup, extension},
+	    {BASE "midi-output", midi_instantiate, midi_connect, midi_activate, midi_run, NULL, free, NULL}};
+	return index < 4 ? plugins + index : NULL;
 }
 
 typedef struct {

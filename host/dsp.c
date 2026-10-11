@@ -149,8 +149,19 @@ void reset_dsp(DSP *dsp) {
 	dsp->ops->reset(dsp);
 }
 
-void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message) {
-	dsp->ops->midi(dsp, bus, message);
+void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message, size_t size) {
+	if (dsp && (int)bus == dsp->config.midi && midi_valid(message, size))
+		dsp->ops->midi(dsp, bus, message, size);
+}
+const MidiBuffer *midi_output_dsp(DSP *dsp) {
+	return &dsp->midi_output;
+}
+int dsp_midi_output(DSP *dsp, uint32_t frame, const uint8_t *data, size_t size) {
+	if (!dsp || !dsp->config.midi_output)
+		return -1;
+	if (frame >= dsp->midi_frames)
+		return dsp->midi_output.failed = 1, -1;
+	return midi_add(&dsp->midi_output, frame, data, size);
 }
 void idle_dsp(DSP *dsp, const ProcessTime *time) {
 	if (dsp && dsp->ops->idle)
@@ -189,7 +200,11 @@ int state_dsp(DSP *dsp, State *state, int write) {
 	return result;
 }
 int process_dsp(DSP *dsp, const float **inputs, float **outputs, size_t frames, const ProcessTime *time) {
-	return dsp->ops->process(dsp, inputs, outputs, frames, time);
+	midi_clear(&dsp->midi_output);
+	dsp->midi_frames = frames;
+	int result = dsp->ops->process(dsp, inputs, outputs, frames, time);
+	dsp->midi_frames = 0;
+	return result || dsp->midi_output.failed ? -1 : 0;
 }
 
 void sync_dsp(DSP *dsp, DSP *paired) {

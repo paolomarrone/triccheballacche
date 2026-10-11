@@ -1,3 +1,4 @@
+import {midiDevices} from "./midi.js";
 import {encodeState, decodeState, download} from "../editor/preset.js";
 
 import {createPlayerHost, attachPlayer, closePlayer} from "./player.js";
@@ -10,7 +11,9 @@ const options = new URLSearchParams(location.search);
 const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();
 let library;
-let host, player, transport = 0, failure = "", log = [];
+let host, player, transport = 0, failure = "", midiFailed = false, log = [];
+// Device callbacks report errors; the command loop owns asynchronous player changes.
+const midi = midiDevices(() => player, error => { failure = String(error); midiFailed = true; });
 
 export async function connect() {
     if (!crossOriginIsolated) throw Error("COOP/COEP headers required: run node test/server.mjs.");
@@ -56,7 +59,8 @@ function query(op = "", args = []) {
 }
 
 async function stop() {
-    if (player) await player.stop();
+    try { midi.stop(); }
+    finally { if (player) await player.stop(); }
 }
 
 async function run(path, source, state, live) {
@@ -74,6 +78,7 @@ async function run(path, source, state, live) {
             return {};
         }
         await stop();
+        await midi.detach();
         host.perone.deferred = true;
         try {
             if (host._web_score_activate(nextScore)) throw Error("Cannot activate plugin graph");
@@ -86,6 +91,7 @@ async function run(path, source, state, live) {
         const prepared = await attachPlayer(host, owned);
         player = prepared;
         await prepared.start();
+        midi.start();
         prepared.publish(transport);
         return query("score");
     } catch (error) {
@@ -110,11 +116,28 @@ function checkedText(text) {
 // The shared controller serializes commands, including asynchronous player cleanup.
 export async function command(op, ...args) {
     if (op === "library") return library;
+    if (op === "midi-devices") return midi.list();
+    if (op === "midi-refresh") return midi.list();
+    if (midiFailed) {
+        midiFailed = false;
+        try { await stop(); }
+        catch (error) { failure += `; ${error}`; }
+    }
     host._transport_collect(transport);
     const state = query();
     let result = {}, error = "", path = ["range", "origin", "automation", "listen", "seek"].includes(op) ? "" : args[0] || entry;
     try {
-        if (op === "files") {
+        if (op === "midi-connect") {
+            const [version, id, node] = args;
+            if (!player || version !== state.controlRevision) throw Error("Stale MIDI connection");
+            const view = query("score").score;
+            const device = (await midi.list()).devices.find(p => p.id === id);
+            if (!device || !Number.isInteger(node) || node < -1 || node >= view.nodes.length ||
+                node >= 0 && !view.nodes[node][device.input ? "midiIn" : "midiOut"]) throw Error("Invalid MIDI connection");
+            await stop();
+            try { result = await midi.connect(id, node); }
+            finally { if (state.playing) { await player.start(); midi.start(); } }
+        } else if (op === "files") {
             path = host.perone.path(args[0] || ".");
             result.files = host.FS.readdir(path).filter(name => !name.startsWith(".")).map(name => ({
                 name, directory: host.FS.isDir(host.FS.stat(`${path}/${name}`).mode)
@@ -163,12 +186,13 @@ export async function command(op, ...args) {
             await stop();
             await player.seek(seconds);
             failure = "";
-            if (resume) await player.start();
+            if (resume) { await player.start(); midi.start(); }
         } else if (op === "play") {
             if (!player) throw Error("Run a score before playing");
             if (!state.playing) {
                 if (player.time >= player.duration) await player.seek(0);
                 await player.start();
+                midi.start();
                 failure = "";
             }
         } else if (op === "stop") await stop();
@@ -193,10 +217,14 @@ export async function command(op, ...args) {
 
 export async function close() {
     if (!host) return;
-    await closePlayer(host);
+    let failure;
+    try { await midi.detach(); }
+    catch (error) { failure = error; }
+    await closePlayer(host); // A failed close retains the transport for a safe retry.
     player = undefined;
     if (transport) host._transport_free_web(transport);
     transport = 0;
+    if (failure) throw failure;
 }
 
 export function uiUrl(node) {

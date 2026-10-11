@@ -32,7 +32,10 @@ test:unsupported a lv2:Plugin ; doap:name "Unsupported feature" ;
 test:unsupported-options a lv2:Plugin ; doap:name "Unsupported option" ;
     opts:requiredOption <urn:unsupported:option> ; lv2:port test:left .
 test:midi-output a lv2:Plugin ; doap:name "MIDI effect" ;
-    lv2:port [ a lv2:OutputPort, atom:AtomPort ; lv2:index 0 ; lv2:symbol "out" ;
+    lv2:requiredFeature urid:map ;
+    lv2:port [ a lv2:InputPort, atom:AtomPort ; lv2:index 0 ; lv2:symbol "in" ;
+        atom:bufferType atom:Sequence ; atom:supports midi:MidiEvent ],
+        [ a lv2:OutputPort, atom:AtomPort ; lv2:index 1 ; lv2:symbol "out" ;
         atom:bufferType atom:Sequence ; atom:supports midi:MidiEvent ] .
 test:no-audio a lv2:Plugin ; doap:name "Parameter utility" ;
     lv2:port [ a lv2:InputPort, atom:AtomPort ; lv2:index 0 ; lv2:symbol "in" ;

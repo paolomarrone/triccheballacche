@@ -190,8 +190,8 @@ static void discovery_test(void) {
 	assert(json && strstr(json, "LV2 test synth") && strstr(json, "LV2 test effect"));
 	assert(strstr(json, "Unsupported required feature: urn:unsupported:feature"));
 	assert(strstr(json, "Unsupported required option: urn:unsupported:option"));
-	assert(strstr(json, "MIDI output routing is not supported"));
-	assert(strstr(json, "Plugins without audio outputs are not supported"));
+	assert(strstr(json, "\"midi-output-bus\":1"));
+	assert(strstr(json, "Plugins without audio or MIDI outputs are not supported"));
 	assert(strstr(json, "Port 0 requires 2097152 bytes (limit 1048576)"));
 	assert(strstr(json, "Port 0 has an invalid minimum buffer size"));
 	assert(strstr(json, "\"ui-error\":"));
@@ -203,7 +203,7 @@ static void discovery_test(void) {
 	assert(prepare_score(&score, &output, "test/lv2/score.janet",
 	    "(daw/plugin {:format :lv2 :path \"build/test/fixture.lv2\" :id \"urn:triccheballacche:test:lv2:midi-output\"})",
 	    &error, NULL));
-	assert(error && strstr(error, "MIDI output routing is not supported"));
+	assert(error && strstr(error, "Missing (daw/end"));
 	free(error);
 	score_free(&score);
 }

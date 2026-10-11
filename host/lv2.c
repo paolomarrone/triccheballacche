@@ -97,10 +97,10 @@ static void reset(DSP *dsp) {
 	lilv_instance_activate(l->instance);
 	l->active = 1;
 }
-static void midi(DSP *dsp, size_t bus, const uint8_t *message) {
+static void midi(DSP *dsp, size_t bus, const uint8_t *message, size_t size) {
 	Lv2 *l = dsp->instance;
 	if (bus < l->description.count && l->description.ports[bus].midi &&
-	    append(l, l->description.ports + bus, l->midi, 3, message))
+	    append(l, l->description.ports + bus, l->midi, size, message))
 		atomic_store(&l->error, 1);
 }
 static void ui_events(Lv2 *l) {
@@ -134,7 +134,7 @@ static void read_outputs(Lv2 *l) {
 			continue;
 		if (p->type == LV2_PORT_CONTROL && isfinite(p->value))
 			atomic_store(&l->dsp->values[p->parameter], p->value);
-		if (p->type != LV2_PORT_ATOM || !atomic_load(&l->dsp->viewing))
+		if (p->type != LV2_PORT_ATOM)
 			continue;
 		LV2_Atom_Sequence *s = p->events;
 		if (s->atom.type != l->sequence || s->atom.size < sizeof(s->body) ||
@@ -145,16 +145,24 @@ static void read_outputs(Lv2 *l) {
 			LV2_Atom_Event *event = (void *)((char *)s + offset);
 			if (event->body.size > end - offset - sizeof(*event))
 				break;
-			size_t size = sizeof(LV2_Atom) + event->body.size;
-			uint64_t *message = l->audio_message;
-			if (size + sizeof(uint64_t) > l->to_ui.limit) {
-				atomic_store(&l->dsp->overflow, 1);
-				break;
+			if (p->midi && event->body.type == l->midi) {
+				if ((s->body.unit && s->body.unit != l->frame_time) || event->time.frames < 0 ||
+				    event->time.frames > UINT32_MAX ||
+				    dsp_midi_output(l->dsp, event->time.frames, (const uint8_t *)(event + 1), event->body.size))
+					atomic_store(&l->error, 1);
 			}
-			message[0] = i;
-			memcpy(message + 1, &event->body, size);
-			if (message_push(&l->to_ui, size + sizeof(uint64_t), message))
-				atomic_store(&l->dsp->overflow, 1);
+			size_t size = sizeof(LV2_Atom) + event->body.size;
+			if (atomic_load(&l->dsp->viewing)) {
+				uint64_t *message = l->audio_message;
+				if (size + sizeof(uint64_t) > l->to_ui.limit) {
+					atomic_store(&l->dsp->overflow, 1);
+					break;
+				}
+				message[0] = i;
+				memcpy(message + 1, &event->body, size);
+				if (message_push(&l->to_ui, size + sizeof(uint64_t), message))
+					atomic_store(&l->dsp->overflow, 1);
+			}
 			uint32_t next = sizeof(*event) + lv2_atom_pad_size(event->body.size);
 			if (next > end - offset)
 				break;
@@ -275,7 +283,8 @@ int lv2_open(DSP *dsp, unsigned rate, size_t capacity) {
 	}
 	Lv2Description *d = &l->description;
 	if (d->main_inputs != dsp->config.input || d->main_outputs != dsp->config.output ||
-	    d->inputs != dsp->config.inputs || d->midi != dsp->config.midi || d->nparams != dsp->config.nparams)
+	    d->midi_output != dsp->config.midi_output || d->inputs != dsp->config.inputs || d->midi != dsp->config.midi ||
+	    d->nparams != dsp->config.nparams)
 		return -1;
 	for (int i = 0; i < d->nparams; ++i) {
 		uint32_t port = dsp->config.parameters[i].id;
@@ -286,6 +295,7 @@ int lv2_open(DSP *dsp, unsigned rate, size_t capacity) {
 	l->map = (LV2_URID_Map){l, lv2_map_uri};
 	l->unmap = (LV2_URID_Unmap){l, lv2_unmap_uri};
 	l->sequence = lv2_map_uri(l, LV2_ATOM__Sequence);
+	l->frame_time = lv2_map_uri(l, LV2_ATOM__frameTime);
 	l->chunk = lv2_map_uri(l, LV2_ATOM__Chunk);
 	l->midi = lv2_map_uri(l, LV2_MIDI__MidiEvent);
 	l->event_transfer = lv2_map_uri(l, LV2_ATOM__eventTransfer);

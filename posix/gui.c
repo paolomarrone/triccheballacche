@@ -7,8 +7,10 @@
 #include "transport.h"
 #include "files.h"
 #include "prepare.h"
+#include "midi.h"
 #include "webui.h"
 #include <locale.h>
+#include <limits.h>
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
@@ -29,6 +31,7 @@ typedef struct {
 	Modules modules;
 	Transport transport;
 	Player *player;
+	MidiDevices *midi;
 	Controls controls;
 	const char *entry;
 	char *error;
@@ -66,6 +69,7 @@ static void accept_revision(Editor *editor) {
 }
 
 static const char *pause_editor(Editor *editor) {
+	midi_devices_stop(editor->midi);
 	const char *error = NULL;
 	if (editor->player) {
 		if (player_pause(editor->player)) {
@@ -75,6 +79,7 @@ static const char *pause_editor(Editor *editor) {
 			editor->player = NULL;
 		}
 	}
+	session_midi_panic(&editor->session);
 	accept_revision(editor);
 	transport_stopped(&editor->transport);
 	return error;
@@ -85,8 +90,9 @@ static const char *play_editor(Editor *editor) {
 	Session *s = &editor->session;
 	if (!editor->player)
 		editor->player = player_new(s);
-	if (!editor->player || player_start(editor->player)) {
-		const char *error = s->error ? s->error : "Audio startup failed";
+	const char *midi_error = editor->player ? midi_devices_play(editor->midi, editor->player) : NULL;
+	if (!editor->player || midi_error || player_start(editor->player)) {
+		const char *error = midi_error ? midi_error : s->error ? s->error : "Audio startup failed";
 		pause_editor(editor);
 		return error;
 	}
@@ -118,6 +124,7 @@ static const char *seek_editor(Editor *editor, double seconds) {
 }
 
 static void finish(Editor *editor) {
+	midi_devices_detach(editor->midi);
 	pause_editor(editor);
 	player_free(editor->player);
 	editor->player = NULL;
@@ -182,6 +189,43 @@ static void command(Editor *editor, webui_event_t *event) {
 		char *json = !strcmp(op, "library") ? library_json() : directory_json(webui_get_string_at(event, 1));
 		webui_return_string(event, json ? json : "{\"error\":\"Cannot read library\"}");
 		free(json);
+		return;
+	}
+	if (!strcmp(op, "midi-devices") || !strcmp(op, "midi-refresh") || !strcmp(op, "midi-connect")) {
+		const char *error = NULL;
+		int resume = editor->transport.playing;
+		int changing = strcmp(op, "midi-devices");
+		if (changing)
+			error = pause_editor(editor);
+		if (!error && !strcmp(op, "midi-refresh")) {
+			midi_devices_free(editor->midi);
+			editor->midi = NULL;
+		}
+		if (!error && !editor->midi)
+			editor->midi = midi_devices_new();
+		if (!editor->midi)
+			error = "Cannot initialize MIDI devices";
+		if (!error && !strcmp(op, "midi-connect")) {
+			double revision = decimal(event, 1), device = decimal(event, 2), node = decimal(event, 3);
+			if (revision != editor->transport.control_revision || !isfinite(device) || device < 0 || device > INT_MAX ||
+			    device != floor(device) || !isfinite(node) || node < -1 || node >= editor->session.nnodes ||
+			    node != floor(node))
+				error = "Invalid or stale MIDI connection";
+			else
+				error = midi_devices_connect(editor->midi, &editor->session, device, node);
+		}
+		if (changing && resume) {
+			const char *start = play_editor(editor);
+			if (!error)
+				error = start;
+		}
+		if (error)
+			reply(event, editor, error, NULL, "", 0);
+		else {
+			char *json = midi_devices_json(editor->midi);
+			webui_return_string(event, json ? json : "{\"error\":\"Out of memory\"}");
+			free(json);
+		}
 		return;
 	}
 	if (!strcmp(op, "listen")) {
@@ -308,7 +352,7 @@ static void command(Editor *editor, webui_event_t *event) {
 static void poll_player(Editor *editor) {
 	if (!editor->session.audio)
 		return;
-	const char *error = NULL;
+	const char *error = midi_devices_error(editor->midi);
 	accept_revision(editor);
 	int service = session_poll(&editor->session);
 	if (service < 0)
@@ -400,6 +444,7 @@ int main(int argc, char **argv) {
 	pthread_cond_broadcast(&answered);
 	pthread_mutex_unlock(&mutex);
 	finish(&editor);
+	midi_devices_free(editor.midi);
 	modules_free(&editor.modules);
 	transport_free(&editor.transport);
 	free(editor.error);

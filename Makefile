@@ -17,6 +17,8 @@ SPORK_REV = 0667f96b74de52747ffe5e19e185563ebf53816b
 WEBUI_REV = 52f9e75b92faf9a23fd150b3c60051c4ec85fc69
 CLAP_VERSION = 1.2.10
 CLAP ?= .deps/clap-$(CLAP_VERSION)
+PORTMIDI_VERSION = 2.0.8
+PORTMIDI ?= .deps/portmidi-$(PORTMIDI_VERSION)
 VST3_REV = 93a116f7c6c52a317ec3aaee9b13789068b5234e
 VST3 ?= .deps/vst3-c-api-$(VST3_REV)
 LV2_DEPS ?= .deps/lv2
@@ -26,18 +28,18 @@ WEBUI ?= .deps/webui-$(WEBUI_REV)
 PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
-PLUGIN_SOURCES = plugin.c script.c trace.c state.c
+PLUGIN_SOURCES = midi.c plugin.c script.c trace.c state.c
 SCORE_SOURCES = score_janet.c score.c score_view.c score_automation.c session.c sequence.c $(PLUGIN_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c transport.c
 HOST_SOURCES = host/dsp.c host/module.c host/scan.c host/perone.c host/clap.c host/clap_info.c host/lv2.c host/lv2_info.c host/lv2_state.c host/vst3.c host/vst3_info.c host/vst3_host.c
 HOST_PLATFORM_SOURCES = posix/host.c posix/clap.c posix/lv2.c posix/vst3.c x11/info.c
 HOST_OBJECTS = $(addprefix build/obj/native/,$(HOST_SOURCES:.c=.o) $(HOST_PLATFORM_SOURCES:.c=.o))
 UI_OBJECTS = $(addprefix build/obj/native/,x11/ui.o x11/perone_ui.o x11/clap_ui.o x11/lv2_ui.o x11/vst3_ui.o x11/window.o)
-PLUGIN_OBJECTS = $(HOST_OBJECTS) $(addprefix build/obj/native/,plugin.o state.o posix/discovery.o json_write.o script.o trace.o json.o janet.o)
+PLUGIN_OBJECTS = $(HOST_OBJECTS) $(addprefix build/obj/native/,midi.o plugin.o state.o posix/discovery.o json_write.o script.o trace.o json.o janet.o)
 SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o score_automation.o session.o sequence.o) $(PLUGIN_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host build/tools/plugin-scan
-NATIVE_TESTS = $(addprefix build/test/,dsp daw player routing score_view plugins ui view_json sequence clap lv2 vst3)
+NATIVE_TESTS = $(addprefix build/test/,dsp daw player routing score_view plugins ui view_json sequence clap lv2 vst3 midi midi_devices)
 FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h host/*.c host/*.h posix/*.c posix/*.h x11/*.c x11/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c test/vst3/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
 
 .PHONY: all cli gui tools clean format format-check
@@ -62,6 +64,22 @@ format-check:
 # CLAP is a header-only ABI; adapters stay outside the portable core.
 $(CLAP)/include/clap/clap.h:
 	git clone --depth 1 --branch $(CLAP_VERSION) https://github.com/free-audio/clap.git $(CLAP)
+
+
+$(PORTMIDI)/CMakeLists.txt:
+	git clone --depth 1 --branch v$(PORTMIDI_VERSION) https://github.com/PortMidi/portmidi.git $(PORTMIDI)
+
+$(PORTMIDI)/build/libportmidi.a: $(PORTMIDI)/CMakeLists.txt
+	cmake -S $(PORTMIDI) -B $(PORTMIDI)/build -DCMAKE_C_COMPILER="$(CC)" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_PORTMIDI_TESTS=OFF -DBUILD_JAVA_NATIVE_INTERFACE=OFF
+	cmake --build $(PORTMIDI)/build --target portmidi
+
+$(addprefix build/obj/native/,posix/midi.o test/midi_devices.o): override CPPFLAGS += -I$(PORTMIDI)/pm_common
+$(addprefix build/obj/native/,posix/midi.o test/midi_devices.o): $(PORTMIDI)/CMakeLists.txt $(MINIAUDIO)
+ifeq ($(TARGET_OS),Darwin)
+build/gui build/test/midi_devices: private LDLIBS += -framework CoreMIDI -framework CoreAudio -framework CoreFoundation
+else
+build/gui build/test/midi_devices: private LDLIBS += -lasound
+endif
 
 
 $(JANET)/Makefile:
@@ -133,14 +151,15 @@ $(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): $(WE
 
 $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(LDLIBS) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(filter %.a,$^) $(LDLIBS) -o $@
 
 build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
-build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS) $(UI_OBJECTS)
+build/gui: $(PORTMIDI)/build/libportmidi.a
+build/gui: $(addprefix build/obj/native/,posix/midi.o posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS) $(UI_OBJECTS)
 build/tools/perone-host: build/obj/native/tools/perone-host.o $(PLUGIN_OBJECTS) build/obj/native/audio.o
 build/gui build/test/ui build/test/clap build/test/lv2 build/test/vst3: private LDLIBS += -lX11
 
-build/tools/plugin-scan: build/obj/native/tools/plugin-scan.o $(HOST_OBJECTS) $(addprefix build/obj/native/,plugin.o state.o json_write.o)
+build/tools/plugin-scan: build/obj/native/tools/plugin-scan.o $(HOST_OBJECTS) $(addprefix build/obj/native/,midi.o plugin.o state.o json_write.o)
 $(filter-out build/tools/plugin-scan,$(NATIVE_PROGRAMS)) $(filter-out build/test/score_view,$(NATIVE_TESTS)): | build/tools/plugin-scan
 
 
@@ -246,6 +265,21 @@ test-vst3-ui: build/test/vst3 $(VST3_FIXTURE)
 test-vst3-editor: gui $(VST3_FIXTURE)
 	node test/plugin-editor.mjs vst3
 
+build/test/midi: $(SCORE_OBJECTS) build/obj/native/snapshot.o
+.PHONY: test-midi
+test-midi: build/test/midi $(NATIVE_FIXTURES) build/test/fixture.clap $(LV2_FIXTURE) $(VST3_FIXTURE)
+	./build/test/midi
+
+build/test/midi_devices: $(SCORE_OBJECTS) $(addprefix build/obj/native/,posix/midi.o player.o audio.o) $(PORTMIDI)/build/libportmidi.a
+.PHONY: test-midi-devices
+test-midi-devices: build/test/midi_devices
+	./build/test/midi_devices
+
+.PHONY: test-midi-ui
+test-midi-ui: gui test-web
+	node test/midi-devices.mjs
+	node test/midi-ui.mjs
+
 .PHONY: test test-plugins test-ui test-editor test-prog test-brickworks check-plugins prog
 test: $(addprefix build/test/,dsp daw player routing score_view sequence) $(NATIVE_FIXTURES) $(MIXER_FIXTURE)
 	./build/test/dsp
@@ -313,7 +347,7 @@ VIEW_EXPORTS = "_score_prepare","_score_describe","_score_pack_web","_score_pack
 SCORE_EXPORTS = "_score_new","_web_score_free","_score_listen","_score_duration","_score_can_seek"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sWASM_WORKERS -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
-PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_score_state_save","_score_state_load","_player_time","_score_player","_transport_update_web","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node"]'
+PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_score_state_save","_score_state_load","_player_time","_score_player","_transport_update_web","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node","_player_midi","_player_midi_read","_player_midi_capture","_player_midi_panic"]'
 # Publish C Brickworks examples only; fxpp_* and synthpp_* are duplicate C++ variants.
 WEB_CONTENT ?= lib examples $(wildcard plugins/*/build/*.perone \
     $(BRICKWORKS_PERONE)/fx_*/build/*.perone $(BRICKWORKS_PERONE)/synth_*/build/*.perone \
@@ -435,7 +469,7 @@ clean:
 
 # Recheck configuration on each invocation; unchanged files keep their timestamps.
 # Capture global flags here so per-target additions cannot leak through prerequisites.
-build/config/native.compile: private CONFIG := $(CC) | $(CPPFLAGS) | $(CFLAGS) | $(SCRIPT_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(WEBUI) | $(CLAP) | $(VST3) | $(LV2_DEPS) | $(BW_SOURCE)
+build/config/native.compile: private CONFIG := $(CC) | $(CPPFLAGS) | $(CFLAGS) | $(SCRIPT_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(WEBUI) | $(CLAP) | $(VST3) | $(LV2_DEPS) | $(PORTMIDI) | $(BW_SOURCE)
 build/config/native.link: private CONFIG := $(CC) | $(CFLAGS) | $(LDFLAGS) | $(LDLIBS) | $(TARGET_OS)
 build/config/web-offline.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(SPORK) | $(BW_SOURCE)
 build/config/web-player.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(PLAYER_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(BW_SOURCE)

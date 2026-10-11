@@ -71,6 +71,7 @@ typedef struct {
 	Steinberg_Vst_IEventList api;
 	struct Steinberg_Vst_Event events[256];
 	int count;
+	DSP *output;
 } VstEvents;
 typedef struct {
 	uint32_t id;
@@ -89,12 +90,13 @@ typedef struct Vst {
 	struct Steinberg_Vst_ParameterInfo *info;
 	VstParameter *by_id;
 	double *controller_values;
-	int nparams, midi_map[16][130];
+	int nparams, midi_map[16][131];
 	VstChanges in, out;
-	VstEvents events;
+	VstEvents events, output_events;
+	MidiBuffer sysex;
 	struct Steinberg_Vst_AudioBusBuffers *inputs, *outputs;
 	float **input_channels, **output_channels, *silence, *scratch;
-	int ninputs, noutputs, input_slots, output_slots, midi;
+	int ninputs, noutputs, input_slots, output_slots, midi, midi_output;
 	unsigned rate, block;
 	int mode;
 	Steinberg_TUID cid;

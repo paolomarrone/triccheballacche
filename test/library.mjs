@@ -57,7 +57,7 @@ try {
             assert(plugins.every(path => !/\/(fxpp_|synthpp_)/.test(path)));
             assert(await evaluate('document.querySelector("#plugin-paths").children.length > 0'));
             assert.match(await evaluate('document.querySelector("#catalog-list").textContent'), /in use/);
-            await click("#settings-plugins");
+            await click("#settings-plugins-tab");
             assert.equal(await evaluate('document.activeElement.id'), "settings-catalog");
             await screenshot("settings");
             await key("Escape", "Escape");

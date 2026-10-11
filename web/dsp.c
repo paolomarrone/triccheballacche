@@ -1,4 +1,5 @@
 #include "dsp.h"
+#include <string.h>
 #include <emscripten.h>
 #include <stdlib.h>
 
@@ -82,8 +83,17 @@ void reset_dsp(DSP *dsp) {
 	wasm_reset(dsp);
 }
 
-void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message) {
-	wasm_midi(dsp, bus, message);
+void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message, size_t size) {
+	if (size <= 3 && midi_valid(message, size)) {
+		uint8_t bytes[3] = {0};
+		memcpy(bytes, message, size);
+		wasm_midi(dsp, bus, bytes);
+	}
+}
+
+const MidiBuffer *midi_output_dsp(DSP *dsp) {
+	(void)dsp;
+	return NULL;
 }
 
 int process_dsp(DSP *dsp, const float **inputs, float **outputs, size_t frames, const ProcessTime *time) {

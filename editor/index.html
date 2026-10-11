@@ -63,12 +63,18 @@
 <dialog id="settings-dialog" aria-labelledby="settings-title">
     <header><h2 id="settings-title">Settings</h2><button class="icon" data-close title="Close settings" aria-label="Close settings">×</button></header>
     <div id="settings-body">
-        <nav aria-label="Settings categories"><button id="settings-plugins" aria-controls="settings-catalog" aria-current="page">Plugins</button></nav>
+        <nav aria-label="Settings categories"><button id="settings-plugins-tab" aria-controls="settings-catalog" aria-current="page">Plugins</button><button id="settings-midi-tab" aria-controls="settings-midi">MIDI</button></nav>
         <section id="settings-catalog" aria-label="Plugins" tabindex="-1">
             <h3>Plugin sources</h3>
             <ul id="plugin-paths"></ul>
             <h3 id="catalog-title">Available plugins</h3>
             <div id="catalog-list"></div>
+        </section>
+        <section id="settings-midi" aria-label="MIDI" hidden>
+            <button id="midi-enable" title="Discover devices; on desktop this disconnects existing MIDI routes">Connect / refresh devices</button>
+            <p>Connect devices to score nodes. Press Play to receive and send MIDI.</p>
+            <div id="midi-devices"></div>
+            <p id="midi-empty">No MIDI devices connected.</p>
         </section>
     </div>
 </dialog>
