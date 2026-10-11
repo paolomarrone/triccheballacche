@@ -1,17 +1,16 @@
 # Due corpi — 28 bars at 144 BPM, about 51 seconds including the ending.
 # Samplo's original struck-metal bank meets Vitsel's dry synth bass and answers.
-# Prepare/render on Android ARM64: python tools/due-corpi.py --render
-# The helper supplies CLAP_PATH and an isolated Samplo instruments directory.
+# Generate the bank with due-corpi.py; SAMPLO_INSTRUMENT selects its index (see README).
+# Render: ./build/cli examples/due-corpi.janet renders/due-corpi.wav 48000
 (import ../lib/pattern :as p)
 (import ../lib/music)
 
-(assert (= :file (os/stat "instruments/01-due-corpi.sfz" :mode))
-  "Prepare and run this example with python tools/due-corpi.py --render (or --gui)")
 (def bpm 144)
 (def beat (/ 60 bpm))
 (def pickup 0.2)
+(def bw-root (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks"))
 (defn bw [id name params]
-  (daw/plugin id (string "build/library/brickworks/" name "/build/bw_example_" name ".perone") params))
+  (daw/plugin id (string bw-root "/" name "/build/bw_example_" name ".perone") params))
 (defn drum [id seed] (daw/plugin id "plugins/drums/build/plugin.perone" {:seed seed}))
 
 # These releases expose normalized float controls and integer enum controls.
@@ -24,8 +23,9 @@
 (def release :112793)
 (def cutoff :97128169)
 
+(def instrument (if-let [index (os/getenv "SAMPLO_INSTRUMENT")] (scan-number index) 0))
 (def sampler (daw/plugin :tines {:format :clap :id "dev.mlm-games.samplo"}
-  {:3237446 1 :1336493441 15 :863781340 0
+  {:3237446 instrument :1336493441 15 :863781340 0
    gain 0.39 attack (norm 1.5 0 2000 0.3) decay (norm 480 1 4000 0.3)
    sustain 0.42 release (norm 240 1 8000 0.3) :2119957241 0.82}))
 (def bass (daw/plugin :bass {:format :clap :id "dev.example.vitsel"}
@@ -42,13 +42,13 @@
 (def snare (drum :snare 144013))
 (def hats (drum :hats 144017))
 
-(def tines-track (daw/track sampler {:name "Samplo / lamelle" :gain 0.74 :pan -0.23
+(def tines-track (daw/track sampler {:name "Samplo / tines" :gain 0.74 :pan -0.23
   :effects [(bw :tines-hp "fx_hp1" {:cutoff 180})]}))
-(def bass-track (daw/track bass {:name "Vitsel / gomma" :gain 0.57 :effects
+(def bass-track (daw/track bass {:name "Vitsel / bass" :gain 0.57 :effects
   [(bw :bass-satur "fx_satur" {:gain 1.65}) (bw :bass-hp "fx_hp1" {:cutoff 33})]}))
-(def reply-track (daw/track reply {:name "Vitsel / risposta" :gain 0.35 :pan 0.34}))
+(def reply-track (daw/track reply {:name "Vitsel / reply" :gain 0.35 :pan 0.34}))
 (def echo (daw/through sampler (bw :tine-echo "fx_delay" {:delay (* beat 750)})))
-(def echo-track (daw/track echo {:name "Samplo / riflesso" :gain 0.21 :pan 0.65
+(def echo-track (daw/track echo {:name "Samplo / echo" :gain 0.21 :pan 0.65
   :effects [(bw :echo-hp "fx_hp1" {:cutoff 1250})
             (bw :echo-space "fx_reverb" {:predelay 18 :bandwidth 7400 :damping 4300 :decay 55 :wet 32})]}))
 (def master (daw/master (daw/mix

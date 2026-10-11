@@ -46,7 +46,7 @@ static bool init(const clap_plugin_t *plugin) {
 	assert(p->threads && p->host_params && p->host_timer);
 	main_thread(p);
 	p->values[0] = .25;
-	p->values[126] = 1.00000003; // Integer parameter after a float32 round trip.
+	p->values[126] = -1.75;
 	p->private_state = 1;
 	p->host->request_callback(p->host);
 	return true;
@@ -111,9 +111,9 @@ static bool param_info(const clap_plugin_t *plugin, uint32_t index, clap_param_i
 	*info = (clap_param_info_t){.id = parameter_id(index),
 	    .flags = CLAP_PARAM_IS_AUTOMATABLE | (index == 127 ? CLAP_PARAM_REQUIRES_PROCESS : 0) |
 	        (index == 126 ? CLAP_PARAM_IS_STEPPED : 0),
-	    .min_value = 0,
+	    .min_value = index == 126 ? -3 : 0,
 	    .max_value = index == 126 ? 3 : 1,
-	    .default_value = index == 126 ? 0.99999997
+	    .default_value = index == 126 ? 1.75
 	        : index                   ? 0
 	                                  : .25,
 	    .cookie = (void *)(uintptr_t)(self(plugin)->generation * PARAMETERS + index + 1)};
@@ -153,11 +153,15 @@ static void events(Plugin *p, const clap_input_events_t *in, const clap_output_e
 			if ((n == 128 || (p->effect && n == 129)) && (p->values[n] >= .5) != (v->value >= .5))
 				p->host->request_restart(p->host);
 			p->values[n] = v->value;
-		} else if (event->type == CLAP_EVENT_NOTE_ON)
+		} else if (event->type == CLAP_EVENT_NOTE_ON) {
 			p->held = 1;
-		else if (event->type == CLAP_EVENT_NOTE_OFF)
+			assert(!out->try_push(out, event)); // The note output is disconnected.
+		} else if (event->type == CLAP_EVENT_NOTE_OFF) {
 			p->held = 0;
-		else
+			clap_event_note_t ended = *(const clap_event_note_t *)event;
+			ended.header.type = CLAP_EVENT_NOTE_END;
+			assert(out->try_push(out, &ended.header));
+		} else
 			assert(0);
 	}
 	if (atomic_exchange(&p->edited, 0)) {
@@ -226,7 +230,7 @@ static bool audio_info(const clap_plugin_t *plugin, uint32_t index, bool input, 
 }
 static uint32_t note_count(const clap_plugin_t *plugin, bool input) {
 	(void)input;
-	// Synths may expose an unused note output, as Samplo and Vitsel do.
+	// The host accepts synths with a disconnected note output.
 	return !self(plugin)->effect;
 }
 static bool note_info(const clap_plugin_t *plugin, uint32_t index, bool input, clap_note_port_info_t *info) {

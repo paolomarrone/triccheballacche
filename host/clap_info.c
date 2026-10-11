@@ -7,6 +7,14 @@ static int compare_parameter(const void *a, const void *b) {
 	clap_id x = ((const ClapParameter *)a)->id, y = ((const ClapParameter *)b)->id;
 	return (x > y) - (x < y);
 }
+bool clap_value(const clap_param_info_t *p, double *value) {
+	if (!isfinite(*value) || *value < p->min_value || *value > p->max_value)
+		return false;
+	// CLAP stepped values use integer casts, which truncate toward zero.
+	if (p->flags & CLAP_PARAM_IS_STEPPED)
+		*value = trunc(*value);
+	return *value >= p->min_value && *value <= p->max_value;
+}
 int clap_parameters(Clap *c) {
 	if (!c->params)
 		return 0;
@@ -79,8 +87,7 @@ int clap_layout(Clap *c, int *input, int *output, int *midi) {
 	c->input_slots = slots[1];
 	c->output_slots = slots[0];
 	if (c->notes) {
-		// Note outputs can remain disconnected, including those exposed by
-		// NIH-plug instruments. event_push accepts NOTE_END and declines MIDI.
+		// Note outputs are not routed.
 		if (!c->notes->count || !c->notes->get || c->notes->count(c->plugin, true) > 1)
 			return -1;
 		if (c->notes->count(c->plugin, true)) {
@@ -124,17 +131,9 @@ int clap_metadata(Clap *c, Json *j, const char *path) {
 	json_print(j, ",\"parameters\":[");
 	for (uint32_t i = 0; i < c->nparams; ++i) {
 		const clap_param_info_t *p = c->info + i;
-		double initial = p->default_value;
-		if (!c->params->get_value(c->plugin, p->id, &initial) || !isfinite(initial) || initial < p->min_value ||
-		    initial > p->max_value)
+		double declared = p->default_value, initial;
+		if (!clap_value(p, &declared) || !c->params->get_value(c->plugin, p->id, &initial) || !clap_value(p, &initial))
 			return -1;
-		// NIH-plug's float32 normalization can leave integer controls a few
-		// ulps away from their step. Publish discrete defaults to Janet.
-		double declared = p->default_value;
-		if (p->flags & CLAP_PARAM_IS_STEPPED) {
-			initial = round(initial);
-			declared = round(declared);
-		}
 		json_print(j, "%s{\"id\":\"%u\",\"nativeId\":%u,\"name\":", i ? "," : "", p->id, p->id);
 		json_string(j, p->name);
 		json_print(j, ",\"module\":");

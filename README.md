@@ -165,17 +165,14 @@ Surge and the comb use the native plugin search paths described below.
 electronica with an original piano/glass theme, acid bass, broken drums and
 eight sections. It uses the canonical Brickworks library, local drums and piano.
 [Due corpi](examples/due-corpi.janet) is a 50-second electro miniature with Samplo
-and Vitsel CLAP, Perone drums and Brickworks effects. On Android ARM64, after
-building `cli`, `library` and the local `drums` plugin, run
-`python tools/due-corpi.py --render`; the WAV is `renders/due-corpi.wav`.
-The helper downloads pinned, checksum-verified Android plugins and generates an
-original four-sample SFZ bank in `build/examples/due-corpi`. It runs from that
-directory to keep Samplo's instrument selection reproducible. Use `--play` for
-CLI playback or `--gui` after building the editor. On Termux, use
-`python tools/due-corpi.py --serve` and open the printed localhost URL in the
-phone's browser; audio and CLAP processing still run in the native host.
-Both CLAP instruments use the host's parameter panel. These plugin binaries are
-specific to Android ARM64.
+and Vitsel CLAP, Perone drums and Brickworks effects. Install
+[Samplo](https://github.com/mlm-games/samplo-clap) and
+[Vitsel](https://github.com/mlm-games/vitsel-clap) for your platform in a CLAP search
+path. Generate its original SFZ bank with `python examples/due-corpi.py DIRECTORY`,
+where `DIRECTORY` is a folder in Samplo's instrument library. Set
+`SAMPLO_INSTRUMENT` to the bank's index (default: `0`), then use the usual CLI or editor.
+Samplo 1.2.7 has an upstream limitation: it skips loading instrument `0` on startup
+and plays a test tone instead. Correct playback at that index needs an upstream fix.
 
 ## Plugins
 

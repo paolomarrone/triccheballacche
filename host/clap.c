@@ -247,10 +247,12 @@ static bool event_push(const clap_output_events_t *list, const clap_event_header
 	if (event->type == CLAP_EVENT_PARAM_VALUE && event->size >= sizeof(clap_event_param_value_t)) {
 		const clap_event_param_value_t *p = (const void *)event;
 		int i = parameter_index(c, p->param_id);
-		if (i < 0 || !isfinite(p->value) || p->note_id != -1 || p->port_index != -1 || p->channel != -1 || p->key != -1)
+		double value = p->value;
+		if (i < 0 || p->note_id != -1 || p->port_index != -1 || p->channel != -1 || p->key != -1 ||
+		    !clap_value(c->info + i, &value))
 			return false;
 		if (c->dsp)
-			atomic_store(&c->dsp->values[i], p->value);
+			atomic_store(&c->dsp->values[i], value);
 		return true;
 	}
 	return event->type == CLAP_EVENT_PARAM_GESTURE_BEGIN || event->type == CLAP_EVENT_PARAM_GESTURE_END ||
@@ -404,7 +406,7 @@ static int poll_instance(DSP *dsp) {
 	if ((requests & CLAP_HOST_VALUES) && c->params)
 		for (uint32_t i = 0; i < c->nparams; ++i) {
 			double value;
-			if (c->params->get_value(c->plugin, c->info[i].id, &value) && isfinite(value))
+			if (c->params->get_value(c->plugin, c->info[i].id, &value) && clap_value(c->info + i, &value))
 				atomic_store(&dsp->values[i], value);
 		}
 	ClapTimer timers[64];

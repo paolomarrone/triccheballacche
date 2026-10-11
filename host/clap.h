@@ -68,6 +68,7 @@ void clap_destroy(Clap *c);
 int clap_metadata(Clap *c, Json *json, const char *path);
 int clap_layout(Clap *c, int *input, int *output, int *midi);
 int clap_parameters(Clap *c);
+bool clap_value(const clap_param_info_t *parameter, double *value);
 const clap_plugin_entry_t *clap_module_entry(Module *module);
 extern const char *const clap_window_api;
 

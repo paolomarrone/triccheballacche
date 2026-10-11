@@ -100,7 +100,7 @@ build/obj/native/janet.o: build/generated/janet.c Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -MMD -MP -c $< -o $@
 
-CLAP_OBJECTS = $(addprefix build/obj/native/,host/clap.o host/clap_info.o posix/clap.o x11/clap_ui.o x11/info.o tools/plugin-scan.o)
+CLAP_OBJECTS = $(addprefix build/obj/native/,host/clap.o host/clap_info.o posix/clap.o x11/clap_ui.o x11/info.o tools/plugin-scan.o test/clap.o)
 $(CLAP_OBJECTS): override CPPFLAGS += -I$(CLAP)/include
 $(CLAP_OBJECTS): $(CLAP)/include/clap/clap.h
 

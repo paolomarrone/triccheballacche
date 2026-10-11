@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <uchar.h>
 
 static Window named_window(Display *display, Window parent, const char *name) {
 	char *title = NULL;

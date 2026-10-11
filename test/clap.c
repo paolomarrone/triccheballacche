@@ -1,6 +1,6 @@
 #include "score_janet.h"
 #include "snapshot.h"
-#include "host/dsp_internal.h"
+#include "host/clap.h"
 #include "host/ui.h"
 #include <X11/Xlib.h>
 #include <assert.h>
@@ -106,6 +106,45 @@ static void latency_test(void) {
 	session_free(&s);
 	puts("OK: parallel-path latency compensation, activation notifications and quiescent restart");
 }
+static void parameter_test(void) {
+	Session s = {0};
+	Output output;
+	assert(!load_score(&s, &output, "test/clap/score.janet"));
+	DSP *dsp = s.nodes[0].dsp[0].dsp;
+	Clap *c = dsp->instance;
+	clap_event_param_value_t event = {.header = {.size = sizeof(event), .type = CLAP_EVENT_PARAM_VALUE},
+	    .param_id = dsp->config.parameters[126].id,
+	    .note_id = -1,
+	    .port_index = -1,
+	    .channel = -1,
+	    .key = -1};
+	const struct {
+		double value, expected;
+		bool valid;
+	} cases[] = {{1.75, 1, true}, {-1.75, -1, true}, {0.99999997, 0, true}, {1.00000003, 1, true}, {3, 3, true},
+	    {-3, -3, true}, {3.01, 0, false}, {-3.01, 0, false}, {NAN, 0, false}, {INFINITY, 0, false}};
+	const char *path = "build/test/clap-parameters.state";
+	assert(!state_dsp(dsp, path, 1));
+	for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
+		edit_dsp(dsp, 126, 0);
+		session_sync(&s);
+		event.value = cases[i].value;
+		assert(c->out.try_push(&c->out, &event.header) == cases[i].valid);
+		double value;
+		assert(read_dsp(dsp, 126, &value) && value == cases[i].expected);
+
+		// State loading exercises get_value/rescan independently of output events.
+		edit_dsp(dsp, 126, 0);
+		session_sync(&s);
+		FILE *state = fopen(path, "r+b");
+		assert(state && !fseek(state, 126 * sizeof(double), SEEK_SET));
+		assert(fwrite(&cases[i].value, sizeof(double), 1, state) == 1 && !fclose(state));
+		assert(!state_dsp(dsp, path, 0) && !session_poll(&s));
+		assert(read_dsp(dsp, 126, &value) && value == cases[i].expected);
+	}
+	session_free(&s);
+	puts("OK: CLAP stepped values, signed truncation, bounds and invalid output/rescan values");
+}
 int main(int argc, char **argv) {
 	int ui = argc > 1 && !strcmp(argv[1], "--ui");
 	if (argc > 2) {
@@ -138,7 +177,7 @@ int main(int argc, char **argv) {
 	Output output;
 	assert(!load_score(&s, &output, "test/clap/score.janet"));
 	assert(session_score(&s)->nodes[0].config.nparams == 130);
-	assert(session_score(&s)->nodes[0].config.parameters[126].value == 1);
+	assert(session_score(&s)->nodes[0].config.parameters[126].value == -1);
 	assert(session_score(&s)->nodes[0].config.parameters[129].id == 1007);
 	DSP *synth = s.nodes[0].dsp[0].dsp;
 	assert(synth && s.nodes[1].dsp[0].dsp);
@@ -208,5 +247,6 @@ int main(int argc, char **argv) {
 	if (ui)
 		puts("OK: CLAP native X11 UI, timers, edits in both directions and repeated window lifetime");
 	latency_test();
+	parameter_test();
 	return 0;
 }
