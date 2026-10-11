@@ -161,6 +161,10 @@ for the canonical library, or [Rame](examples/rame.janet) for a complete piece.
 [Crocevia](examples/crocevia.janet) combines local Perone drums/synths, Surge XT CLAP,
 A-SID LV2 from `../asid` (override with `ASID_LV2`) and Brickworks `fx_comb` VST3.
 Surge and the comb use the native plugin search paths described below.
+[denoiser](examples/denoiser.janet) combines Clack.DIGITAL Ue Ue Wah on the lead with
+Bertom Denoiser Classic on a noisy radio bus, both VST3. A 126 BPM electro-funk piece
+with syncopated bass, electric keys and short denoiser A/B comparisons in the intro
+and break. It also uses local Perone plugins and the canonical Brickworks library.
 [Insetti di vetro](examples/insetti-di-vetro.janet) is 150 seconds of fractured
 electronica with an original piano/glass theme, acid bass, broken drums and
 eight sections. It uses the canonical Brickworks library, local drums and piano.
