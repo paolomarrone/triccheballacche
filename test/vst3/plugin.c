@@ -1,5 +1,5 @@
 // Independent C VST3 fixture: separate synth/controller and a combined effect/controller.
-#include <vst3_c_api.h>
+#include "host/vst3_api.h"
 #include <X11/Xlib.h>
 #include <assert.h>
 #include <math.h>

@@ -79,8 +79,9 @@ int clap_layout(Clap *c, int *input, int *output, int *midi) {
 	c->input_slots = slots[1];
 	c->output_slots = slots[0];
 	if (c->notes) {
-		if (!c->notes->count || !c->notes->get || c->notes->count(c->plugin, true) > 1 ||
-		    c->notes->count(c->plugin, false))
+		// Note outputs can remain disconnected, including those exposed by
+		// NIH-plug instruments. event_push accepts NOTE_END and declines MIDI.
+		if (!c->notes->count || !c->notes->get || c->notes->count(c->plugin, true) > 1)
 			return -1;
 		if (c->notes->count(c->plugin, true)) {
 			clap_note_port_info_t p;
@@ -127,6 +128,13 @@ int clap_metadata(Clap *c, Json *j, const char *path) {
 		if (!c->params->get_value(c->plugin, p->id, &initial) || !isfinite(initial) || initial < p->min_value ||
 		    initial > p->max_value)
 			return -1;
+		// NIH-plug's float32 normalization can leave integer controls a few
+		// ulps away from their step. Publish discrete defaults to Janet.
+		double declared = p->default_value;
+		if (p->flags & CLAP_PARAM_IS_STEPPED) {
+			initial = round(initial);
+			declared = round(declared);
+		}
 		json_print(j, "%s{\"id\":\"%u\",\"nativeId\":%u,\"name\":", i ? "," : "", p->id, p->id);
 		json_string(j, p->name);
 		json_print(j, ",\"module\":");
@@ -134,8 +142,8 @@ int clap_metadata(Clap *c, Json *j, const char *path) {
 		json_print(j,
 		    ",\"minimum\":%.17g,\"maximum\":%.17g,\"defaultValue\":%.17g,\"initialValue\":%.17g,\"direction\":\"%s\","
 		    "\"integer\":%s,\"automatable\":%s,\"hidden\":%s}",
-		    p->min_value, p->max_value, p->default_value, initial,
-		    p->flags & CLAP_PARAM_IS_READONLY ? "output" : "input", p->flags & CLAP_PARAM_IS_STEPPED ? "true" : "false",
+		    p->min_value, p->max_value, declared, initial, p->flags & CLAP_PARAM_IS_READONLY ? "output" : "input",
+		    p->flags & CLAP_PARAM_IS_STEPPED ? "true" : "false",
 		    p->flags & CLAP_PARAM_IS_AUTOMATABLE ? "true" : "false",
 		    p->flags & CLAP_PARAM_IS_HIDDEN ? "true" : "false");
 	}

@@ -161,6 +161,21 @@ for the canonical library, or [Rame](examples/rame.janet) for a complete piece.
 [Crocevia](examples/crocevia.janet) combines local Perone drums/synths, Surge XT CLAP,
 A-SID LV2 from `../asid` (override with `ASID_LV2`) and Brickworks `fx_comb` VST3.
 Surge and the comb use the native plugin search paths described below.
+[Insetti di vetro](examples/insetti-di-vetro.janet) is 150 seconds of fractured
+electronica with an original piano/glass theme, acid bass, broken drums and
+eight sections. It uses the canonical Brickworks library, local drums and piano.
+[Due corpi](examples/due-corpi.janet) is a 50-second electro miniature with Samplo
+and Vitsel CLAP, Perone drums and Brickworks effects. On Android ARM64, after
+building `cli`, `library` and the local `drums` plugin, run
+`python tools/due-corpi.py --render`; the WAV is `renders/due-corpi.wav`.
+The helper downloads pinned, checksum-verified Android plugins and generates an
+original four-sample SFZ bank in `build/examples/due-corpi`. It runs from that
+directory to keep Samplo's instrument selection reproducible. Use `--play` for
+CLI playback or `--gui` after building the editor. On Termux, use
+`python tools/due-corpi.py --serve` and open the printed localhost URL in the
+phone's browser; audio and CLAP processing still run in the native host.
+Both CLAP instruments use the host's parameter panel. These plugin binaries are
+specific to Android ARM64.
 
 ## Plugins
 
@@ -254,7 +269,8 @@ Native VST3 binaries do not run in the Wasm editor.
 
 For CLAP, LV2 and VST3, the audio graph routes the main mono/stereo buses. Additional inputs
 receive silence; additional outputs and note outputs are not routed. Plugins
-with note outputs or more than one note input are currently rejected. Mono
+with more than one note input are currently rejected. CLAP note outputs may remain
+disconnected; LV2 and VST3 plugins with note outputs are rejected. Mono
 effects are not duplicated implicitly on stereo signals. Parallel paths are
 latency-compensated with buffers allocated before rendering; total output latency
 and effect tails still need room in the score's duration. Per-note expression,

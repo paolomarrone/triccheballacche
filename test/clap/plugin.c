@@ -46,6 +46,7 @@ static bool init(const clap_plugin_t *plugin) {
 	assert(p->threads && p->host_params && p->host_timer);
 	main_thread(p);
 	p->values[0] = .25;
+	p->values[126] = 1.00000003; // Integer parameter after a float32 round trip.
 	p->private_state = 1;
 	p->host->request_callback(p->host);
 	return true;
@@ -108,10 +109,13 @@ static bool param_info(const clap_plugin_t *plugin, uint32_t index, clap_param_i
 	if (index >= PARAMETERS)
 		return false;
 	*info = (clap_param_info_t){.id = parameter_id(index),
-	    .flags = CLAP_PARAM_IS_AUTOMATABLE | (index == 127 ? CLAP_PARAM_REQUIRES_PROCESS : 0),
+	    .flags = CLAP_PARAM_IS_AUTOMATABLE | (index == 127 ? CLAP_PARAM_REQUIRES_PROCESS : 0) |
+	        (index == 126 ? CLAP_PARAM_IS_STEPPED : 0),
 	    .min_value = 0,
-	    .max_value = 1,
-	    .default_value = index ? 0 : .25,
+	    .max_value = index == 126 ? 3 : 1,
+	    .default_value = index == 126 ? 0.99999997
+	        : index                   ? 0
+	                                  : .25,
 	    .cookie = (void *)(uintptr_t)(self(plugin)->generation * PARAMETERS + index + 1)};
 	snprintf(info->name, sizeof(info->name), index ? "Control %u" : "Gain", index);
 	return true;
@@ -221,13 +225,16 @@ static bool audio_info(const clap_plugin_t *plugin, uint32_t index, bool input, 
 	return true;
 }
 static uint32_t note_count(const clap_plugin_t *plugin, bool input) {
-	return input && !self(plugin)->effect;
+	(void)input;
+	// Synths may expose an unused note output, as Samplo and Vitsel do.
+	return !self(plugin)->effect;
 }
 static bool note_info(const clap_plugin_t *plugin, uint32_t index, bool input, clap_note_port_info_t *info) {
-	if (index || !input || self(plugin)->effect)
+	if (index || self(plugin)->effect)
 		return false;
-	*info = (clap_note_port_info_t){
-	    .id = 80, .supported_dialects = CLAP_NOTE_DIALECT_CLAP, .preferred_dialect = CLAP_NOTE_DIALECT_CLAP};
+	*info = (clap_note_port_info_t){.id = input ? 80 : 81,
+	    .supported_dialects = CLAP_NOTE_DIALECT_CLAP,
+	    .preferred_dialect = CLAP_NOTE_DIALECT_CLAP};
 	return true;
 }
 static bool save(const clap_plugin_t *plugin, const clap_ostream_t *out) {

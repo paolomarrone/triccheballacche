@@ -2,7 +2,7 @@
 #define HOST_VST3_H
 #include "dsp_internal.h"
 #include "json_write.h"
-#include <vst3_c_api.h>
+#include "vst3_api.h"
 #include <string.h>
 
 // The ABI's first three methods are shared by every interface, including secondary ones.

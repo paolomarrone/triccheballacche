@@ -138,6 +138,7 @@ int main(int argc, char **argv) {
 	Output output;
 	assert(!load_score(&s, &output, "test/clap/score.janet"));
 	assert(session_score(&s)->nodes[0].config.nparams == 130);
+	assert(session_score(&s)->nodes[0].config.parameters[126].value == 1);
 	assert(session_score(&s)->nodes[0].config.parameters[129].id == 1007);
 	DSP *synth = s.nodes[0].dsp[0].dsp;
 	assert(synth && s.nodes[1].dsp[0].dsp);

@@ -234,9 +234,9 @@ test-lv2-ui: build/test/lv2 $(LV2_FIXTURE)
 	./build/test/lv2 --ui
 
 VST3_FIXTURE = build/test/fixture.vst3/Contents/$(shell uname -m)-linux/fixture.so
-$(VST3_FIXTURE): test/vst3/plugin.c $(VST3)/vst3_c_api.h Makefile build/config/native.compile
+$(VST3_FIXTURE): test/vst3/plugin.c host/vst3_api.h $(VST3)/vst3_c_api.h Makefile build/config/native.compile
 	mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I$(VST3) -fPIC -shared $< -lX11 -lm -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -I$(VST3) -fPIC -shared $< -lX11 -lm -o $@
 build/test/vst3: $(SCORE_OBJECTS) $(UI_OBJECTS)
 .PHONY: test-vst3 test-vst3-ui test-vst3-editor
 test-vst3: build/test/vst3 $(VST3_FIXTURE)
