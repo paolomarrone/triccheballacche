@@ -312,15 +312,6 @@ keep them out of the examples dropdown.
 
 ## Development
 
-Tibia VST3 note (2026-10-10): `templates/vst3/src/vst3.c` returns `0` from
-`vstExit()` after releasing the last module reference. A-SID's generated VST3
-source has the same behavior. A C probe successfully called `ModuleEntry`,
-enumerated the factory classes and released the factory, but `ModuleExit`
-then returned false. The [SDK entry points](https://github.com/steinbergmedia/vst3_public_sdk/blob/master/source/main/linuxmain.cpp)
-use a boolean success result. The proposed upstream fix is to return success
-after normal cleanup and check balanced, repeated entry/exit calls. No sibling
-repository was changed; this is a shutdown result issue, not a C ABI failure.
-
 Root C files own scores, sequencing, sessions and projection. `dsp.h` is the
 engine's plugin contract. `host/` implements native DSP instances, module caching
 and Perone/CLAP/LV2/VST3 adapters; each format owns its module resources. `posix/`
