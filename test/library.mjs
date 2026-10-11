@@ -34,7 +34,7 @@ try {
     for (const mode of ["web", "native"]) {
         let url = `http://127.0.0.1:${server.address().port}/editor/index.html`;
         if (mode === "native") {
-            native = nativeEditor(entry);
+            native = nativeEditor(entry, {XDG_CONFIG_HOME: directory});
             url = await native.url;
         }
         await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {

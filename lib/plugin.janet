@@ -43,31 +43,69 @@
 
 (def- plugin/cache @{})
 
-(defn plugin/paths [format]
-  (def variable (case format :clap "CLAP_PATH" :lv2 "LV2_PATH" :vst3 "VST3_PATH" (error "unsupported plugin format")))
-  (def custom (os/getenv variable))
-  (def suffix (string format))
-  (def defaults [(string (or (os/getenv "HOME") "") "/." suffix)
-                 (string "/usr/local/lib/" suffix) (string "/usr/lib/" suffix)])
-  (filter |(> (length $) 0)
-    (if (and (= format :lv2) custom) (string/split ":" custom)
-      (array/concat @[] (string/split ":" (or custom "")) defaults))))
+(defn plugin/default-paths [format]
+  (distinct
+    (if (= format :perone)
+      ["plugins" (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks")
+       (or (os/getenv "ASID_PERONE") "../asid/plugin/perone/build/asid.perone")
+       (or (os/getenv "TIBIA_PERONE") "../tibia/out/perone/c/build/tibia-test.perone")]
+      (do
+        (def variable (case format :clap "CLAP_PATH" :lv2 "LV2_PATH" :vst3 "VST3_PATH" (error "unsupported plugin format")))
+        (def custom (os/getenv variable))
+        (def suffix (string format))
+        (def defaults [(string (or (os/getenv "HOME") "") "/." suffix)
+                      (string "/usr/local/lib/" suffix) (string "/usr/lib/" suffix)])
+        (filter |(> (length $) 0)
+          (if (and (= format :lv2) custom) (string/split ":" custom)
+            (array/concat @[] (string/split ":" (or custom "")) defaults)))))))
 
-(defn plugin/files [format root &opt depth]
+# Preferences contain only discovery paths; explicit score references are unchanged.
+(defn plugin/check-paths [paths]
+  (assert (dictionary? paths) "Plugin paths must be an object")
+  (eachp [format roots] paths
+    (assert (index-of format [:perone :clap :lv2 :vst3]) "Unknown plugin format")
+    (assert (and (indexed? roots) (<= (length roots) 64)) "Expected at most 64 paths per format")
+    (each root roots
+      (assert (and (string? root) (< 0 (length root) 4096)
+                   (not (string/find "\0" root)) (not (string/find "\n" root))) "Invalid plugin path")))
+  paths)
+
+(defn plugin/settings []
+  (def value (if (and host/settings-path (os/stat host/settings-path))
+    (json/decode (slurp host/settings-path) true) @{}))
+  (assert (dictionary? value) "Settings must be an object")
+  (plugin/check-paths (get value :plugin-paths @{}))
+  value)
+
+(var- plugin/search-paths nil)
+(defn plugin/paths [format]
+  (unless plugin/search-paths (set plugin/search-paths (or ((plugin/settings) :plugin-paths) @{})))
+  (or (plugin/search-paths format) (plugin/default-paths format)))
+
+(defn plugin/expand-path [path]
+  (if (or (= path "~") (string/has-prefix? "~/" path))
+    (string (or (os/getenv "HOME") (error "HOME is not set")) (string/slice path 1)) path))
+
+(defn plugin/files [format path &opt depth]
   (default depth 0)
+  (def expanded (plugin/expand-path path))
+  (def root (if (= expanded "/") expanded (string/trimr expanded "/")))
   (def files @[])
-  (when (and (< depth 8) (= :directory (os/stat root :mode)))
+  (def kind (os/stat root :mode))
+  (def name (last (string/split "/" root)))
+  (cond
+    (and (> (length name) (+ 1 (length (string format))))
+         (string/has-suffix? (string "." format) name)
+         (if (= format :clap) (= kind :file) (= kind :directory)))
+    (when (or (not= format :perone) (= :file (os/stat (string root "/product.json") :mode)))
+      (array/push files root))
+    (and (< depth 8) (= kind :directory))
     (each name (sort (os/dir root))
       (unless (string/has-prefix? "." name)
         (def path (string root "/" name))
-        (def kind (os/stat path :mode))
-        (cond
-          (and (or (= format :lv2) (= format :vst3)) (= kind :directory)
-               (string/has-suffix? (string "." format) name))
-          (array/push files path)
-          (and (= format :clap) (= kind :file) (string/has-suffix? ".clap" name))
-          (array/push files path)
-          (= :directory (os/lstat path :mode))
+        (when (or (not (= :directory (os/stat path :mode)))
+                  (= :directory (os/lstat path :mode))
+                  (string/has-suffix? (string "." format) name))
           (array/concat files (plugin/files format path (+ depth 1)))))))
   files)
 

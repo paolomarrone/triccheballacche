@@ -1,59 +1,68 @@
-# Native discovery. Plugin inspection runs in the scanner process, never in Janet.
+# Native catalog and discovery preferences. Inspection runs in the scanner process.
 (def files @[])
 (def plugins @[])
-(defn add [path]
-  (array/push files {:path path :text (slurp path)}))
-(defn children [path]
-  (if (= :directory (os/stat path :mode)) (sort (os/dir path)) []))
-(defn bundle [path]
-  (when (= :file (os/stat (string path "/product.json") :mode))
-    (try
-      (let [info (plugin/read path)]
-        (when (= :file (os/stat (info :binary) :mode))
-          (add (string path "/product.json"))))
-      ([err] (eprint "Library: " path ": " err)))))
-(defn collection [root accept]
-  (each name (children root)
-    (when (accept name)
-      (def build (string root "/" name "/build"))
-      (each name (children build)
-        (when (string/has-suffix? ".perone" name)
-          (bundle (string build "/" name)))))))
-(defn examples [root]
-  (each name (children root)
-    (unless (string/has-prefix? "." name)
-      (def path (string root "/" name))
-      (case (os/lstat path :mode)
-        :directory (examples path)
-        :file (when (string/has-suffix? ".janet" name) (array/push files {:path path}))))))
-(def brickworks (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks"))
-(def asid (or (os/getenv "ASID_PERONE") "../asid/plugin/perone/build/asid.perone"))
-(def tibia (or (os/getenv "TIBIA_PERONE") "../tibia/out/perone/c/build/tibia-test.perone"))
-(collection "plugins" (fn [_] true))
-(collection brickworks
-  |(or (string/has-prefix? "fx_" $) (string/has-prefix? "synth_" $)))
-(bundle asid)
-(bundle tibia)
-(def paths @[])
+(def sources @[])
 (def seen @{})
-(each format [:clap :lv2 :vst3]
-  (def roots (plugin/paths format))
-  (array/concat paths roots)
-  (each root roots
-    (each path (plugin/files format root)
+
+(defn examples [root]
+  (when (= :directory (os/stat root :mode))
+    (each name (sort (os/dir root))
+      (unless (string/has-prefix? "." name)
+        (def path (string root "/" name))
+        (case (os/lstat path :mode)
+          :directory (examples path)
+          :file (when (string/has-suffix? ".janet" name) (array/push files {:path path})))))))
+
+(defn inspect [format path]
+  (def resolved (os/realpath path))
+  (unless (seen resolved)
+    (put seen resolved true)
+    (try
+      (do
+        (def entries
+          (if (= format :perone)
+            (let [entry (plugin/read path)]
+              (assert (= :file (os/stat (entry :binary) :mode)) "Missing native DSP binary")
+              [entry])
+            (plugin/scan path)))
+        (each entry entries
+          (array/push plugins {:format (string format) :path (if (= format :perone) path (entry :binary))
+            :id (entry :id) :name (or (get-in entry [:product :name]) path)
+            :error (entry :error) :ui-error (entry :ui-error)
+            :kind (unless (entry :error)
+              (cond
+                (= (get-in entry [:layout :output-channels]) 0) "MIDI"
+                (> (get-in entry [:layout :input-channels]) 0) "Effect"
+                "Instrument"))})))
+      ([err] (array/push plugins {:format (string format) :path path :name path :error (string err)})))))
+
+(defn catalog []
+  (var settings-error nil)
+  (def settings (try (plugin/settings) ([err] (set settings-error (string err)) @{})))
+  (when host/settings-input
+    (def paths (plugin/check-paths (json/decode host/settings-input true)))
+    (put settings :plugin-paths paths)
+    (host/save-settings (string (json/encode settings)))
+    (set settings-error nil))
+  (each format [:perone :clap :lv2 :vst3]
+    (def defaults (plugin/default-paths format))
+    (def paths (or (get-in settings [:plugin-paths format]) defaults))
+    (def roots @[])
+    (each path paths
+      (def root @{:path path})
       (try
-        (each entry (plugin/scan path)
-          (def key [(entry :binary) (entry :id)])
-          (unless (seen key)
-            (put seen key true)
-            (array/push plugins {:format (string format) :path (entry :binary) :id (entry :id)
-              :name (get-in entry [:product :name])
-              :error (entry :error) :ui-error (entry :ui-error)
-              :kind (unless (entry :error)
-                (cond
-                  (= (get-in entry [:layout :output-channels]) 0) "MIDI"
-                  (>= (get-in entry [:layout :midi-bus]) 0) "Instrument"
-                  "Effect"))})))
-        ([err] (array/push plugins {:format (string format) :path path :name path :error (string err)}))))))
-(examples "examples")
-(string (json/encode {:paths (array/concat @[] ["plugins" brickworks asid tibia] paths) :files files :plugins plugins}))
+        (do
+          (def expanded (plugin/expand-path path))
+          (if (os/stat expanded)
+            (do
+              (def bundles (plugin/files format expanded))
+              (each bundle bundles (inspect format bundle)))
+            (put root :error "Not found")))
+        ([err] (put root :error (string err))))
+      (array/push roots root))
+    (array/push sources {:format (string format) :paths paths :defaults defaults :roots roots}))
+  (examples "examples")
+  {:sources sources :settingsPath host/settings-path :settingsError settings-error :editable (not (not host/settings-path))
+   :files files :plugins plugins})
+
+(string (json/encode (try (catalog) ([err] {:error (string err)}))))

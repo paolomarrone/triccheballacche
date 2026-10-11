@@ -447,6 +447,10 @@ test-editor-web: web | build/test
 test-library: gui web | build/test
 	node test/library.mjs
 
+.PHONY: test-settings
+test-settings: gui test-web build/test/fixture.clap
+	node test/settings.mjs
+
 # Self-contained UI fixture: the exact same ES module drives native and Wasm DSPs.
 test-editor-ui: gui test-web test-parameter-ui
 	node test/editor-ui.mjs

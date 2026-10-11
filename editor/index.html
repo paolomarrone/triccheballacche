@@ -21,7 +21,7 @@
     </div>
     <select id="examples" aria-label="Examples" disabled><option value="">Examples</option></select>
     <label class="icon" title="Show plugin UIs"><input id="views" type="checkbox" aria-label="Show plugin UIs" aria-controls="plugins" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M14 4v16m3-12h1m-1 4h1m-1 4h1"/></svg></label>
-    <button id="settings" class="icon" title="Settings" aria-label="Settings" aria-haspopup="dialog" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-1 3-3 1-2 4 2 2v3l3 2 1 3h6l1-3 3-2v-3l2-2-2-4-3-1-1-3z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    <button id="settings" class="icon" title="Settings" aria-label="Settings" aria-haspopup="dialog" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3m4 0h9M4 17h9m4 0h3"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="17" r="2"/></svg></button>
 </nav>
 <main>
     <div id="workspace">
@@ -65,20 +65,30 @@
 <dialog id="settings-dialog" aria-labelledby="settings-title">
     <header><h2 id="settings-title">Settings</h2><button class="icon" data-close title="Close settings" aria-label="Close settings">×</button></header>
     <div id="settings-body">
-        <nav aria-label="Settings categories"><button id="settings-plugins-tab" aria-controls="settings-catalog" aria-current="page">Plugins</button><button id="settings-midi-tab" aria-controls="settings-midi">MIDI</button></nav>
+        <nav aria-label="Settings categories"><button id="settings-audio-tab" aria-controls="settings-audio" aria-current="false">Audio</button><button id="settings-plugins-tab" aria-controls="settings-catalog" aria-current="page">Plugins</button><button id="settings-midi-tab" aria-controls="settings-midi" aria-current="false">MIDI</button></nav>
+        <section id="settings-audio" aria-label="Audio" tabindex="-1" hidden>
+            <label class="settings-switch"><input id="settings-audio-engine" type="checkbox">Engine</label>
+            <dl class="settings-info"><dt>Output</dt><dd id="audio-output">—</dd><dt>Sample rate</dt><dd id="audio-rate">—</dd><dt>Latency</dt><dd id="audio-latency">—</dd></dl>
+        </section>
         <section id="settings-catalog" aria-label="Plugins" tabindex="-1">
-            <h3>Plugin sources</h3>
-            <ul id="plugin-paths"></ul>
-            <h3 id="catalog-title">Available plugins</h3>
+            <details id="plugin-sources" open>
+                <summary id="plugin-source-title">Paths</summary>
+                <p id="plugin-path-help" class="settings-note"></p>
+                <div id="plugin-paths"></div>
+                <div id="plugin-path-actions" class="settings-actions" hidden><button id="plugin-apply" title="Save paths and rescan">Apply</button><button id="plugin-revert">Revert</button><button id="plugin-defaults">Defaults</button><button id="plugin-refresh">Rescan</button></div>
+                <p id="settings-location" class="catalog-path"></p>
+            </details>
+            <div class="catalog-tools"><input id="catalog-search" type="search" placeholder="Search" aria-label="Search plugins"><select id="catalog-filter" aria-label="Filter plugins"><option value="all">All formats</option><option value="perone">Perone</option><option value="clap">CLAP</option><option value="lv2">LV2</option><option value="vst3">VST3</option><option value="unavailable">Unavailable</option></select></div>
+            <div class="catalog-heading"><h3 id="catalog-title">Plugins</h3><small id="catalog-status" role="status"></small></div>
             <div id="catalog-list"></div>
         </section>
-        <section id="settings-midi" aria-label="MIDI" hidden>
-            <button id="midi-enable" title="Discover devices; on desktop this disconnects existing MIDI routes">Connect / refresh devices</button>
-            <p>Connect devices to score nodes. Press Play to receive and send MIDI.</p>
+        <section id="settings-midi" aria-label="MIDI" tabindex="-1" hidden>
+            <button id="midi-enable">Discover</button>
             <div id="midi-devices"></div>
-            <p id="midi-empty">No MIDI devices connected.</p>
+            <p id="midi-empty" class="settings-note" hidden>No devices</p>
         </section>
     </div>
+    <p id="settings-error" role="alert" hidden></p>
 </dialog>
 <dialog id="file-dialog" aria-labelledby="file-title">
     <header><h2 id="file-title">Open file</h2><button class="icon" data-close title="Cancel" aria-label="Cancel">×</button></header>

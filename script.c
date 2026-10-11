@@ -41,6 +41,9 @@ JanetTable *script_env(unsigned sample_rate) {
 	janet_def(env, "host/max-inputs", janet_wrap_integer(MAX_INPUTS), NULL);
 	janet_def(env, "host/max-message", janet_wrap_number(dsp_max_message), NULL);
 	janet_def(env, "host/scan", janet_wrap_cfunction(scan), NULL);
+	char *settings = plugin_settings_path();
+	janet_def(env, "host/settings-path", settings ? janet_cstringv(settings) : janet_wrap_nil(), NULL);
+	free(settings);
 	if (janet_dostring(env, perone_source, "lib/perone.janet", NULL) ||
 	    janet_dostring(env, plugin_source, "lib/plugin.janet", NULL)) {
 		janet_deinit();

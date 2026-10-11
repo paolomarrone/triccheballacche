@@ -41,7 +41,7 @@ export async function connect() {
         file.path.startsWith("examples/") && file.path.endsWith(".janet")).map(file => ({
             path: file.path, text: file.path.endsWith(".json") ? host.FS.readFile(host.perone.path(file.path), {encoding: "utf8"}) : undefined
         }));
-    library = {paths: [url.href], files: entries};
+    library = {sources: [{format: "perone", paths: [url.href]}], editable: false, files: entries};
     transport = host._transport_new();
     if (!transport) throw Error("Out of memory");
 }
@@ -128,6 +128,10 @@ function checkedText(text) {
 // The shared controller serializes commands, including asynchronous player cleanup.
 export async function command(op, ...args) {
     if (op === "library") return library;
+    if (op === "audio-info") return {
+        sampleRate: player?.context.sampleRate || 48000, output: "Browser default",
+        latency: player ? player.context.baseLatency + (player.context.outputLatency || 0) : 0
+    };
     if (op === "midi-devices") return midi.list();
     if (op === "midi-refresh") return midi.list();
     if (midiFailed) {

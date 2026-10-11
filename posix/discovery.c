@@ -134,6 +134,26 @@ static void cleanup(void) {
 static void register_cleanup(void) {
 	atexit(cleanup);
 }
+void scan_plugins_clear(void) {
+	pthread_mutex_lock(&mutex);
+	cleanup();
+	pthread_mutex_unlock(&mutex);
+}
+
+char *plugin_settings_path(void) {
+	const char *root = getenv("XDG_CONFIG_HOME"), *suffix = "/triccheballacche/settings.json";
+	if (!root || root[0] != '/') {
+		root = getenv("HOME");
+		suffix = "/.config/triccheballacche/settings.json";
+	}
+	if (!root || !*root)
+		return NULL;
+	char *path = malloc(strlen(root) + strlen(suffix) + 1);
+	if (path)
+		sprintf(path, "%s%s", root, suffix);
+	return path;
+}
+
 char *scan_plugins(const char *path) {
 	struct stat info;
 	char *resolved = realpath(path, NULL);

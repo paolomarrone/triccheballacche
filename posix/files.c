@@ -2,6 +2,7 @@
 #include "script.h"
 #include "util.h"
 #include "json_write.h"
+#include "discovery.h"
 #include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
@@ -70,12 +71,40 @@ static const char library_source[] =
 #include "build/generated/library.inc"
     ;
 
-char *library_json(void) {
+static Janet save_settings(int32_t argc, Janet *argv) {
+	janet_fixarity(argc, 1);
+	const char *text = janet_getcstring(argv, 0);
+	char *path = plugin_settings_path();
+	if (!path)
+		janet_panic("No user configuration directory");
+	const char *error = NULL;
+	for (char *p = path + 1; *p; ++p) {
+		if (*p != '/')
+			continue;
+		*p = 0;
+		int result = mkdir(path, 0700);
+		*p = '/';
+		if (result && errno != EEXIST) {
+			error = strerror(errno);
+			break;
+		}
+	}
+	if (!error)
+		error = file_save(path, text);
+	free(path);
+	if (error)
+		janet_panic(error);
+	return janet_wrap_nil();
+}
+
+char *library_json(const char *settings) {
 	JanetTable *env = script_env(DEFAULT_SAMPLE_RATE);
 	if (!env)
 		return NULL;
 	Janet result;
 	char *json = NULL;
+	janet_def(env, "host/save-settings", janet_wrap_cfunction(save_settings), NULL);
+	janet_def(env, "host/settings-input", settings ? janet_cstringv(settings) : janet_wrap_nil(), NULL);
 	if (!janet_dostring(env, library_source, "lib/library.janet", &result) && janet_checktype(result, JANET_STRING))
 		json = copy_string((const char *)janet_unwrap_string(result));
 	janet_deinit();

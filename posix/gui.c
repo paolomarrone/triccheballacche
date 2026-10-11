@@ -8,6 +8,7 @@
 #include "files.h"
 #include "prepare.h"
 #include "midi.h"
+#include "discovery.h"
 #include "webui.h"
 #include <locale.h>
 #include <limits.h>
@@ -200,10 +201,33 @@ static void command(Editor *editor, webui_event_t *event) {
 		webui_return_string(event, "{}");
 		return;
 	}
-	if (!strcmp(op, "library") || !strcmp(op, "files")) {
-		char *json = !strcmp(op, "library") ? library_json() : directory_json(webui_get_string_at(event, 1));
+	if (!strcmp(op, "library") || !strcmp(op, "library-save") || !strcmp(op, "library-refresh") ||
+	    !strcmp(op, "files")) {
+		char *json;
+		if (!strcmp(op, "files"))
+			json = directory_json(webui_get_string_at(event, 1));
+		else {
+			int save = !strcmp(op, "library-save");
+			if (save && webui_get_size_at(event, 1) > 1024 * 1024) {
+				webui_return_string(event, "{\"error\":\"Plugin paths are too large\"}");
+				return;
+			}
+			if (strcmp(op, "library"))
+				scan_plugins_clear();
+			json = library_json(save ? webui_get_string_at(event, 1) : NULL);
+		}
 		webui_return_string(event, json ? json : "{\"error\":\"Cannot read library\"}");
 		free(json);
+		return;
+	}
+	if (!strcmp(op, "audio-info")) {
+		Json json = {0};
+		json_print(&json, "{\"sampleRate\":%u,\"output\":", session_rate(&editor->session));
+		json_string(&json, editor->player ? editor->player->device.playback.name : "System default");
+		json_print(&json, ",\"latency\":%.6f}",
+		    editor->player ? (double)editor->player->latency / session_rate(&editor->session) : 0);
+		webui_return_string(event, json.failed ? "{\"error\":\"Cannot read audio device\"}" : json.data);
+		free(json.data);
 		return;
 	}
 	if (!strcmp(op, "midi-devices") || !strcmp(op, "midi-refresh") || !strcmp(op, "midi-connect")) {

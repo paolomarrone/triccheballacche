@@ -1,6 +1,6 @@
 import {timeline} from "./timeline.js";
 import {plugins} from "./plugins.js";
-import {library} from "./library.js";
+import {settings} from "./settings.js";
 import {files} from "./files.js";
 
 const byId = id => document.getElementById(id);
@@ -56,7 +56,7 @@ function dirty() {
 }
 
 function update() {
-    browser.status(ready && !busy);
+    preferences.status(ready && !busy, {audio, prepared});
     controls?.status(prepared, busy);
     projection.status(prepared, busy);
     for (const id of ["open", "save", "prepare", "play", "views"]) byId(id).disabled = !ready || busy;
@@ -94,7 +94,7 @@ function request(op, ...args) {
             revision = result.score.revision;
             projection.revise(result.score);
             controls.revise(result.score);
-            browser.score(result.score);
+            preferences.score(result.score);
             tracedSource = pending.source;
             tracedPath = pending.path;
             pending = undefined;
@@ -151,7 +151,7 @@ async function action(op, entry = path.value, file) {
             tracedSource = source;
             tracedPath = result.path;
             controls.score(result.score, result.nativeAvailable);
-            browser.score(result.score);
+            preferences.score(result.score);
         }
         if (opening) code.value = result.text;
         if (opening || op === "save") {
@@ -166,7 +166,7 @@ async function action(op, entry = path.value, file) {
     }
 }
 
-const browser = library(request, entry => action("open", entry), showError);
+const preferences = settings(request, entry => action("open", entry), showError);
 const pickFile = files(request, entry => action("open", entry),
     (file, directory) => action("import", `${directory.replace(/\/$/, "")}/${file.name}`, file));
 
@@ -263,7 +263,7 @@ export async function startEditor(adapter) {
         const result = await request("open");
         path.value = savedPath = result.path;
         code.value = saved = result.text;
-        await browser.load();
+        await preferences.load();
     } catch (error) {
         showError(error);
     }

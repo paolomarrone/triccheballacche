@@ -194,8 +194,13 @@ and updates the session's files. Reloading the page restores the published files
   Both pause playback. Native export asks for a destination path; web export
   downloads a file. Presets change the prepared instance, not the score or its
   automation; reevaluation and seeking still apply the score's parameter values.
-- **Settings** lists discovered bundles and active instances. Restart the native
-  editor after rebuilding a loaded plugin.
+- **Settings** groups Audio, Plugins and MIDI. On desktop, **Apply** saves plugin
+  paths and rescans; **Rescan** refreshes discovery without changing the graph.
+  Paths accept `~/` and relative folders or bundles. Empty lists disable discovery
+  for a format; explicit score references still work. Preferences also apply to CLI
+  lookup by ID and live in `$XDG_CONFIG_HOME/triccheballacche/settings.json`
+  (default `~/.config/…`). **Defaults** restores the paths below. The browser lists
+  its published Perone/Wasm catalog. Restart after rebuilding a loaded native plugin.
 
 Start with [brickworks](examples/brickworks.janet) and [patterns](examples/patterns.janet)
 for the canonical library, or [Rame](examples/rame.janet) for a complete piece.

@@ -102,8 +102,27 @@ dialog h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
 #settings-body nav button { border: 0; border-radius: 3px; text-align: left; }
 #settings-body nav button[aria-current="page"] { background: var(--active); color: var(--accent); }
 #settings-body section { flex: 1; min-width: 0; overflow: auto; padding: 14px; }
-#plugin-paths { margin: 0 0 20px; padding: 0; list-style: none; }
-#plugin-paths li, .catalog-path { font: 11px/1.5 monospace; overflow-wrap: anywhere; color: var(--muted); }
+#plugin-sources { margin-bottom: 16px; }
+#plugin-sources summary { cursor: pointer; font-weight: 600; }
+.plugin-source { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; margin: 8px 0; align-items: start; }
+.plugin-source label { padding-top: 5px; }
+.plugin-source textarea { width: 100%; min-height: 28px; max-height: 150px; resize: vertical; font: 11px/1.5 monospace; user-select: text; }
+.catalog-path { font: 11px/1.5 monospace; overflow-wrap: anywhere; color: var(--muted); user-select: text; }
+.settings-note { font-size: 12px; line-height: 1.5; color: var(--muted); }
+.settings-actions, .catalog-tools { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+.settings-actions button { font-size: 11px; }
+.settings-actions button, #settings-body select, #settings-body input[type=search], #settings-body textarea { padding: 4px 6px; border: 1px solid var(--border); border-radius: 3px; background: transparent; color: inherit; }
+.settings-actions button:hover:not(:disabled) { background: var(--active); }
+.settings-actions button:disabled { color: var(--muted); opacity: .5; }
+#plugin-refresh { margin-left: auto; }
+.catalog-tools input { flex: 1; min-width: 120px; }
+.catalog-tools select { max-width: 140px; }
+.settings-switch { display: flex; gap: 8px; align-items: center; }
+.settings-switch input { accent-color: var(--accent); }
+.settings-info { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 20px; font-size: 12px; }
+.settings-info dt { color: var(--muted); }
+.settings-info dd { margin: 0; overflow-wrap: anywhere; }
+#settings-error { margin: 0; padding: 8px 14px; border-top: 1px solid var(--border); color: light-dark(#a32e20, #ff9b8e); overflow-wrap: anywhere; }
 .catalog-item { padding: 7px 0; border-top: 1px solid var(--border); }
 .catalog-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .catalog-heading small { color: var(--muted); white-space: nowrap; }
