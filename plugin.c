@@ -73,8 +73,10 @@ int render_plugin(
 		if (c->output == 2)
 			y[0] = output[0];
 		ProcessTime time = e->time;
-		time.frame += at;
-		time.beat += (double)at * time.bpm / (60 * e->sample_rate);
+		if (time.playing) {
+			time.frame += at;
+			time.beat += (double)at * time.bpm / (60 * e->sample_rate);
+		}
 		if (process_dsp(e->dsp, c->inputs ? x : NULL, c->output ? y : NULL, n, &time))
 			return -1;
 		const MidiBuffer *midi = midi_output_dsp(e->dsp);

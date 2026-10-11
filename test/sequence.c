@@ -305,8 +305,9 @@ static void test_transport(void) {
 			assert(!session_seek(&b, target));
 			assert(!session_render(&b, audio, 1) && audio[0] == .2f && audio[1] == -.1f);
 			if (loop) {
-				assert(b.held[0][60] == UINT64_C(1000000) * rates[r] + (uint64_t)llround(.6 * rates[r]));
-				assert(b.next_off == b.held[0][60]);
+				assert(b.nodes[0].midi_in->notes[60].end ==
+				    UINT64_C(1000000) * rates[r] + (uint64_t)llround(.6 * rates[r]));
+				assert(b.next_off == b.nodes[0].midi_in->notes[60].end);
 			} else {
 				assert(!session_seek(&b, b.frames));
 				assert(!session_render(&b, audio, 0) && session_render(&b, audio, 1));
@@ -326,8 +327,8 @@ static void test_seek_retriggers(void) {
 	                   "(daw/output (daw/track tone)) (daw/tempo 60) "
 	                   "(daw/score (p/loop (p/events 4 [[0 3 [:note tone 60 90]] [1 1.5 [:note tone 60 80]]])))";
 	assert(!prepare_session(&s, &output, "test/retrigger.janet", code, NULL, NULL));
-	assert(!session_seek(&s, 60000) && s.held[0][60] == 72000);
-	assert(!session_seek(&s, 96000) && !s.held[0][60] && s.next_off == UINT64_MAX);
+	assert(!session_seek(&s, 60000) && s.nodes[0].midi_in->notes[60].end == 72000);
+	assert(!session_seek(&s, 96000) && !s.nodes[0].midi_in->notes[60].end && s.next_off == UINT64_MAX);
 	float audio[2];
 	assert(!session_render(&s, audio, 1) && audio[0] == 0); // A short retrigger ended; the older long note stays off.
 	Score next = {.sample_rate = 48000};

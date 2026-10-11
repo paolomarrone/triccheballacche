@@ -88,13 +88,14 @@ int main(void) {
 	Player player = {.session = &s};
 	assert(!midi_devices_connect(devices, &s, input, 0));
 	assert(!midi_devices_connect(devices, &s, output, 0));
-	assert(!midi_devices_play(devices, &player));
+	assert(!midi_devices_start(devices, &player));
 	command = 'n';
 	assert(write(commands[1], &command, 1) == 1);
 	float audio[96];
 	for (int i = 0; i < 250; ++i) {
-		assert(!session_render(&s, audio, 48));
-		atomic_store(&player.position, s.time);
+		assert(!session_monitor(&s, audio, 48));
+		assert(!s.time);
+		atomic_store(&player.clock, s.clock);
 		assert(!midi_devices_error(devices));
 		usleep(1000);
 	}

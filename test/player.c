@@ -195,6 +195,40 @@ static void test_pcm(void) {
 	puts("OK: native PCM matches WAV at 44.1/48 kHz, including partial/full replay without DSP/device allocation");
 }
 
+static void test_monitoring(void) {
+	Session s = {0};
+	Output output;
+	assert(!load_score(&s, &output, "test/playback.janet"));
+	Player *p = player_new(&s);
+	assert(p && !player_active(p) && !player_monitor(p));
+	DSP *dsp = s.nodes[0].dsp[0].dsp;
+	pump(128);
+	assert(player_active(p) && player_status(p) == 2 && !player_position(p) && player_clock(p) == 128);
+	assert(!player_start(p));
+	pump(128);
+	assert(player_position(p) == 128 && player_clock(p) == 256);
+	assert(!player_monitor(p) && !player_start(p) && !player_status(p));
+	assert(!player_pause(p) && !player_monitor(p));
+	pump(128);
+	assert(player_position(p) == 128 && player_clock(p) == 384);
+	assert(s.nodes[0].dsp[0].dsp == dsp);
+	assert(!player_start(p));
+	while (!player_status(p))
+		pump(128);
+	assert(player_status(p) == 1 && player_active(p));
+	uint64_t clock = player_clock(p);
+	pump(128);
+	assert(player_clock(p) == clock + 128 && player_position(p) == s.frames);
+	assert(!player_pause(p));
+	clock = player_clock(p);
+	pump(128);
+	assert(!player_active(p) && player_clock(p) == clock);
+	assert(!player_seek(p, 0) && !player_position(p) && player_clock(p) == clock);
+	player_free(p);
+	session_free(&s);
+	puts("OK: independent engine/transport, continuous clock, monitoring after completion and retained DSPs");
+}
+
 static void test_lifecycle(void) {
 	Session s = {0};
 	Output output;
@@ -205,6 +239,7 @@ static void test_lifecycle(void) {
 	mode = START_FAIL;
 	Player *p = player_new(&s);
 	assert(p && player_start(p) && s.error && !s.time);
+	assert(player_monitor(p) && !player_active(p) && player_status(p) == 2);
 	player_free(p);
 	mode = NORMAL;
 	p = player_new(&s);
@@ -234,6 +269,7 @@ static void test_lifecycle(void) {
 	float audio[256];
 	device->onData(device, audio, NULL, 128);
 	assert(player_status(p) == -1 && s.error);
+	assert(player_monitor(p) && player_status(p) == -1 && !player_active(p));
 	for (size_t i = 0; i < 256; ++i)
 		assert(audio[i] == 0);
 	player_free(p);
@@ -262,6 +298,7 @@ static void test_live_clock(void) {
 		Player *p = player_new(&s);
 		assert(p);
 		transport_attach(&transport, &s, &view);
+		transport_started(&transport);
 		assert(!view.nnodes && transport.revision == 1 && transport.control_revision == 1);
 		DSP *dsp = s.nodes[0].dsp[0].dsp;
 		uint64_t position = rates[i] * 165 / 100;
@@ -319,6 +356,7 @@ static void test_live_clock(void) {
 		assert(!prepare_score(&initial, &output, "test/sequence.janet", NULL, NULL, &view));
 		assert(!session_activate(&s, &initial));
 		transport_attach(&transport, &s, &view);
+		transport_started(&transport);
 		assert(transport.revision == 4 && transport.control_revision == 4 && transport.time == 0);
 		transport_stopped(&transport);
 		transport_detach(&transport);
@@ -403,6 +441,7 @@ static void test_cli(void) {
 
 int main(void) {
 	test_pcm();
+	test_monitoring();
 	test_lifecycle();
 	test_live_clock();
 	test_transport();

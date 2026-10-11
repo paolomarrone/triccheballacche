@@ -54,16 +54,29 @@ function query(op = "", args = []) {
     try {
         const state = JSON.parse(host.UTF8ToString(pointer));
         if (state.view?.score) state.view.score.controlRevision = state.controlRevision;
-        return {...state, ...state.view};
+        return {...state, ...state.view, audio: !!player?.active};
     } finally { host._free(pointer); }
 }
 
-async function stop() {
+async function pause() {
     try { midi.stop(); }
-    finally { if (player) await player.stop(); }
+    finally { if (player) await player.pause(); }
 }
 
-async function run(path, source, state, live) {
+async function start(playing) {
+    try {
+        await player.monitor();
+        if (playing && player.duration) await player.start();
+        midi.start();
+        failure = "";
+    } catch (error) {
+        try { await pause(); }
+        catch (cleanup) { throw new AggregateError([error, cleanup], `${error}; ${cleanup}`); }
+        throw error;
+    }
+}
+
+async function run(path, source, state, live, playing) {
     if (live && state.queued) throw Error("Wait for the pending revision to become active");
     if (live && !(state.playing && state.live)) throw Error("Live updates require a playing live score");
     failure = "";
@@ -77,7 +90,7 @@ async function run(path, source, state, live) {
             nextScore = 0;
             return {};
         }
-        await stop();
+        await pause();
         await midi.detach();
         host.perone.deferred = true;
         try {
@@ -90,9 +103,8 @@ async function run(path, source, state, live) {
         nextScore = 0;
         const prepared = await attachPlayer(host, owned);
         player = prepared;
-        await prepared.start();
-        midi.start();
         prepared.publish(transport);
+        await start(playing);
         return query("score");
     } catch (error) {
         if (nextScore) host._web_score_free(nextScore);
@@ -120,12 +132,12 @@ export async function command(op, ...args) {
     if (op === "midi-refresh") return midi.list();
     if (midiFailed) {
         midiFailed = false;
-        try { await stop(); }
+        try { await pause(); }
         catch (error) { failure += `; ${error}`; }
     }
     host._transport_collect(transport);
     const state = query();
-    let result = {}, error = "", path = ["range", "origin", "automation", "listen", "seek"].includes(op) ? "" : args[0] || entry;
+    let result = {}, error = "", path = ["range", "origin", "automation", "listen", "seek", "audio"].includes(op) ? "" : args[0] || entry;
     try {
         if (op === "midi-connect") {
             const [version, id, node] = args;
@@ -134,9 +146,9 @@ export async function command(op, ...args) {
             const device = (await midi.list()).devices.find(p => p.id === id);
             if (!device || !Number.isInteger(node) || node < -1 || node >= view.nodes.length ||
                 node >= 0 && !view.nodes[node][device.input ? "midiIn" : "midiOut"]) throw Error("Invalid MIDI connection");
-            await stop();
+            await pause();
             try { result = await midi.connect(id, node); }
-            finally { if (state.playing) { await player.start(); midi.start(); } }
+            finally { if (state.audio) await start(state.playing); }
         } else if (op === "files") {
             path = host.perone.path(args[0] || ".");
             result.files = host.FS.readdir(path).filter(name => !name.startsWith(".")).map(name => ({
@@ -153,9 +165,11 @@ export async function command(op, ...args) {
             const [version, node, data] = args;
             if (!player || version !== state.controlRevision) throw Error("Stale plugin view");
             const bytes = op === "state-load" ? decodeState(data) : undefined;
-            await stop();
-            const saved = await player.state(node, bytes);
-            if (saved) result.data = encodeState(saved);
+            await pause();
+            try {
+                const saved = await player.state(node, bytes);
+                if (saved) result.data = encodeState(saved);
+            } finally { if (state.audio) await start(false); }
         } else if (["watch", "controls", "parameter", "message"].includes(op)) {
             const [version, node, ...values] = args;
             if (!player || version !== state.controlRevision) throw Error("Stale plugin view");
@@ -177,35 +191,43 @@ export async function command(op, ...args) {
             link.href = url; link.download = path.split("/").at(-1);
             link.click();
             setTimeout(() => URL.revokeObjectURL(url), 1000);
-        } else if (op === "run" || op === "update") result = await run(path, checkedText(args[1]), state, op === "update");
-        else if (op === "seek") {
+        } else if (["run", "prepare", "update"].includes(op))
+            result = await run(path, checkedText(args[1]), state, op === "update", op === "run" || state.playing);
+        else if (op === "audio") {
+            if (!player) throw Error("Prepare a score before enabling audio");
+            if (args[0] === 0) await pause();
+            else if (args[0] === 1) await start(state.playing);
+            else throw Error("Invalid audio state");
+        } else if (op === "seek") {
             const seconds = Number(args[0]);
-            if (!player) throw Error("Run a score before seeking");
+            if (!player) throw Error("Prepare a score before seeking");
             if (!player.canSeek(seconds)) throw Error("Position outside score");
-            const resume = state.playing;
-            await stop();
+            await pause();
             await player.seek(seconds);
             failure = "";
-            if (resume) { await player.start(); midi.start(); }
+            if (state.audio) await start(state.playing);
         } else if (op === "play") {
-            if (!player) throw Error("Run a score before playing");
+            if (!player) throw Error("Prepare a score before playing");
             if (!state.playing) {
-                if (player.time >= player.duration) await player.seek(0);
-                await player.start();
-                midi.start();
-                failure = "";
+                if (player.duration && player.time >= player.duration) {
+                    await pause();
+                    await player.seek(0);
+                }
+                await start(true);
             }
-        } else if (op === "stop") await stop();
+        } else if (op === "stop") { if (player) await player.stop(); }
         else if (op === "score") result = query("score");
         else if (op === "status") {
-            if (player && state.playing) {
+            if (player) {
                 try {
-                    const state = player.status;
-                    if (state < 0) failure = "Playback error";
-                    if (state || player.context.state === "closed") await stop();
+                    const status = player.status;
+                    if (status < 0 || player.context.state === "closed") {
+                        failure = "Audio error";
+                        await pause();
+                    } else if (status === 1) await player.stop();
                 } catch (error) {
                     failure = String(error);
-                    await stop();
+                    await pause();
                 }
             }
             error = failure;

@@ -306,7 +306,10 @@ static Janet end(int32_t argc, Janet *argv) {
 	if (!janet_keyeq(fmt, "float") && !janet_keyeq(fmt, "pcm16"))
 		janet_panic("format must be :float or :pcm16");
 	float normalize = number(option(opts, "normalize", janet_wrap_number(0)), 0, 1);
-	checked(score_end(current, sample(janet_getnumber(argv, 0))));
+	uint64_t frames = sample(janet_getnumber(argv, 0));
+	if (!frames)
+		janet_panic("Duration must be positive");
+	checked(score_end(current, frames));
 	*output = (Output){janet_keyeq(fmt, "pcm16"), normalize};
 	return janet_wrap_nil();
 }
@@ -407,8 +410,14 @@ int prepare_score(Score *s, Output *cfg, const char *path, const char *source, c
 		result = janet_dostring(env, source ? source : "(dofile daw/script :env (curenv))", path, NULL);
 	}
 	if (!result && !s->sealed) {
-		janet_eprintf("Missing (daw/end seconds) or (daw/score pattern)\n");
-		result = 1;
+		if (s->nnodes && !s->sequence.count) {
+			result = score_end(s, 0);
+			if (result)
+				janet_eprintf("%s\n", s->error);
+		} else {
+			janet_eprintf("Missing output graph or (daw/end seconds)/(daw/score pattern)\n");
+			result = 1;
+		}
 	}
 	if (!result && view)
 		result = janet_dostring(env, "(native/project (host/trace-report))", "<prepare-score>", NULL);

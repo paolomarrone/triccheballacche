@@ -29,10 +29,10 @@ export function midiDevices(getPlayer, fail) {
         timer = setInterval(() => {
             try {
                 const player = getPlayer();
-                if (!player || player.status !== 0) return;
+                if (!player?.active) return;
                 for (const packet of player.readMidi()) {
                     const latency = player.context.baseLatency + (player.context.outputLatency || 0);
-                    const at = performance.now() + Math.max(0, packet.time - player.time + latency) * 1000;
+                    const at = performance.now() + Math.max(0, packet.time - player.audioTime + latency) * 1000;
                     for (const port of access.outputs.values())
                         if (routes.get(key(port)) === packet.node && port.state === "connected") port.send(packet.data, at);
                 }
@@ -64,7 +64,7 @@ export function midiDevices(getPlayer, fail) {
                 if (!timer) return;
                 try {
                     const player = getPlayer();
-                    if (player?.status === 0) player.midi(node, event.data);
+                    if (player?.active) player.midi(node, event.data);
                 } catch (error) { failed(error); }
             };
         }

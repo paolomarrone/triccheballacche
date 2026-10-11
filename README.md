@@ -87,6 +87,9 @@ Run `./build/cli --play score.janet` or `./build/gui score.janet`. Imports are
 relative to the score; plugin paths are relative to the host's working directory.
 For a finite score or WAV export, give `daw/score` a duration:
 `(daw/score pattern {:duration 30})`, then `./build/cli score.janet renders/score.wav`.
+A graph without scheduled events needs neither `daw/score` nor `daw/end`:
+prepare it in the editor to play MIDI and adjust plugins with the timeline stopped.
+WAV export still requires an explicit, positive duration.
 
 The audio graph is explicit: `daw/plugin` creates an instance, `daw/through`
 connects an effect, `daw/mix` combines signals and `daw/output` selects the final
@@ -117,8 +120,10 @@ Editors use 48000 Hz.
 
 [examples/midi.janet](examples/midi.janet) combines a repeating phrase and a
 keyboard input. In **Settings → MIDI**, discover devices and connect each input
-or output to a score node. Press Play to send/receive; Stop releases device-held
-notes and cancels pending output. Reevaluate a new graph to clear device bindings;
+or output to a score node. Prepare enables audio and MIDI without starting the
+timeline. Stop releases sequenced notes; the keyboard and effect tails remain active.
+Turning off the audio engine releases device-held notes and cancels pending output.
+Reevaluate a new graph to clear device bindings;
 live musical revisions retain them. Desktop Refresh rescans and disconnects ports.
 Native uses PortMidi; the browser uses Web MIDI and asks for device/SysEx access.
 Browser support and permission are required; MIDI is optional for ordinary playback.
@@ -153,11 +158,16 @@ Open a file with the path bar's folder icon, enter a path and press Enter, or
 choose an example. Save uses the disk on native; web Download saves a local copy
 and updates the session's files. Reloading the page restores the published files.
 
+- **Prepare** (the lightning icon, Ctrl/Command+Enter) evaluates the code and
+  imports, loads the plugins and enables audio. A stopped timeline stays stopped;
+  during playback it updates the music. Plugin controls and MIDI work in either state.
 - **Play** (Ctrl/Command+Space) evaluates changed code or resumes the prepared
-  score. Ctrl/Command+Enter forces evaluation, including changed imports.
-  Opening another file keeps audio running; Play starts it as a new session.
-- **Stop** (Esc) holds the position and DSP state. Click the ruler or enter
-  seconds to seek; seeking resets effect history and retriggers spanning notes.
+  score. Opening another file keeps audio running; Play starts it as a new session.
+- **Stop** (Esc) holds the position, releases sequenced notes and keeps processing
+  MIDI and effect tails. Play retriggers spanning notes without resetting effects.
+  The power toggle disables the audio engine separately, retaining the prepared graph.
+  Click the ruler or enter seconds to seek; seeking resets effect history and
+  restores controls. Spanning notes restart when the transport plays.
 - **Live updates** to `daw/score` enter on the next beat grid (`:quantum`, default
   4 beats). Give plugins stable keyword identities. Routing, identities, tempo,
   duration and plugin configurations must match; stop before changing them.

@@ -32,8 +32,12 @@ Object.defineProperty(navigator, "requestMIDIAccess", {value: async () => ({
     inputs: new Map([["keys", midiInput]]), outputs: new Map([["synth", midiOutput]])})});`});
             await call("Page.navigate", {url});
             await wait('!document.querySelector("#play")?.disabled');
-            await click("#play");
-            await wait('document.querySelector("#state").textContent.startsWith("Playing")');
+            await evaluate(`import(${JSON.stringify(mode === "web" ? "../web/editor.js" : "./native.js")}).then(backend => { window.midiBackend = backend; })`);
+            await click("#prepare");
+            await wait('document.querySelector("#timeline").dataset.revision === "1"');
+            assert.equal(await evaluate('document.querySelector("#state").textContent'), "Stopped");
+            assert.equal(await evaluate('Number(document.querySelector("#time").value)'), 0);
+            assert(await evaluate('document.querySelector("#audio").checked'));
             await wait('document.querySelector(".routing-cable.midi")');
             await click("#settings");
             await click("#settings-midi-tab");
@@ -49,15 +53,34 @@ Object.defineProperty(navigator, "requestMIDIAccess", {value: async () => ({
                 assert(await evaluate('midiSent.some(p => Number.isFinite(p.time))'));
             } else await wait('document.querySelector("#midi-devices").children.length || document.querySelector("#midi-empty").textContent');
             await click('#settings-dialog [data-close]');
+            assert.equal(await evaluate('Number(document.querySelector("#time").value)'), 0);
+            await click("#play");
+            await wait('Number(document.querySelector("#time").value) > 0');
+            const enabled = await evaluate('midiBackend.command("audio", 1)');
+            assert(enabled.audio && enabled.playing && !enabled.error, "Enabling audio twice must preserve playback");
             await click("#stop");
             await wait('document.querySelector("#state").textContent === "Stopped"');
             if (mode === "web") {
                 await evaluate('midiSent.length = 0; midiInput.onmidimessage({data: new Uint8Array([0x93, 70, 90])})');
-                await click("#play");
+                await wait('midiSent.some(p => p.data[0] === 0x93 && p.data[1] === 70)');
+                assert(!await evaluate('midiSent.some(p => p.data[0] === 0x83 && p.data[1] === 65)'), "Transport stop preserves keyboard notes");
+                await evaluate('midiInput.onmidimessage({data: new Uint8Array([0x83, 65, 0])})');
                 await wait('midiSent.some(p => p.data[0] === 0x83 && p.data[1] === 65)');
-                assert(!await evaluate('midiSent.some(p => p.data[0] === 0x93 && p.data[1] === 70)'), "Stopped input is discarded");
             }
             assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
+            const position = await evaluate('document.querySelector("#time").value');
+            await click("#audio");
+            await wait('!document.querySelector("#audio").checked && !document.querySelector("#audio").disabled');
+            const stopped = await evaluate('midiBackend.command("stop")');
+            assert(!stopped.audio && !stopped.playing && !stopped.error, "Stop must not enable a disabled engine");
+            if (mode === "web") {
+                await evaluate('midiSent.length = 0; midiInput.onmidimessage({data: new Uint8Array([0x93, 73, 90])})');
+                await new Promise(resolve => setTimeout(resolve, 100));
+                assert(!await evaluate('midiSent.some(p => p.data[0] === 0x93 && p.data[1] === 73)'));
+            }
+            await click("#audio");
+            await wait('document.querySelector("#audio").checked && !document.querySelector("#audio").disabled');
+            assert.equal(await evaluate('document.querySelector("#time").value'), position);
             if (mode === "web") {
                 await evaluate('window.midiBroken = true; midiInput.onmidimessage({data: new Uint8Array([0x93, 72, 90])})');
                 await wait('document.querySelector("#state").textContent === "Stopped"');
@@ -66,7 +89,20 @@ Object.defineProperty(navigator, "requestMIDIAccess", {value: async () => ({
                 await click("#play");
                 await wait('document.querySelector("#state").textContent.startsWith("Playing")');
             }
+            // A bare graph prepares and exposes plugins without a fake duration, on both backends.
+            const graph = '(def keys (daw/midi :keys)) (def synth (daw/plugin :synth "build/test/fixture.perone" {:gain 0.01})) (daw/midi-through keys synth) (daw/midi-output keys) (daw/output (daw/track synth))';
+            if (!await evaluate('document.querySelector("#stop").disabled')) await click("#stop");
+            await evaluate(`(() => { const code = document.querySelector('#code'); code.value = ${JSON.stringify(graph)}; code.dispatchEvent(new Event('input')); })()`);
+            await click("#prepare");
+            await wait('!document.querySelector("#prepare").disabled && document.querySelector("#audio").checked');
+            assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
+            assert.equal(await evaluate('Number(document.querySelector("#time").value)'), 0);
+            assert.equal(await evaluate('document.querySelector("#state").textContent'), "Stopped");
+            await click("#views");
+            await wait('document.querySelector("#plugin-list .plugin")');
             assert.deepEqual(diagnostics, []);
+            // Avoid the draft confirmation on test teardown.
+            await evaluate('window.onbeforeunload = null');
             console.log(`OK: ${mode} MIDI settings, graph and device lifecycle`);
         });
         if (app) { await app.close(); app = undefined; }

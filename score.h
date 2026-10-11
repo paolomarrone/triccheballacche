@@ -46,6 +46,7 @@ int score_cue(Score *s, Cue cue);
 // Convenience entry points for finite events expressed in samples.
 int score_param(Score *s, int id, uint64_t time, int param, double value);
 int score_note(Score *s, int id, uint64_t time, uint64_t end, int pitch, int velocity);
+// Zero frames seals a graph without a sequence.
 int score_end(Score *s, uint64_t frames);
 void score_remap(Score *s, const int *mapping);
 void score_free(Score *s);

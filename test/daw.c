@@ -41,7 +41,7 @@ static void test_buffer_score(void) {
 	    "(daw/plugin \"build/test/fixture.perone\")\n(error \"音: failure\")",
 	    "(gccollect) (repeat 10000 (table 1 2)) (error \"Error after collection\")", ""};
 	const char *expected[] = {
-	    "parse error", "unknown-binding", "音: failure", "Error after collection", "Missing (daw/end"};
+	    "parse error", "unknown-binding", "音: failure", "Error after collection", "Missing output graph"};
 	for (int i = 0; i < 5; ++i) {
 		ScoreView view;
 		assert(prepare_session(&s, &cfg, path, bad[i], &diagnostics, &view));

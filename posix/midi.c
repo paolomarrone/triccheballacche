@@ -98,8 +98,7 @@ static void *poll_midi(void *data) {
 				if (!d->queued) {
 					if (!midi_pop(s->midi_out, &d->pending))
 						break;
-					int64_t delta =
-					    (int64_t)d->pending.frame - (int64_t)player_position(d->player) + d->player->latency;
+					int64_t delta = (int64_t)d->pending.frame - (int64_t)player_clock(d->player) + d->player->latency;
 					d->due = (uint32_t)clock_ms(NULL) + (delta > 0 ? delta * 1000 / s->sample_rate : 0);
 					d->queued = 1;
 				}
@@ -184,10 +183,15 @@ void midi_devices_free(MidiDevices *d) {
 	Pm_Terminate();
 	free(d);
 }
-const char *midi_devices_play(MidiDevices *d, Player *player) {
+const char *midi_devices_start(MidiDevices *d, Player *player) {
 	if (!d)
 		return NULL; // No device service was requested.
 	pthread_mutex_lock(&d->lock);
+	if (d->player == player) {
+		const char *error = d->error;
+		pthread_mutex_unlock(&d->lock);
+		return error;
+	}
 	d->error = NULL;
 	Session *s = player->session;
 	for (int i = 0; i < s->nnodes; ++i)

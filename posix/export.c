@@ -34,7 +34,7 @@ static int render(Session *s, float *audio, size_t frames) {
 }
 
 int write_score(Session *s, const Output *cfg, const char *path) {
-	if (!s->audio || s->time || s->frames == UINT64_MAX) {
+	if (!s->audio || !s->frames || s->time || s->frames == UINT64_MAX) {
 		s->error = "export requires a fresh, finite session; set :duration for a repeating score";
 		return -1;
 	}

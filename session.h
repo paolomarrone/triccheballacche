@@ -11,7 +11,16 @@ typedef struct {
 } InputState;
 
 typedef struct {
+	uint64_t end;
+	uint8_t velocity;
+} ScheduledNote;
+
+typedef struct {
 	MidiBuffer messages;
+	ScheduledNote notes[16 * 128];
+	uint16_t order[16 * 128]; // Held notes in arrival order, also used when resuming a mono instrument.
+	unsigned nnotes;
+	uint8_t sustain[16], external_sustain[16];
 	uint8_t external_notes[16 * 128];
 	uint16_t external_channels;
 } MidiInput;
@@ -41,11 +50,11 @@ typedef struct {
 	Modules *modules; // Borrowed; instances retain their modules independently.
 	int nnodes, ntracks;
 	unsigned sample_rate;
-	uint64_t frames, time;
+	uint64_t frames, time, clock; // Musical extent/position and continuous processed samples.
+	int playing;
 	float *audio;
 	_Atomic(Revision *) active, pending, retired;
 	atomic_uint revision;
-	uint64_t (*held)[16 * 128]; // Note-off obligations survive a musical revision.
 	uint64_t next_off;
 	const char *error;
 	MidiQueue *midi_in, *midi_out;      // Control producer/audio consumer, and the reverse.
@@ -72,6 +81,8 @@ int session_midi(Session *s, int node, const uint8_t *data, size_t size);
 // Audio and device producer stopped. Discard queued device events and release external notes on resume.
 void session_midi_panic(Session *s);
 int session_render(Session *s, float *stereo, size_t frames);
+// Process the same graph without advancing the sequence. MIDI and effect tails remain active.
+int session_monitor(Session *s, float *stereo, size_t frames);
 // Safe during rendering; the caller owns session lifetime.
 int session_listen(Session *s, int track, int flags);
 uint64_t session_frame(const Session *s, double seconds);

@@ -98,6 +98,7 @@ export async function attachPlayer(host, score) {
                 if (!state || stopping || transport) throw Error("Invalid transport or player already published/closed");
                 if (host._transport_attach_web(state, score)) throw Error("Score projection missing");
                 transport = state;
+                if (host._player_status(player) === 0) host._transport_started(transport);
             },
             get duration() {
                 if (stopping) throw Error("Player closing or closed");
@@ -157,6 +158,11 @@ export async function attachPlayer(host, score) {
                 if (stopping) throw Error("Player closing or closed");
                 return host._player_time(player);
             },
+            get active() { return !stopping && !!host._player_active(player); },
+            get audioTime() {
+                if (stopping) throw Error("Player closing or closed");
+                return host._player_audio_time(player);
+            },
             get status() {
                 if (stopping) throw Error("Player closing or closed");
                 if (error) throw error;
@@ -169,18 +175,29 @@ export async function attachPlayer(host, score) {
                 if (stopping) throw Error("Player closing or closed");
                 if (transport) host._transport_started(transport);
             },
+            async monitor() {
+                if (stopping) throw Error("Player closing or closed");
+                if (host._player_monitor(player)) throw Error("Cannot start audio monitoring");
+                await context.resume();
+                if (stopping) throw Error("Player closing or closed");
+            },
             async stop() {
+                const active = this.active;
+                await this.pause(false);
+                if (active) await this.monitor();
+            },
+            async pause(panic = true) {
                 if (stopping) throw Error("Player closing or closed");
                 if (host._player_pause(player)) throw Error("Cannot stop audio device");
                 await context.suspend();
                 if (stopping) throw Error("Player closing or closed");
-                host._player_midi_panic(player);
+                if (panic) host._player_midi_panic(player);
                 if (transport) host._transport_stopped(transport);
             },
             async seek(seconds) {
                 if (stopping) throw Error("Player closing or closed");
                 if (!Number.isFinite(seconds)) throw Error("Invalid position");
-                if (context.state !== "suspended") throw Error("Stop before seeking");
+                if (context.state !== "suspended") throw Error("Pause audio before seeking");
                 await workletReply(setup, "seek", {send: true, payload: {player, seconds}});
                 if (stopping) throw Error("Player closing or closed");
                 if (transport) host._transport_seeked(transport);

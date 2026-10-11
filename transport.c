@@ -11,7 +11,7 @@ void transport_attach(Transport *t, Session *session, ScoreView *view) {
 	t->view = *view;
 	*view = (ScoreView){0};
 	t->control_revision = ++t->revision;
-	t->playing = 1;
+	t->playing = 0;
 	t->time = 0;
 }
 

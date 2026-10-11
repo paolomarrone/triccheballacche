@@ -14,7 +14,7 @@ const access = {inputs: new Map([[input.id, input]]), outputs: new Map([[first.i
 Object.defineProperty(globalThis, "navigator", {value: {requestMIDIAccess: async () => access}, configurable: true});
 const captured = new Set(), messages = [], failures = [];
 const player = {
-    status: 0,
+    active: true,
     midi(node, data) { messages.push({node, data}); },
     captureMidi(node, enabled) { enabled ? captured.add(node) : captured.delete(node); },
     readMidi() { return []; }

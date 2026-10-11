@@ -30,12 +30,12 @@ int player_node(Player *p) {
 }
 
 void player_sync(Player *p) {
-	if (player_status(p))
+	if (!player_active(p))
 		session_sync(p->session);
 }
 
 int player_midi(Player *p, int node, const uint8_t *data, int size) {
-	return player_status(p) || size < 0 ? -1 : session_midi(p->session, node, data, size);
+	return !player_active(p) || size < 0 ? -1 : session_midi(p->session, node, data, size);
 }
 int player_midi_capture(Player *p, int node, int enabled) {
 	if (node < 0 || node >= p->session->nnodes || !p->session->nodes[node].midi_out)

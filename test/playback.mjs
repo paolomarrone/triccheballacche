@@ -47,8 +47,8 @@ export async function testPlayback(host, reference, path, rate, replay = false) 
                 while (!player.status && performance.now() < deadline) await sleep(50);
                 check(player.status === 1, "Playback did not finish");
             }
-            await player.stop();
-            check(player.status === 2 && player.context.state === "suspended", "Stop must retain a suspended player");
+            await player.pause();
+            check(player.status === 2 && player.context.state === "suspended", "Pause must retain a suspended player");
             const time = player.time;
             await sleep(30);
             check(player.time === time, "Stopped transport advanced");
@@ -100,7 +100,7 @@ export async function testSeeking(host, reference) {
         check(player.duration === Infinity && player.canSeek(1000000.125), "Unbounded duration or seek limit");
         await player.context.audioWorklet.addModule(new URL("./capture.js", import.meta.url));
         for (const target of [0.125, 1000000.125, 0.3]) {
-            await player.stop();
+            await player.pause();
             await player.seek(target);
             check(player.time === target && player.status === 2, "Seek must publish its target and remain stopped");
             const capture = new AudioWorkletNode(player.context, "capture", {outputChannelCount: [2], processorOptions: {frames}});
@@ -114,7 +114,7 @@ export async function testSeeking(host, reference) {
             check(player.status === 0, "Position validation interrupted playback");
             const deadline = performance.now() + 3000;
             while (player.time < target + frames / rate && performance.now() < deadline) await sleep(20);
-            await player.stop();
+            await player.pause();
             const received = new Promise(resolve => { capture.port.onmessage = ({data}) => resolve(data); });
             capture.port.postMessage("read");
             const result = await received;
@@ -153,7 +153,7 @@ export async function testListening(host) {
             const deadline = performance.now() + 3000;
             while (!player.status && performance.now() < deadline) await sleep(20);
             check(player.status === 1, "Track audition playback did not finish");
-            await player.stop();
+            await player.pause();
             const received = new Promise(resolve => { capture.port.onmessage = ({data}) => resolve(data); });
             capture.port.postMessage("read");
             const {audio, reused} = await received;

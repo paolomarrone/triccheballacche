@@ -347,7 +347,7 @@ VIEW_EXPORTS = "_score_prepare","_score_describe","_score_pack_web","_score_pack
 SCORE_EXPORTS = "_score_new","_web_score_free","_score_listen","_score_duration","_score_can_seek"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sWASM_WORKERS -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
-PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_score_state_save","_score_state_load","_player_time","_score_player","_transport_update_web","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node","_player_midi","_player_midi_read","_player_midi_capture","_player_midi_panic"]'
+PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_score_state_save","_score_state_load","_player_time","_player_audio_time","_player_active","_player_monitor","_score_player","_transport_update_web","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node","_player_midi","_player_midi_read","_player_midi_capture","_player_midi_panic"]'
 # Publish C Brickworks examples only; fxpp_* and synthpp_* are duplicate C++ variants.
 WEB_CONTENT ?= lib examples $(wildcard plugins/*/build/*.perone \
     $(BRICKWORKS_PERONE)/fx_*/build/*.perone $(BRICKWORKS_PERONE)/synth_*/build/*.perone \

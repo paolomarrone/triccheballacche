@@ -1,5 +1,6 @@
 # Settings → MIDI: connect a keyboard to "keys", and optionally "keys" to an output device.
-# The stream also carries the repeating phrase. Remove the note pattern to play only the keyboard.
+# Prepare (Ctrl+Enter) to play the keyboard with the timeline stopped; Play adds the phrase.
+# Remove daw/score below to keep only the keyboard graph, without a timeline.
 (import ../lib/pattern :as p)
 
 (def keys (daw/midi :keys))

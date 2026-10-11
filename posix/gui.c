@@ -85,31 +85,46 @@ static const char *pause_editor(Editor *editor) {
 	return error;
 }
 
-// The device is stopped; its borrowed Session keeps the same address across successful Runs.
-static const char *play_editor(Editor *editor) {
+// Reuse the device and its borrowed Session across transport changes and graph replacement.
+static const char *start_editor(Editor *editor, int playing) {
 	Session *s = &editor->session;
 	if (!editor->player)
 		editor->player = player_new(s);
-	const char *midi_error = editor->player ? midi_devices_play(editor->midi, editor->player) : NULL;
-	if (!editor->player || midi_error || player_start(editor->player)) {
+	const char *midi_error = editor->player ? midi_devices_start(editor->midi, editor->player) : NULL;
+	if (!editor->player || midi_error || player_monitor(editor->player) ||
+	    (playing && s->frames && player_start(editor->player))) {
 		const char *error = midi_error ? midi_error : s->error ? s->error : "Audio startup failed";
 		pause_editor(editor);
 		return error;
 	}
-	transport_started(&editor->transport);
+	if (playing && s->frames)
+		transport_started(&editor->transport);
 	free(editor->error);
 	editor->error = NULL;
 	return NULL;
 }
 
+// A transport stop leaves the MIDI producer attached and the prepared graph alive.
+static const char *stop_editor(Editor *editor) {
+	if (!editor->player)
+		return NULL;
+	int active = player_active(editor->player);
+	if (player_pause(editor->player))
+		return editor->session.error;
+	accept_revision(editor);
+	transport_stopped(&editor->transport);
+	return active && player_monitor(editor->player) ? editor->session.error : NULL;
+}
+
 static const char *seek_editor(Editor *editor, double seconds) {
 	Session *s = &editor->session;
 	if (!s->audio)
-		return "Run a score before seeking";
+		return "Prepare a score before seeking";
 	uint64_t frame = session_frame(s, seconds);
 	if (frame == UINT64_MAX)
 		return "Position outside score";
 	int playing = editor->transport.playing;
+	int active = editor->player && player_active(editor->player);
 	const char *error = pause_editor(editor);
 	if (!error && (editor->player ? player_seek(editor->player, seconds) : session_seek(s, frame)))
 		error = s->error;
@@ -117,8 +132,8 @@ static const char *seek_editor(Editor *editor, double seconds) {
 		transport_seeked(&editor->transport);
 		free(editor->error);
 		editor->error = NULL;
-		if (playing)
-			error = play_editor(editor);
+		if (active)
+			error = start_editor(editor, playing);
 	}
 	return error;
 }
@@ -152,7 +167,7 @@ static void reply(
 	if (!state)
 		error = "Out of memory";
 	Json json = {0};
-	json_print(&json, "{\"text\":");
+	json_print(&json, "{\"audio\":%s,\"text\":", editor->player && player_active(editor->player) ? "true" : "false");
 	json_string(&json, text);
 	json_print(&json, ",\"path\":");
 	json_string(&json, path);
@@ -194,6 +209,7 @@ static void command(Editor *editor, webui_event_t *event) {
 	if (!strcmp(op, "midi-devices") || !strcmp(op, "midi-refresh") || !strcmp(op, "midi-connect")) {
 		const char *error = NULL;
 		int resume = editor->transport.playing;
+		int active = editor->player && player_active(editor->player);
 		int changing = strcmp(op, "midi-devices");
 		if (changing)
 			error = pause_editor(editor);
@@ -214,8 +230,8 @@ static void command(Editor *editor, webui_event_t *event) {
 			else
 				error = midi_devices_connect(editor->midi, &editor->session, device, node);
 		}
-		if (changing && resume) {
-			const char *start = play_editor(editor);
+		if (changing && active) {
+			const char *start = start_editor(editor, resume);
 			if (!error)
 				error = start;
 		}
@@ -240,18 +256,34 @@ static void command(Editor *editor, webui_event_t *event) {
 		reply(event, editor, error, NULL, "", 0);
 		return;
 	}
+	if (!strcmp(op, "audio")) {
+		double enabled = decimal(event, 1);
+		const char *error = !editor->session.audio ? "Prepare a score before enabling audio"
+		    : enabled == 0                         ? pause_editor(editor)
+		    : enabled == 1                         ? start_editor(editor, editor->transport.playing)
+		                                           : "Invalid audio state";
+		reply(event, editor, error, NULL, "", 0);
+		return;
+	}
 	if (!strcmp(op, "seek")) {
 		const char *error = seek_editor(editor, decimal(event, 1));
 		reply(event, editor, error, NULL, "", 0);
 		return;
 	}
 	if (!strcmp(op, "state-save") || !strcmp(op, "state-load")) {
+		int active = editor->player && player_active(editor->player);
 		const char *error =
 		    decimal(event, 1) != editor->transport.control_revision ? "Stale plugin view" : pause_editor(editor);
 		if (error)
 			reply(event, editor, error, NULL, "", 0);
-		else
+		else {
 			controls_command(&editor->controls, &editor->session, editor->transport.control_revision, event);
+			const char *start = active ? start_editor(editor, 0) : NULL;
+			if (start) {
+				free(editor->error);
+				editor->error = copy_string(start);
+			}
+		}
 		return;
 	}
 	if (!strcmp(op, "watch") || !strcmp(op, "controls") || !strcmp(op, "parameter") || !strcmp(op, "message")) {
@@ -278,8 +310,9 @@ static void command(Editor *editor, webui_event_t *event) {
 		error = file_read(path, &text);
 	} else if (!strcmp(op, "save") || !strcmp(op, "preset-file")) {
 		error = file_save(path, source);
-	} else if (!strcmp(op, "run") || !strcmp(op, "update")) {
+	} else if (!strcmp(op, "run") || !strcmp(op, "prepare") || !strcmp(op, "update")) {
 		int live = !strcmp(op, "update");
+		int playing = !strcmp(op, "run") || editor->transport.playing;
 		if (live && editor->transport.queued.nnodes)
 			error = "Wait for the pending revision to become active";
 		else if (live && !(editor->transport.playing && transport_live(&editor->transport)))
@@ -306,19 +339,20 @@ static void command(Editor *editor, webui_event_t *event) {
 				error = prepared.error;
 		}
 		if (!error && !live) {
+			midi_devices_detach(editor->midi);
 			controls_close(&editor->controls, &editor->session);
 			transport_detach(&editor->transport);
 			session_free(&editor->session);
 			editor->session = prepared;
 			prepared = (Session){0};
+			transport_attach(&editor->transport, &editor->session, &score);
 			if (editor->player && player_seek(editor->player, 0))
 				error = editor->session.error;
 			else
-				error = play_editor(editor);
+				error = start_editor(editor, playing);
 			if (error)
 				finish(editor);
 			else {
-				transport_attach(&editor->transport, &editor->session, &score);
 				assets_set(&editor->transport.view, editor->transport.control_revision);
 				changed = 1;
 			}
@@ -330,15 +364,15 @@ static void command(Editor *editor, webui_event_t *event) {
 		score_view_free(&score);
 	} else if (!strcmp(op, "play")) {
 		if (!editor->session.audio)
-			error = "Run a score before playing";
+			error = "Prepare a score before playing";
 		else if (!editor->transport.playing) {
-			if (editor->session.time == editor->session.frames)
+			if (editor->session.frames && editor->session.time == editor->session.frames)
 				error = seek_editor(editor, 0);
 			if (!error)
-				error = play_editor(editor);
+				error = start_editor(editor, 1);
 		}
 	} else if (!strcmp(op, "stop")) {
-		error = pause_editor(editor);
+		error = stop_editor(editor);
 	} else if (!strcmp(op, "status")) {
 		error = editor->error;
 	} else {
@@ -359,31 +393,29 @@ static void poll_player(Editor *editor) {
 		error = editor->session.error;
 	else if (service > 0) {
 		int playing = editor->transport.playing;
+		int active = editor->player && player_active(editor->player);
 		error = pause_editor(editor);
 		if (!error && session_restart(&editor->session))
 			error = editor->session.error;
-		if (!error && playing)
-			error = play_editor(editor);
+		if (!error && active)
+			error = start_editor(editor, playing);
 	}
 
 	if (controls_poll(&editor->controls, &editor->session) < 0)
 		error = "Plugin UI control error";
-	if (!editor->transport.playing) {
+	int active = editor->player && player_active(editor->player);
+	if (!active)
 		session_sync(&editor->session);
-		if (error) {
-			free(editor->error);
-			editor->error = copy_string(error);
-		}
-		return;
-	}
-	int status = player_status(editor->player);
+	int status = editor->player ? player_status(editor->player) : 2;
 	if (status < 0)
 		error = editor->session.error ? editor->session.error : "Audio error";
-	if (!status && !ma_device_is_started(&editor->player->device))
+	if (active && !ma_device_is_started(&editor->player->device))
 		error = "Audio device stopped";
-	if (error || status) {
+	if (!error && status == 1)
+		error = stop_editor(editor);
+	if (error) {
 		free(editor->error);
-		editor->error = error ? copy_string(error) : NULL;
+		editor->error = copy_string(error);
 		pause_editor(editor);
 	}
 }

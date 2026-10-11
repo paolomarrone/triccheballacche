@@ -20,13 +20,15 @@ static int play_score(Session *s) {
 	stopped = 0;
 	signal(SIGINT, stop);
 	signal(SIGTERM, stop);
-	int result = player_start(p);
+	int result = s->frames ? player_start(p) : player_monitor(p);
 	if (!result) {
 		puts("Playing; Ctrl-C to stop.");
 		fflush(stdout);
-		while (!stopped && !player_status(p)) {
+		while (!stopped && (s->frames ? !player_status(p) : player_status(p) >= 0)) {
 			int service = session_poll(s);
-			if (service < 0 || (service > 0 && (player_pause(p) || session_restart(s) || player_start(p)))) {
+			if (service < 0 ||
+			    (service > 0 &&
+			        (player_pause(p) || session_restart(s) || (s->frames ? player_start(p) : player_monitor(p))))) {
 				result = -1;
 				break;
 			}

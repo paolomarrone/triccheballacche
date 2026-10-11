@@ -7,7 +7,7 @@ const byId = id => document.getElementById(id);
 const path = byId("path"), code = byId("code"), views = byId("views"), errors = byId("errors");
 const numbers = byId("numbers"), marks = byId("marks");
 let backend, controls, ready = false, busy = false, playing = false, prepared = false, saved = "", savedPath = "", queue = Promise.resolve();
-let live = false, pending;
+let live = false, audio = false, pending;
 let revision = 0, frames = [], partial = false, tracedSource, tracedPath, seconds = 0, displayedSource, lineCount = 1, painted = "";
 
 function tracking() {
@@ -59,9 +59,11 @@ function update() {
     browser.status(ready && !busy);
     controls?.status(prepared, busy);
     projection.status(prepared, busy);
-    for (const id of ["open", "save", "play", "views"]) byId(id).disabled = !ready || busy;
+    for (const id of ["open", "save", "prepare", "play", "views"]) byId(id).disabled = !ready || busy;
     byId("stop").disabled = !ready || busy || !playing;
-    byId("play").title = `${needsEvaluation() ? "Evaluate and play" : "Play"} · Ctrl+Space · Ctrl+Enter to reevaluate`;
+    byId("audio").disabled = !ready || busy || !prepared;
+    byId("audio").checked = audio;
+    byId("play").title = `${needsEvaluation() ? "Evaluate and play" : "Play"} · Ctrl+Space · Ctrl+Enter to prepare`;
     byId("rewind").disabled = byId("time").disabled = !ready || busy || !prepared;
     path.disabled = !ready || busy;
     code.disabled = !ready;
@@ -86,7 +88,7 @@ function request(op, ...args) {
         const response = await backend.command(op, ...args);
         // Any command may observe a live revision. A successful Run replaces the
         // whole session; its score must not inherit the old session's queued source.
-        if (pending && (op !== "run" || response.error) && Number.isInteger(response.revision) && response.revision !== revision) {
+        if (pending && (!["run", "prepare"].includes(op) || response.error) && Number.isInteger(response.revision) && response.revision !== revision) {
             const result = response.score ? response : await backend.command("score");
             if (result.error) throw Error(result.error);
             revision = result.score.revision;
@@ -99,6 +101,7 @@ function request(op, ...args) {
         }
         if (response.queued === false) pending = undefined;
         if (typeof response.playing === "boolean") playing = response.playing;
+        if (typeof response.audio === "boolean") audio = response.audio;
         if (typeof response.prepared === "boolean") prepared = response.prepared;
         if (typeof response.live === "boolean") live = response.live;
         if (Number.isFinite(response.time)) {
@@ -123,24 +126,25 @@ async function action(op, entry = path.value, file) {
     if (!ready || busy) return;
     if (op === "play" && needsEvaluation()) op = "run";
     const opening = op === "open" || op === "import";
-    const updating = op === "run" && live && playing && entry === tracedPath;
+    const evaluating = op === "run" || op === "prepare";
+    const updating = evaluating && live && playing && entry === tracedPath;
     if (opening && dirty() && !confirm("Open another file and discard unsaved changes?")) return;
-    if ((opening || ["save", "run"].includes(op)) && !entry.trim()) {
+    if ((opening || ["save", "run", "prepare"].includes(op)) && !entry.trim()) {
         showError("Enter a score path.");
         return;
     }
     busy = true;
-    if (["run", "play", "seek"].includes(op)) frames = [];
+    if (["run", "prepare", "play", "seek"].includes(op)) frames = [];
     showError("");
     update();
     try {
-        if (op === "run" && !updating) controls.dispose();
+        if (evaluating && !updating) controls.dispose();
         if (file?.size > 8 * 1024 * 1024) throw Error("Score too large (at most 8 MiB)");
-        const source = file ? await file.text() : ["save", "run"].includes(op) ? code.value : "";
+        const source = file ? await file.text() : ["save", "run", "prepare"].includes(op) ? code.value : "";
         const result = await request(updating ? "update" : op, entry, source);
-        if (op === "run" && result.queued) {
+        if (evaluating && result.queued) {
             pending = {source, path: result.path};
-        } else if (op === "run") {
+        } else if (evaluating) {
             pending = undefined;
             revision = result.score.revision;
             projection.score(result.score);
@@ -181,7 +185,8 @@ const projection = timeline(request, origins => {
 }, time => action("seek", time), showError);
 new ResizeObserver(paint).observe(code);
 
-for (const op of ["save", "play", "stop"]) byId(op).addEventListener("click", () => action(op));
+for (const op of ["save", "prepare", "play", "stop"]) byId(op).addEventListener("click", () => action(op));
+byId("audio").onchange = () => action("audio", Number(byId("audio").checked));
 byId("rewind").onclick = () => action("seek", 0);
 byId("time").onkeydown = event => {
     if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
@@ -217,7 +222,7 @@ path.addEventListener("keydown", event => {
 document.addEventListener("keydown", event => {
     if (event.defaultPrevented || document.querySelector("dialog[open], :popover-open")) return;
     let op;
-    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") op = "run";
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") op = "prepare";
     if ((event.ctrlKey || event.metaKey) && event.code === "Space") op = "play";
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") op = "save";
     if (event.key === "Escape" && playing) op = "stop";

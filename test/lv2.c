@@ -203,7 +203,7 @@ static void discovery_test(void) {
 	assert(prepare_score(&score, &output, "test/lv2/score.janet",
 	    "(daw/plugin {:format :lv2 :path \"build/test/fixture.lv2\" :id \"urn:triccheballacche:test:lv2:midi-output\"})",
 	    &error, NULL));
-	assert(error && strstr(error, "Missing (daw/end"));
+	assert(error && strstr(error, "missing audio or MIDI output"));
 	free(error);
 	score_free(&score);
 }

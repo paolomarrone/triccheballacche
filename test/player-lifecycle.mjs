@@ -131,7 +131,7 @@ export async function testPlayerLifecycle(host) {
 
         // A close between the worklet seek request and its reply must prevent later C calls.
         player = await open();
-        await player.stop();
+        await player.pause();
         fault = "seek-close";
         try {
             await rejects(player.seek(0), /closing or closed/);
@@ -156,8 +156,10 @@ export async function testPlayerLifecycle(host) {
             player.publish(transport);
             check(!player.takeView(), "Published projection still owned by player");
             check(state().playing && state().prepared && state().revision === 1, "Run was not published");
-            await player.stop();
+            await player.pause();
             check(!state().playing && state().prepared, "Stop lost the session");
+            await player.stop();
+            check(!player.active && player.context.state === "suspended", "Stop enabled a disabled engine");
             await player.seek(.01);
             check(state().time === .01, "Seek did not update transport");
             await player.start();

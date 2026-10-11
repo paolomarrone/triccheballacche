@@ -232,6 +232,7 @@ try {
             await wait('!document.querySelector("#play").disabled');
             await key("Enter", "Enter", 2);
             await wait(`${synthRoot}?.querySelector(".parameter-controls")`);
+            await click("#play");
             await evaluate("fixtureWait = true; fixtureResume = undefined");
             await openEffect();
             await wait('typeof fixtureResume === "function"');

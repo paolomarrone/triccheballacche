@@ -8,7 +8,9 @@
 <script type="importmap">{"imports":{"three":"./vendor/three/three.module.min.js"}}</script>
 <script type="module" src="start.js"></script>
 <nav aria-label="Score and playback">
-    <button id="play" title="Play · Ctrl+Space · Ctrl+Enter to reevaluate" aria-label="Play" disabled>▶</button>
+    <label class="icon" title="Audio engine"><input id="audio" type="checkbox" aria-label="Audio engine" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10m-5-8a9 9 0 1 0 10 0"/></svg></label>
+    <button id="prepare" class="icon" title="Prepare / update · Ctrl+Enter" aria-label="Prepare score" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13 2-9 12h7l-1 8 10-13h-8z"/></svg></button>
+    <button id="play" title="Play · Ctrl+Space · Ctrl+Enter to prepare" aria-label="Play" disabled>▶</button>
     <button id="stop" title="Stop · Esc" aria-label="Stop" disabled>■</button>
     <button id="rewind" title="Return to start · Home in the timeline" aria-label="Return to start" disabled>|◀</button>
     <div id="file-bar">

@@ -231,8 +231,9 @@ static int clock_process(DSP *dsp, const float **in, float **out, size_t frames,
 	(void)in;
 	(void)out;
 	Clock *clock = dsp->instance;
-	assert(time->frame == 24000 + clock->frame);
-	assert(fabs(time->beat - (1 + (double)clock->frame / 24000)) < 1e-12);
+	uint64_t offset = time->playing ? clock->frame : 0;
+	assert(time->frame == 24000 + offset);
+	assert(fabs(time->beat - (1 + (double)offset / 24000)) < 1e-12);
 	clock->frame += frames;
 	return clock->fail;
 }
@@ -241,12 +242,16 @@ static void test_render_clock(void) {
 	const DspOps api = {.process = clock_process, .midi = clock_midi};
 	DSP dsp = {.ops = &api};
 	dsp.instance = &clock;
-	Plugin plugin = {.dsp = &dsp, .sample_rate = 48000, .time = {.frame = 24000, .beat = 1, .bpm = 120}};
+	Plugin plugin = {.dsp = &dsp, .sample_rate = 48000, .time = {.frame = 24000, .beat = 1, .bpm = 120, .playing = 1}};
 	MidiBuffer messages = {0};
 	assert(!midi_add(&messages, 7, (uint8_t[]){0xb0, 1, 20}, 3));
 	assert(!midi_add(&messages, 520, (uint8_t[]){0xb0, 1, 60}, 3));
 	assert(!render_plugin(&plugin, NULL, NULL, 1025, &messages, NULL));
 	assert(clock.frame == 1025 && clock.messages == 2 && plugin.time.frame == 24000 && plugin.time.beat == 1);
+	clock = (Clock){0};
+	plugin.time.playing = 0;
+	assert(!render_plugin(&plugin, NULL, NULL, 1025, &messages, NULL));
+	assert(clock.frame == 1025 && clock.messages == 2);
 	clock = (Clock){.fail = 1};
 	assert(render_plugin(&plugin, NULL, NULL, 1025, &messages, NULL) == -1);
 	assert(plugin.time.frame == 24000 && plugin.time.beat == 1);

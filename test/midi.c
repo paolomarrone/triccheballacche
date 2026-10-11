@@ -1,6 +1,8 @@
 #include "support.h"
 #include "snapshot.h"
+#include "host/dsp_internal.h"
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -85,6 +87,88 @@ static void streams(void) {
 	session_free(&s);
 	score_view_free(&view);
 }
+// The same graph handles devices at rest, score events in Play, and tails after Stop.
+static void monitoring(void) {
+	Session s = {.sample_rate = 48000};
+	Output output;
+	const char *source = "(def keys (daw/midi :keys)) (daw/midi-output keys)"
+	                     "(daw/note keys 0 1 60 80) (daw/midi-event keys 0 [0xb0 64 127]) (daw/end 2)";
+	assert(!prepare_session(&s, &output, "test/monitor.janet", source, NULL, NULL));
+	atomic_store(&s.midi_capture[0], 1);
+	float audio[BLOCK * 2];
+	MidiPacket p;
+	assert(!session_monitor(&s, audio, 128) && !s.time && s.clock == 128);
+	assert(!midi_pop(s.midi_out, &p)); // No scheduled events or automation while stopped.
+	assert(!session_midi(&s, 0, (uint8_t[]){0x92, 67, 95}, 3));
+	assert(!session_monitor(&s, audio, 128) && !s.time && s.clock == 256);
+	assert(midi_pop(s.midi_out, &p) && p.frame == 128 && p.data[0] == 0x92);
+	assert(!session_render(&s, audio, 128) && s.time == 128 && s.clock == 384);
+	assert(midi_pop(s.midi_out, &p) && p.frame == 256 && p.data[0] == 0xb0 && p.data[2] == 127);
+	assert(midi_pop(s.midi_out, &p) && p.frame == 256 && p.data[0] == 0x90);
+	assert(!session_monitor(&s, audio, 128) && s.time == 128 && s.clock == 512);
+	assert(midi_pop(s.midi_out, &p) && p.frame == 384 && p.data[0] == 0xb0 && p.data[2] == 0);
+	assert(midi_pop(s.midi_out, &p) && p.frame == 384 && p.data[0] == 0x80);
+	assert(!midi_pop(s.midi_out, &p)); // Stop leaves the keyboard's note held.
+	assert(!session_render(&s, audio, 128) && s.time == 256);
+	assert(midi_pop(s.midi_out, &p) && p.data[0] == 0xb0 && p.data[2] == 127);
+	assert(midi_pop(s.midi_out, &p) && p.data[0] == 0x90 && p.data[2] == 80);
+	assert(!session_seek(&s, 24000) && !session_monitor(&s, audio, 128) && s.time == 24000);
+	assert(s.clock == 768);            // Seeking never rewinds the device clock.
+	assert(!midi_pop(s.midi_out, &p)); // Seeking at rest must not send score note-ons or sustain.
+	assert(!session_render(&s, audio, 1));
+	assert(midi_pop(s.midi_out, &p) && p.frame == 768 && p.data[0] == 0xb0 && p.data[2] == 127);
+	assert(midi_pop(s.midi_out, &p) && p.frame == 768 && p.data[0] == 0x90);
+	session_free(&s);
+
+	// A graph with no musical sequence needs neither a duration nor a dummy loop.
+	const char *graph = "(def p (daw/plugin \"build/test/fixture.perone\" {:gain 0.25 :mode 2}))"
+	                    "(daw/output (daw/through p (daw/plugin \"build/test/effect.perone\" {:gain 0.5})))";
+	assert(!prepare_session(&s, &output, "test/monitor.janet", graph, NULL, NULL));
+	assert(!s.frames && !session_monitor(&s, audio, 128) && !s.time);
+	assert(audio[0] == .125f && audio[1] == -.125f); // Transport is stopped, even through stereo effects.
+	assert(!session_midi(&s, 0, (uint8_t[]){0x80, 60, 0}, 3));
+	assert(!session_monitor(&s, audio, 128) && audio[0] == 0 && audio[1] == 0);
+	assert(!session_midi(&s, 0, (uint8_t[]){0x90, 60, 100}, 3));
+	edit_dsp(s.nodes[0].dsp[0].dsp, 1, .5);
+	assert(!session_monitor(&s, audio, 128) && audio[0] == .25f && audio[1] == -.25f);
+	assert(!s.time && s.clock == 384);
+	edit_dsp(s.nodes[1].dsp[0].dsp, 2, .1);
+	assert(!session_monitor(&s, audio, 128));
+	assert(!session_midi(&s, 0, (uint8_t[]){0x80, 60, 0}, 3));
+	assert(!session_monitor(&s, audio, 32));
+	assert(audio[0] < -.2f && fabsf(audio[62]) < fabsf(audio[0])); // Effect state decays while stopped.
+	session_free(&s);
+	puts("OK: stopped graph, live MIDI and parameters, score-note release/resume, sustain and independent audio clock");
+}
+static void resume_order(void) {
+	Session s = {.sample_rate = 48000};
+	Output output;
+	const char *source = "(def keys (daw/midi)) (daw/midi-output keys)"
+	                     "(daw/note keys 0 1 72 90) (daw/note keys 0.01 1 60 80)"
+	                     "(daw/note keys 0.02 1 72 100) (daw/end 2)";
+	assert(!prepare_session(&s, &output, "test/monitor.janet", source, NULL, NULL));
+	atomic_store(&s.midi_capture[0], 1);
+	float audio[256];
+	MidiPacket p;
+	for (int seek = 0; seek < 2; ++seek) {
+		if (seek)
+			assert(!session_seek(&s, 1440));
+		else
+			while (s.time < 1440) {
+				assert(!session_render(&s, audio, 128));
+				while (midi_pop(s.midi_out, &p)) {
+				}
+			}
+		assert(!session_monitor(&s, audio, 128));
+		while (midi_pop(s.midi_out, &p))
+			assert((p.data[0] & 0xf0) == 0x80);
+		assert(!session_render(&s, audio, 1));
+		assert(midi_pop(s.midi_out, &p) && p.data[1] == 60 && p.data[2] == 80);
+		assert(midi_pop(s.midi_out, &p) && p.data[1] == 72 && p.data[2] == 100);
+		assert(!midi_pop(s.midi_out, &p));
+	}
+	session_free(&s);
+}
 static void formats(unsigned chunk) {
 	Session s = {.sample_rate = 48000};
 	Output output;
@@ -109,6 +193,11 @@ static void formats(unsigned chunk) {
 		}
 	}
 	assert(count == 2);
+	uint64_t clock = s.clock;
+	assert(!session_seek(&s, 0) && !session_monitor(&s, audio, 128) && !s.time);
+	assert(midi_pop(s.midi_out, &p) && p.frame == clock + 37 && p.data[0] == 0x90);
+	assert(midi_pop(s.midi_out, &p) && p.frame == clock + 101 && p.data[0] == 0x80);
+	assert(!midi_pop(s.midi_out, &p));
 	session_free(&s);
 }
 static void rejection(void) {
@@ -184,6 +273,8 @@ static void branches(void) {
 }
 int main(void) {
 	buffers();
+	monitoring();
+	resume_order();
 	streams();
 	rejection();
 	messages();

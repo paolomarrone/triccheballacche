@@ -277,7 +277,7 @@ int score_note(Score *s, int id, uint64_t time, uint64_t end, int pitch, int vel
 }
 
 int score_end(Score *s, uint64_t frames) {
-	if (s->sealed || !frames || !score_rate(s))
+	if (s->sealed || (!frames && (s->sequence.count || s->live)) || !score_rate(s))
 		return fail(s, "empty duration or already sealed");
 	if (!s->sequence.bpm)
 		s->sequence.bpm = 120;

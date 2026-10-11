@@ -54,6 +54,19 @@ static void note_message(NodeState *n, int pitch, int velocity) {
 	midi_add(&n->midi_in->messages, 0, message, sizeof(message));
 }
 
+static void held_note(MidiInput *input, int key, uint64_t end, uint8_t velocity) {
+	if (input->notes[key].end)
+		for (unsigned i = 0; i < input->nnotes; ++i)
+			if (input->order[i] == key) {
+				--input->nnotes;
+				memmove(input->order + i, input->order + i + 1, (input->nnotes - i) * sizeof(*input->order));
+				break;
+			}
+	if (end)
+		input->order[input->nnotes++] = key;
+	input->notes[key] = (ScheduledNote){end, velocity};
+}
+
 uint64_t session_frame(const Session *s, double seconds) {
 	double value = seconds * s->sample_rate;
 	if (!s->audio || !isfinite(value) || value < 0 || value >= 0x1p53)
@@ -148,7 +161,6 @@ int session_seek(Session *s, uint64_t from) {
 	session_cancel(s);
 	r->at = 0;
 	session_midi_panic(s);
-	memset(s->held, 0, s->nnodes * sizeof(*s->held));
 	s->next_off = UINT64_MAX;
 	unsigned solo = 0;
 	for (int i = 0; i < s->ntracks; ++i) {
@@ -180,6 +192,11 @@ int session_seek(Session *s, uint64_t from) {
 		uint64_t end;
 		const Cue *cue = sequencer_peek(cursor, &end);
 		if (cue->parameter == -2) {
+			if ((cue->midi[0] & 0xf0) == 0xb0 && cue->midi[1] == 64) {
+				s->nodes[cue->node].midi_in->sustain[cue->midi[0] & 15] = cue->midi[2];
+				sequencer_shift(cursor);
+				continue; // Restore the score's pedal only when playback resumes.
+			}
 			if (remember(&s->nodes[cue->node].midi_in->messages, cue)) {
 				free(notes);
 				free(storage);
@@ -191,7 +208,7 @@ int session_seek(Session *s, uint64_t from) {
 			int active = end > from;
 			notes[cue->node][cue->channel * 128 + cue->pitch] =
 			    (HeldNote){order, cue->channel * 128 + cue->pitch + 1, active ? cue->velocity : 0};
-			s->held[cue->node][cue->channel * 128 + cue->pitch] = active ? end : 0;
+			held_note(s->nodes[cue->node].midi_in, cue->channel * 128 + cue->pitch, active ? end : 0, cue->velocity);
 		}
 		sequencer_shift(cursor);
 	}
@@ -199,9 +216,12 @@ int session_seek(Session *s, uint64_t from) {
 	for (int i = 0; i < s->nnodes; ++i) {
 		const Node *n = score->nodes + i;
 		NodeState *state = s->nodes + i;
-		for (int pitch = 0; pitch < 16 * 128; ++pitch)
-			if (s->held[i][pitch] && s->held[i][pitch] < s->next_off)
-				s->next_off = s->held[i][pitch];
+		if (state->midi_in)
+			for (int pitch = 0; pitch < 16 * 128; ++pitch) {
+				uint64_t end = state->midi_in->notes[pitch].end;
+				if (end && end < s->next_off)
+					s->next_off = end;
+			}
 		for (int j = 0; j < n->config.nparams; ++j)
 			if (!(n->config.parameters[j].flags & PARAM_OUTPUT))
 				set_control(s, i, j, values[i][j]);
@@ -211,8 +231,8 @@ int session_seek(Session *s, uint64_t from) {
 		if (notes && n->config.midi >= 0) {
 			qsort(notes[i], 16 * 128, sizeof(HeldNote), note_order);
 			for (int j = 0; j < 16 * 128; ++j)
-				if (notes[i][j].pitch)
-					note_message(state, notes[i][j].pitch - 1, notes[i][j].velocity);
+				if (notes[i][j].pitch && !notes[i][j].velocity)
+					note_message(state, notes[i][j].pitch - 1, 0);
 		}
 		if (state->midi_in && state->midi_in->messages.failed) {
 			free(notes);
@@ -223,6 +243,7 @@ int session_seek(Session *s, uint64_t from) {
 	free(notes);
 	free(storage);
 	s->time = from;
+	s->playing = 0; // Reconstructed notes begin only when the transport resumes.
 	s->error = NULL;
 	return 0;
 }
@@ -264,7 +285,7 @@ static void input_audio(Session *s, const Score *score, int id, int index, unsig
 	InputState *state = s->nodes[id].inputs + index;
 	float *level = &state->level;
 	float target = !solo || ((source->upstream | node->downstream) & solo);
-	if (!s->time)
+	if (!s->clock)
 		*level = target;
 	if (!state->length)
 		bw_buf_copy(input, audio, frames * source->channels);
@@ -286,7 +307,7 @@ static int process(
 		state->dsp[c].time = (ProcessTime){.frame = s->time,
 		    .bpm = score->sequence.bpm,
 		    .beat = (double)s->time / s->sample_rate * score->sequence.bpm / 60,
-		    .playing = 1};
+		    .playing = s->playing};
 	float input[BLOCK * 2];
 	MidiBuffer *messages = state->midi_in ? &state->midi_in->messages : NULL;
 	if (node->midi_source)
@@ -380,7 +401,7 @@ static int render_audio(Session *s, const Score *score, const bw_slew_lim_coeffs
 			int j = node->track - 1;
 			TrackState *track = s->tracks + j;
 			float target = !(mute & (1u << j));
-			if (!s->time)
+			if (!s->clock)
 				track->level = target;
 			fade(slew, &track->level, target, audio, 2, frames);
 		}
@@ -405,7 +426,7 @@ static int render_audio(Session *s, const Score *score, const bw_slew_lim_coeffs
 				break;
 			MidiBuffer *b = s->nodes[first].midi_out;
 			const MidiEvent *e = b->events + cursors[first]++;
-			MidiPacket p = {.node = first, .frame = s->time + e->frame, .size = e->size};
+			MidiPacket p = {.node = first, .frame = s->clock + e->frame, .size = e->size};
 			memcpy(p.data, b->data + e->offset, e->size);
 			if (midi_push(s->midi_out, &p))
 				return fail(s, "MIDI device output overflow");
@@ -413,7 +434,6 @@ static int render_audio(Session *s, const Score *score, const bw_slew_lim_coeffs
 	}
 	if (!score->has_output) {
 		memset(out, 0, 2 * frames * sizeof(float));
-		s->time += frames;
 		return 0;
 	}
 	const float *audio = s->audio + score->output * BLOCK * 2;
@@ -422,7 +442,6 @@ static int render_audio(Session *s, const Score *score, const bw_slew_lim_coeffs
 			out[2 * i] = out[2 * i + 1] = audio[i];
 	else
 		memcpy(out, audio, 2 * frames * sizeof(float));
-	s->time += frames;
 	return 0;
 }
 
@@ -440,7 +459,6 @@ void session_free(Session *s) {
 		free(s->nodes[i].midi_out);
 	}
 	revision_free(s->active);
-	free(s->held);
 	free(s->audio);
 	free(s->midi_in);
 	free(s->midi_out);
@@ -465,8 +483,7 @@ int session_activate(Session *s, Score *score) {
 	next.audio = calloc(score->nnodes, BLOCK * 2 * sizeof(float));
 	next.midi_in = calloc(1, sizeof(MidiQueue));
 	next.midi_out = calloc(1, sizeof(MidiQueue));
-	next.held = calloc(score->nnodes, sizeof(*next.held));
-	if (!next.audio || !next.held || !next.midi_in || !next.midi_out)
+	if (!next.audio || !next.midi_in || !next.midi_out)
 		goto fail;
 	for (int i = 0; i < score->nnodes; ++i) {
 		const Node *n = score->nodes + i;
@@ -600,11 +617,112 @@ fail:
 	return -1;
 }
 
-int session_render(Session *s, float *out, size_t frames) {
-	if (!s->audio || frames > s->frames - s->time)
-		return fail(s, "render outside session");
+static void transport(Session *s, int playing) {
+	if (s->playing == playing)
+		return;
+	for (int i = 0; i < s->nnodes; ++i) {
+		NodeState *node = s->nodes + i;
+		MidiInput *input = node->midi_in;
+		if (!input)
+			continue;
+		for (int ch = 0; ch < 16; ++ch)
+			if (input->sustain[ch] && !input->external_sustain[ch])
+				midi_add(&input->messages, 0, (uint8_t[]){0xb0 | ch, 64, playing ? input->sustain[ch] : 0}, 3);
+		for (unsigned j = 0; j < input->nnotes; ++j) {
+			int key = input->order[j];
+			ScheduledNote *note = input->notes + key;
+			if (note->end && !input->external_notes[key])
+				note_message(node, key, playing && note->end > s->time ? note->velocity : 0);
+		}
+	}
+	s->playing = playing;
+}
+
+static size_t sequence_block(Session *s, size_t frames) {
 	Revision *r = s->active;
 	Sequencer *cursor = &r->cursor;
+	Revision *pending = atomic_load(&s->pending);
+	if (pending && pending->at <= s->time) {
+		// If publication missed its boundary, keep the old revision until the next grid.
+		// The editor schedules with a safety margin; this also covers a stalled control thread.
+		if (pending->at < s->time) {
+			pending->at = sequence_boundary(&pending->score.sequence, s->sample_rate, s->time);
+			sequencer_seek(&pending->cursor, pending->at);
+		} else {
+			for (int i = 0; i < s->nnodes; ++i) {
+				const Node *n = r->score.nodes + i;
+				int count = n->config.nparams;
+				for (int j = 0; j < count; ++j) {
+					if ((!n->path || !(n->config.parameters[j].flags & PARAM_OUTPUT)) &&
+					    pending->score.nodes[i].config.parameters[j].value != n->config.parameters[j].value)
+						set_control(s, i, j, pending->score.nodes[i].config.parameters[j].value);
+				}
+			}
+			Revision *old = r;
+			s->active = r = pending;
+			cursor = &r->cursor;
+			atomic_store(&s->retired, old);
+			atomic_store(&s->revision, r->revision);
+			atomic_store(&s->pending, NULL);
+			pending = NULL;
+		}
+	}
+	// Parameters precede note-offs and note-ons at a shared sample.
+	while (sequencer_next(cursor) <= s->time && sequencer_peek(cursor, NULL)->parameter != -1) {
+		const Cue *cue = sequencer_peek(cursor, NULL);
+		if (cue->parameter == -2) {
+			MidiInput *input = s->nodes[cue->node].midi_in;
+			midi_add(&input->messages, 0, cue->midi, cue->midi_size);
+			if ((cue->midi[0] & 0xf0) == 0xb0 && cue->midi[1] == 64)
+				input->sustain[cue->midi[0] & 15] = cue->midi[2];
+		} else
+			set_control(s, cue->node, cue->parameter, cue->value);
+		sequencer_pop(cursor);
+	}
+	if (s->next_off <= s->time) {
+		s->next_off = UINT64_MAX;
+		for (int i = 0; i < s->nnodes; ++i) {
+			MidiInput *input = s->nodes[i].midi_in;
+			if (!input)
+				continue;
+			for (int pitch = 0; pitch < 16 * 128; ++pitch) {
+				ScheduledNote *note = input->notes + pitch;
+				if (note->end && note->end <= s->time) {
+					if (!input->external_notes[pitch])
+						note_message(s->nodes + i, pitch, 0);
+					held_note(input, pitch, 0, 0);
+				}
+				if (note->end && note->end < s->next_off)
+					s->next_off = note->end;
+			}
+		}
+	}
+	while (sequencer_next(cursor) <= s->time) {
+		uint64_t end;
+		const Cue *cue = sequencer_peek(cursor, &end);
+		ScheduledNote *held = &s->nodes[cue->node].midi_in->notes[cue->channel * 128 + cue->pitch];
+		if (held->end)
+			note_message(s->nodes + cue->node, cue->channel * 128 + cue->pitch, 0);
+		note_message(s->nodes + cue->node, cue->channel * 128 + cue->pitch, cue->velocity);
+		held_note(s->nodes[cue->node].midi_in, cue->channel * 128 + cue->pitch, end, cue->velocity);
+		if (end < s->next_off)
+			s->next_off = end;
+		sequencer_pop(cursor);
+	}
+	uint64_t next = sequencer_next(cursor);
+	if (s->next_off < next)
+		next = s->next_off;
+	if (pending && pending->at < next)
+		next = pending->at;
+	if (next - s->time < frames)
+		frames = next - s->time;
+	return frames;
+}
+
+static int render(Session *s, float *out, size_t frames, int playing) {
+	if (!s->audio || (playing && frames > s->frames - s->time))
+		return fail(s, "render outside session");
+	transport(s, playing);
 	bw_slew_lim_coeffs slew;
 	bw_slew_lim_init(&slew);
 	bw_slew_lim_set_sample_rate(&slew, s->sample_rate);
@@ -625,82 +743,29 @@ int session_render(Session *s, float *out, size_t frames) {
 				input->external_channels |= 1u << ch;
 			if (type == 0x90 || type == 0x80)
 				input->external_notes[ch * 128 + packet.data[1]] = type == 0x90 ? packet.data[2] : 0;
+			if (type == 0xb0 && packet.data[1] == 64)
+				input->external_sustain[ch] = packet.data[2];
 		}
 		sync_controls(s);
-		Revision *pending = atomic_load(&s->pending);
-		if (pending && pending->at <= s->time) {
-			// If publication missed its boundary, keep the old revision until the next grid.
-			// The editor schedules with a safety margin; this also covers a stalled control thread.
-			if (pending->at < s->time) {
-				pending->at = sequence_boundary(&pending->score.sequence, s->sample_rate, s->time);
-				sequencer_seek(&pending->cursor, pending->at);
-			} else {
-				for (int i = 0; i < s->nnodes; ++i) {
-					const Node *n = r->score.nodes + i;
-					int count = n->config.nparams;
-					for (int j = 0; j < count; ++j) {
-						if ((!n->path || !(n->config.parameters[j].flags & PARAM_OUTPUT)) &&
-						    pending->score.nodes[i].config.parameters[j].value != n->config.parameters[j].value)
-							set_control(s, i, j, pending->score.nodes[i].config.parameters[j].value);
-					}
-				}
-				Revision *old = r;
-				s->active = r = pending;
-				cursor = &r->cursor;
-				atomic_store(&s->retired, old);
-				atomic_store(&s->revision, r->revision);
-				atomic_store(&s->pending, NULL);
-				pending = NULL;
-			}
-		}
-		// Parameters precede note-offs and note-ons at a shared sample.
-		while (sequencer_next(cursor) <= s->time && sequencer_peek(cursor, NULL)->parameter != -1) {
-			const Cue *cue = sequencer_peek(cursor, NULL);
-			if (cue->parameter == -2)
-				midi_add(&s->nodes[cue->node].midi_in->messages, 0, cue->midi, cue->midi_size);
-			else
-				set_control(s, cue->node, cue->parameter, cue->value);
-			sequencer_pop(cursor);
-		}
-		if (s->next_off <= s->time) {
-			s->next_off = UINT64_MAX;
-			for (int i = 0; i < s->nnodes; ++i)
-				for (int pitch = 0; pitch < 16 * 128; ++pitch) {
-					uint64_t *end = &s->held[i][pitch];
-					if (*end && *end <= s->time) {
-						note_message(s->nodes + i, pitch, 0);
-						*end = 0;
-					}
-					if (*end && *end < s->next_off)
-						s->next_off = *end;
-				}
-		}
-		while (sequencer_next(cursor) <= s->time) {
-			uint64_t end;
-			const Cue *cue = sequencer_peek(cursor, &end);
-			uint64_t *held = &s->held[cue->node][cue->channel * 128 + cue->pitch];
-			if (*held)
-				note_message(s->nodes + cue->node, cue->channel * 128 + cue->pitch, 0);
-			note_message(s->nodes + cue->node, cue->channel * 128 + cue->pitch, cue->velocity);
-			*held = end;
-			if (end < s->next_off)
-				s->next_off = end;
-			sequencer_pop(cursor);
-		}
-		uint64_t next = sequencer_next(cursor);
-		if (s->next_off < next)
-			next = s->next_off;
-		if (pending && pending->at < next)
-			next = pending->at;
 		size_t n = frames < BLOCK ? frames : BLOCK;
-		if (next - s->time < n)
-			n = next - s->time;
-		if (render_audio(s, &r->score, &slew, out, n))
+		if (playing)
+			n = sequence_block(s, n);
+		if (render_audio(s, session_score(s), &slew, out, n))
 			return -1;
+		s->clock += n;
+		if (playing)
+			s->time += n;
 		out += 2 * n;
 		frames -= n;
 	}
 	return 0;
+}
+
+int session_render(Session *s, float *out, size_t frames) {
+	return render(s, out, frames, 1);
+}
+int session_monitor(Session *s, float *out, size_t frames) {
+	return render(s, out, frames, 0);
 }
 
 int session_poll(Session *s) {
@@ -801,5 +866,6 @@ void session_midi_panic(Session *s) {
 			midi_add(&input->messages, 0, (uint8_t[]){0xb0 | ch, 123, 0}, 3);
 		}
 		input->external_channels = 0;
+		memset(input->external_sustain, 0, sizeof(input->external_sustain));
 	}
 }

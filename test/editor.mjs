@@ -41,8 +41,8 @@ try {
             webui.call = async (...args) => {
                 const response = await call(...args), raw = JSON.parse(response);
                 const result = {...raw, ...raw.state, ...raw.state?.view, error: raw.error || raw.state?.view?.error || ""};
-                if (args[1] === "run" && window.openEnd && result.score) result.score.end = null;
-                if (args[1] === "run") reports.push(result);
+                if (["run", "prepare"].includes(args[1]) && window.openEnd && result.score) result.score.end = null;
+                if (["run", "prepare"].includes(args[1])) reports.push(result);
                 if (args[1] === "range" && result.lanes) {
                     ranges.push(result);
                     if (window.holdRange) {
@@ -171,6 +171,10 @@ try {
         await set("#code", changed);
         await wait('!document.querySelector("#play").disabled');
         await key("Enter", "Enter", 2);
+        await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${report.revision} && !document.querySelector("#prepare").disabled`);
+        assert.equal(await evaluate('document.querySelector("#stop").disabled'), true);
+        assert.equal(await evaluate('Number(document.querySelector("#time").value)'), 0);
+        await click("#play");
         await wait('!document.querySelector("#stop").disabled');
         await wait('document.querySelector("#state").textContent === "Stopped"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
