@@ -172,6 +172,13 @@ int main(int argc, char **argv) {
 		printf("OK: external plugin audio peak %.6f, native windows opened/closed\n", peak);
 		return 0;
 	}
+	assert(!setenv("CLAP_TEST_FAIL_INIT", "1", 1));
+	Json json = {0};
+	assert(!clap_scan(&json, "build/test/fixture.clap"));
+	assert(strstr(json.data, "\"error\":\"Initialization or parameter discovery failed\"") &&
+	    strstr(json.data, "CLAP test synth") && strstr(json.data, "CLAP test effect"));
+	free(json.data);
+	assert(!unsetenv("CLAP_TEST_FAIL_INIT"));
 	Modules modules = {0};
 	Session s = {.modules = &modules};
 	Output output;

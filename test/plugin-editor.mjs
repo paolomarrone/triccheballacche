@@ -21,6 +21,12 @@ try {
         await click("#settings");
         await wait(`Array.from(document.querySelectorAll(".catalog-item")).some(e => e.textContent.includes("${title} test synth"))`);
         assert(await evaluate(`Array.from(document.querySelectorAll(".catalog-item")).some(e => e.textContent.includes("${title} test effect"))`));
+        if (format === "lv2") {
+            assert(await evaluate(`Array.from(document.querySelectorAll('.catalog-item[data-available="false"]')).some(e => e.textContent.includes("MIDI output routing is not supported"))`));
+            assert(await evaluate(`Array.from(document.querySelectorAll('.catalog-item[data-available="false"]')).some(e => e.textContent.includes("Plugins without audio outputs"))`));
+            assert(await evaluate(`Array.from(document.querySelectorAll('.catalog-item[data-available="true"]')).some(e => e.textContent.includes("LV2 GTK synth") && e.textContent.includes("GUI unavailable"))`));
+            assert.match(await evaluate('document.querySelector("#catalog-title").textContent'), /\d+ available · \d+ unavailable/);
+        }
         await evaluate('document.querySelector("#settings-dialog").close()');
         await click("#views");
         await click("#play");

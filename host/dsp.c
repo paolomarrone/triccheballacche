@@ -16,13 +16,21 @@ int message_push(Messages *q, size_t size, const void *data) {
 	return 0;
 }
 
-int message_pop(Messages *q, size_t *size, void *data) {
+const void *message_peek(Messages *q, size_t *size) {
 	unsigned r = atomic_load_explicit(&q->read, memory_order_relaxed);
 	if (r == atomic_load_explicit(&q->write, memory_order_acquire))
-		return 0;
+		return NULL;
 	*size = q->sizes[r % MESSAGE_SLOTS];
-	if (*size)
-		memcpy(data, q->data + (r % MESSAGE_SLOTS) * q->limit, *size);
+	return q->data + (r % MESSAGE_SLOTS) * q->limit;
+}
+
+int message_pop(Messages *q, size_t *size, void *data) {
+	const void *message = message_peek(q, size);
+	if (!message)
+		return 0;
+	if (data && *size)
+		memcpy(data, message, *size);
+	unsigned r = atomic_load_explicit(&q->read, memory_order_relaxed);
 	atomic_store_explicit(&q->read, r + 1, memory_order_release);
 	return 1;
 }

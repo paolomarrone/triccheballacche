@@ -111,6 +111,7 @@ static void latency_test(void) {
 }
 static void messages_test(Session *s) {
 	Lv2 *l = s->nodes[0].dsp[0].dsp->instance;
+	assert(l->description.ports[2].capacity == 98304 && l->description.ports[3].capacity == 131072);
 	LV2_Atom_Float atom = {.atom = {sizeof(float), l->map.map(l, LV2_ATOM__Float)}, .body = .625f};
 	assert(lv2_ui_send(l, 0, sizeof(atom), &atom) == -1); // Control port.
 	assert(lv2_ui_send(l, 3, sizeof(atom), &atom) == -1); // Output port.
@@ -118,7 +119,7 @@ static void messages_test(Session *s) {
 	assert(lv2_ui_send(l, 2, sizeof(atom), NULL) == -1);
 	assert(lv2_ui_send(l, 2, sizeof(LV2_Atom), &atom) == -1); // Truncated body.
 	assert(lv2_ui_send(l, 2, sizeof(atom) - 1, &atom) == -1);
-	assert(lv2_ui_send(l, 2, MAX_MESSAGE, &atom) == -1);
+	assert(lv2_ui_send(l, 2, sizeof(atom) + 1, &atom) == -1); // Extra bytes after the body.
 	for (int i = 0; i < MESSAGE_SLOTS; ++i)
 		assert(!lv2_ui_send(l, 2, sizeof(atom), &atom));
 	assert(lv2_ui_send(l, 2, sizeof(atom), &atom) == -1);
@@ -127,12 +128,84 @@ static void messages_test(Session *s) {
 	assert(!session_poll(s) && s->time == position);
 	assert(!lv2_ui_send(l, 2, sizeof(atom), &atom)); // Draining recovers queue capacity.
 	session_sync(s);
+
+	// A non-aligned payload crosses both the former 4 KiB message and 64 KiB port limits.
+	size_t bytes = sizeof(LV2_Atom) + 70003;
+	LV2_Atom *large = malloc(bytes);
+	uint64_t *reply = malloc(l->to_ui.limit);
+	assert(large && reply);
+	*large = (LV2_Atom){70003, l->chunk};
+	for (uint32_t i = 0; i < large->size; ++i)
+		((unsigned char *)(large + 1))[i] = i;
+	watch_dsp(l->dsp, 1);
+	size_t size;
+	for (int playing = 0; playing < 2; ++playing) {
+		// Each message fits, but the burst must span several processing calls.
+		for (int i = 0; i < 3; ++i) {
+			((unsigned char *)(large + 1))[0] = i;
+			assert(!lv2_ui_send(l, 2, bytes, large));
+		}
+		for (int i = 0; i < 3; ++i) {
+			if (playing) {
+				float audio[2];
+				assert(!session_render(s, audio, 1));
+			} else
+				session_sync(s);
+			assert(!session_poll(s));
+			assert(message_pop(&l->to_ui, &size, reply) && size == bytes + sizeof(uint64_t) && reply[0] == 3);
+			((unsigned char *)(large + 1))[0] = i;
+			assert(!memcmp(reply + 1, large, bytes) && !atomic_load(&l->dsp->overflow));
+			assert(!message_pop(&l->to_ui, &size, reply));
+		}
+	}
+	large->size = l->description.ports[2].capacity;
+	assert(lv2_ui_send(l, 2, sizeof(*large) + large->size, large) == -1);
+
+	// An atom that fills the port alone must be rejected: transport needs room too.
+	uint32_t capacity = l->description.ports[2].capacity;
+	free(large);
+	large = calloc(1, capacity);
+	assert(large);
+	*large = (LV2_Atom){capacity - sizeof(LV2_Atom_Sequence) - sizeof(LV2_Atom_Event), l->chunk};
+	assert(lv2_ui_send(l, 2, sizeof(*large) + large->size, large) == -1);
+	// Find the largest accepted aligned payload, without duplicating transport serialization.
+	do {
+		large->size -= 8;
+		assert(large->size >= capacity - 512);
+		bytes = sizeof(*large) + large->size;
+	} while (lv2_ui_send(l, 2, bytes, large));
+	session_sync(s);
+	assert(!session_poll(s) && !atomic_load(&l->dsp->overflow));
+	assert(message_pop(&l->to_ui, &size, reply) && size == bytes + sizeof(uint64_t) && reply[0] == 3);
+	assert(!memcmp(reply + 1, large, bytes) && !message_pop(&l->to_ui, &size, reply));
+	watch_dsp(l->dsp, 0);
+	free(reply);
+	free(large);
+}
+static void discovery_test(void) {
+	char *json = scan_plugins("build/test/fixture.lv2");
+	assert(json && strstr(json, "LV2 test synth") && strstr(json, "LV2 test effect"));
+	assert(strstr(json, "Unsupported required feature: urn:unsupported:feature"));
+	assert(strstr(json, "Unsupported required option: urn:unsupported:option"));
+	assert(strstr(json, "MIDI output routing is not supported"));
+	assert(strstr(json, "Plugins without audio outputs are not supported"));
+	assert(strstr(json, "Port 0 requires 2097152 bytes (limit 1048576)"));
+	assert(strstr(json, "Port 0 has an invalid minimum buffer size"));
+	assert(strstr(json, "\"ui-error\":"));
+	free(json);
+	Score score = {0};
+	Output output;
+	char *error = NULL;
+	assert(prepare_score(&score, &output, "test/lv2/score.janet",
+	    "(daw/plugin {:format :lv2 :path \"build/test/fixture.lv2\" :id \"urn:triccheballacche:test:lv2:midi-output\"})",
+	    &error, NULL));
+	assert(error && strstr(error, "MIDI output routing is not supported"));
+	free(error);
+	score_free(&score);
 }
 int main(int argc, char **argv) {
 	int ui = argc > 1 && !strcmp(argv[1], "--ui");
-	char *json = scan_plugins("build/test/fixture.lv2");
-	assert(json && strstr(json, "LV2 test synth") && strstr(json, "LV2 test effect") && !strstr(json, "Unsupported"));
-	free(json);
+	discovery_test();
 	Modules modules = {0};
 	Module *previous = NULL;
 	for (int offline = 0; offline < 2; ++offline) {

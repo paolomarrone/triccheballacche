@@ -96,9 +96,13 @@ static void initialization_failure(void) {
 	Vst v = {0};
 	assert(!setenv("VST3_TEST_FAIL_INIT", "1", 1));
 	assert(vst_create(&v, module, "ABCDEF01222233334444555566667777") == -1);
-	assert(!unsetenv("VST3_TEST_FAIL_INIT"));
 	vst_destroy(&v);
 	module_close(module);
+	char *json = scan_plugins("build/test/fixture.vst3");
+	assert(json && strstr(json, "\"error\":\"Initialization or parameter discovery failed\"") &&
+	    strstr(json, "ABCDEF01222233334444555566667777"));
+	free(json);
+	assert(!unsetenv("VST3_TEST_FAIL_INIT"));
 }
 static void restart_test(Session *s) {
 	DSP *dsp = s->nodes[0].dsp[0].dsp;

@@ -239,9 +239,10 @@ sample-rate-scaled ranges, bundle default state and workers (background during
 playback, synchronous offline). UI messages are serviced even while stopped.
 Unknown required features/options, fixed/power-of-two block requirements, CV ports and
 non-sequence Atom ports are rejected unless the port is optional. Atom buffers
-are 64 KiB; worker messages and individual UI transfers are limited to 4 KiB
-(including the host's port index for UI transfers).
-`build/tools/plugin-scan /path/to/plugin.lv2` lists supported IDs and parameters.
+use each port's declared minimum size, with a 64 KiB default and a 1 MiB per-port
+limit. Buffers and UI message queues are allocated before processing; worker
+messages remain limited to 4 KiB.
+`build/tools/plugin-scan /path/to/plugin.lv2` lists IDs, parameters and rejection reasons.
 
 **VST3** works natively on Linux, including original X11 windows. The adapter uses
 Steinberg's pinned C API header; it does not compile or link the C++ SDK.
@@ -276,6 +277,8 @@ effects are not duplicated implicitly on stereo signals. Parallel paths are
 latency-compensated with buffers allocated before rendering; total output latency
 and effect tails still need room in the score's duration. Per-note expression,
 plugin-driven note routing and project/preset persistence are not implemented.
+Settings lists unavailable plugins with their rejection reason. Unsupported LV2
+GUI requirements are reported separately and do not prevent using the DSP.
 CLAP and VST3 have opaque-state operations, tested independently from score
 snapshots. VST3 stores processor and controller state together in a host-owned file
 (not a `.vstpreset`); parameter arrays are never used as a substitute for plugin state.

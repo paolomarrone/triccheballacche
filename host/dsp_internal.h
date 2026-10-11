@@ -11,6 +11,8 @@ typedef struct {
 	unsigned char *data;
 } Messages;
 int message_push(Messages *queue, size_t size, const void *data);
+// Consumer only. The returned bytes remain valid until pop; pop with NULL discards them.
+const void *message_peek(Messages *queue, size_t *size);
 int message_pop(Messages *queue, size_t *size, void *data);
 void watch_dsp(DSP *dsp, int watching);
 void edit_dsp(DSP *dsp, size_t parameter, double value);

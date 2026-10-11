@@ -21,11 +21,12 @@
 #include <lv2/worker/worker.h>
 #include <lv2/state/state.h>
 
-enum { LV2_PORT_LIMIT = 4096, LV2_ATOM_CAPACITY = 65536 };
+enum { LV2_PORT_LIMIT = 4096, LV2_ATOM_DEFAULT = 65536, LV2_ATOM_LIMIT = 1024 * 1024 };
 enum { LV2_PORT_CONTROL = 1, LV2_PORT_AUDIO, LV2_PORT_ATOM };
 typedef struct {
 	int type, input, channel, parameter, midi, time, scaled, freewheel;
 	float value;
+	uint32_t capacity;
 	LV2_Atom_Sequence *events;
 } Lv2Port;
 typedef struct {
@@ -34,6 +35,7 @@ typedef struct {
 	Lv2Port *ports;
 	uint32_t count;
 	int inputs, outputs, main_inputs, main_outputs, midi, latency, nparams;
+	char error[256], ui_error[256];
 } Lv2Description;
 typedef struct Lv2Runtime Lv2Runtime;
 typedef struct {
@@ -57,6 +59,7 @@ typedef struct {
 	atomic_uint latency;
 	uint32_t applied_latency;
 	Messages from_ui, to_ui;
+	uint64_t *audio_message, *ui_message; // Separate scratch buffers for the audio and UI threads.
 	LV2_Worker_Schedule schedule;
 	Lv2Runtime *runtime;
 } Lv2;
@@ -65,7 +68,6 @@ LilvWorld *lv2_world_open(const char *path);
 int lv2_describe(Lv2Description *d, LilvWorld *world, const char *id);
 int lv2_metadata(Lv2Description *d, Json *json, const char *path);
 int lv2_scan(Json *json, const char *path);
-int lv2_required(LilvWorld *world, const LilvNode *subject, int ui);
 LilvUIs *lv2_uis(Lv2Description *d, const LilvUI **selected);
 int lv2_ui_fixed(Lv2Description *d, const LilvUI *ui);
 LilvNode *lv2_get(LilvWorld *world, const LilvNode *subject, const char *predicate);

@@ -17,6 +17,7 @@ typedef struct {
 	LV2UI_Widget widget;
 	int failed, sized;
 	double *shown;
+	uint64_t *message;
 	LV2UI_Resize host_resize;
 	LV2UI_Port_Map port_map;
 	LV2_Extension_Data_Feature access;
@@ -86,6 +87,7 @@ static void close_view(void *view) {
 		library_close(ui->library);
 	window_close(&ui->window);
 	free(ui->shown);
+	free(ui->message);
 	free(ui);
 }
 static int open_view(void **out, Session *session, int id) {
@@ -151,7 +153,8 @@ static int open_view(void **out, Session *session, int id) {
 	}
 	initial_size(ui);
 	ui->shown = malloc(l->dsp->config.nparams * sizeof(double));
-	if (l->dsp->config.nparams && !ui->shown)
+	ui->message = l->to_ui.limit ? malloc(l->to_ui.limit) : NULL;
+	if ((l->dsp->config.nparams && !ui->shown) || (l->to_ui.limit && !ui->message))
 		goto fail;
 	for (int i = 0; i < l->dsp->config.nparams; ++i)
 		ui->shown[i] = NAN;
@@ -190,7 +193,7 @@ static int poll_view(void *view) {
 		float number = value;
 		ui->api->port_event(ui->handle, port, sizeof(number), 0, &number);
 	}
-	uint64_t data[MAX_MESSAGE / sizeof(uint64_t)];
+	uint64_t *data = ui->message;
 	size_t size;
 	for (int i = 0; i < MESSAGE_SLOTS && message_pop(&l->to_ui, &size, data); ++i) {
 		uint32_t port = data[0];

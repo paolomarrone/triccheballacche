@@ -1,4 +1,5 @@
 #include "clap.h"
+#include "scan.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -148,4 +149,43 @@ int clap_metadata(Clap *c, Json *j, const char *path) {
 	}
 	json_print(j, "]}}");
 	return j->failed ? -1 : 0;
+}
+
+int clap_scan(Json *json, const char *path) {
+	Module *m = module_open(NULL, path, PLUGIN_CLAP);
+	if (!m)
+		return -1;
+	const clap_plugin_entry_t *entry = clap_module_entry(m);
+	const clap_plugin_factory_t *factory = entry->get_factory(CLAP_PLUGIN_FACTORY_ID);
+	if (!factory || !factory->get_plugin_count || !factory->get_plugin_descriptor || !factory->create_plugin)
+		goto fail;
+	uint32_t count = factory->get_plugin_count(factory);
+	if (count > 4096)
+		goto fail;
+	json_print(json, "[");
+	unsigned found = 0;
+	for (uint32_t i = 0; i < count; ++i) {
+		const clap_plugin_descriptor_t *desc = factory->get_plugin_descriptor(factory, i);
+		if (!desc || !desc->id || !desc->name || !clap_version_is_compatible(desc->clap_version))
+			goto fail;
+		Json description = {0};
+		Clap c = {0};
+		int created = clap_create(&c, m, desc->id);
+		int error = created || clap_metadata(&c, &description, module_path(m));
+		clap_destroy(&c);
+		if (error) {
+			json_print(json, "%s", found++ ? "," : "");
+			scan_error(json, "clap", module_path(m), desc->id, desc->name,
+			    created ? "Initialization or parameter discovery failed"
+			            : "Unsupported audio layout, note ports or parameters");
+		} else
+			json_print(json, "%s%s", found++ ? "," : "", description.data);
+		free(description.data);
+	}
+	json_print(json, "]");
+	module_close(m);
+	return json->failed ? -1 : 0;
+fail:
+	module_close(m);
+	return -1;
 }

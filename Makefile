@@ -29,7 +29,7 @@ SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_P
 PLUGIN_SOURCES = plugin.c script.c trace.c
 SCORE_SOURCES = score_janet.c score.c score_view.c score_automation.c session.c sequence.c $(PLUGIN_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c transport.c
-HOST_SOURCES = host/dsp.c host/module.c host/perone.c host/clap.c host/clap_info.c host/lv2.c host/lv2_info.c host/vst3.c host/vst3_info.c host/vst3_host.c
+HOST_SOURCES = host/dsp.c host/module.c host/scan.c host/perone.c host/clap.c host/clap_info.c host/lv2.c host/lv2_info.c host/vst3.c host/vst3_info.c host/vst3_host.c
 HOST_PLATFORM_SOURCES = posix/host.c posix/clap.c posix/lv2.c posix/vst3.c x11/info.c
 HOST_OBJECTS = $(addprefix build/obj/native/,$(HOST_SOURCES:.c=.o) $(HOST_PLATFORM_SOURCES:.c=.o))
 UI_OBJECTS = $(addprefix build/obj/native/,x11/ui.o x11/perone_ui.o x11/clap_ui.o x11/lv2_ui.o x11/vst3_ui.o x11/window.o)

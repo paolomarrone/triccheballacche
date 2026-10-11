@@ -106,6 +106,7 @@ dialog h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
 .catalog-item { padding: 7px 0; border-top: 1px solid var(--border); }
 .catalog-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .catalog-heading small { color: var(--muted); white-space: nowrap; }
+.catalog-note { margin-top: 3px; font-size: 12px; overflow-wrap: anywhere; color: var(--muted); }
 #file-location { display: flex; gap: 5px; padding: 8px; border-bottom: 1px solid var(--border); }
 #file-directory { flex: 1; min-width: 0; font-family: monospace; }
 #file-list { height: min(360px, calc(100dvh - 190px)); overflow: auto; padding: 4px; }

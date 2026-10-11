@@ -18,7 +18,7 @@ typedef struct {
 	void *ports[12];
 	LV2_URID_Map *map;
 	LV2_Worker_Schedule *worker;
-	LV2_URID sequence, midi, position, object, number;
+	LV2_URID sequence, midi, position, object, number, chunk;
 	float delay[2][7], rate;
 	int effect, held, active, requested, replied;
 	unsigned cursor, capacity;
@@ -39,15 +39,19 @@ static LV2_Handle instantiate(
 	const LV2_Options_Option *options = feature(features, LV2_OPTIONS__options);
 	assert(p->map && p->worker && options);
 	LV2_URID max = p->map->map(p->map->handle, LV2_BUF_SIZE__maxBlockLength);
+	LV2_URID sequence_size = p->map->map(p->map->handle, LV2_BUF_SIZE__sequenceSize);
 	for (const LV2_Options_Option *o = options; o->key; ++o)
 		if (o->key == max)
 			p->capacity = *(const int32_t *)o->value;
+		else if (o->key == sequence_size)
+			assert(*(const int32_t *)o->value >= 131072);
 	assert(p->capacity);
 	p->sequence = p->map->map(p->map->handle, LV2_ATOM__Sequence);
 	p->midi = p->map->map(p->map->handle, LV2_MIDI__MidiEvent);
 	p->position = p->map->map(p->map->handle, LV2_TIME__Position);
 	p->object = p->map->map(p->map->handle, LV2_ATOM__Object);
 	p->number = p->map->map(p->map->handle, LV2_ATOM__Float);
+	p->chunk = p->map->map(p->map->handle, LV2_ATOM__Chunk);
 	p->effect = !strcmp(api->URI, BASE "effect");
 	p->rate = rate;
 	return p;
@@ -76,6 +80,7 @@ static void run(LV2_Handle handle, uint32_t frames) {
 	LV2_Atom_Sequence *in = p->ports[2], *out = p->ports[3];
 	assert(in->atom.type == p->sequence);
 	uint32_t capacity = out->atom.size;
+	assert(capacity >= 131072 - sizeof(LV2_Atom));
 	*out = (LV2_Atom_Sequence){.atom = {sizeof(LV2_Atom_Sequence_Body), p->sequence}};
 	int position = 0;
 	LV2_ATOM_SEQUENCE_FOREACH(in, event) {
@@ -86,7 +91,7 @@ static void run(LV2_Handle handle, uint32_t frames) {
 		} else if (event->body.type == p->object) {
 			const LV2_Atom_Object *o = (const void *)&event->body;
 			position |= o->body.otype == p->position;
-		} else if (event->body.type == p->number) {
+		} else if (event->body.type == p->number || event->body.type == p->chunk) {
 			assert(lv2_atom_sequence_append_event(out, capacity, event));
 		}
 	}
@@ -137,8 +142,9 @@ static void cleanup(LV2_Handle handle) {
 LV2_SYMBOL_EXPORT const LV2_Descriptor *lv2_descriptor(uint32_t index) {
 	static const LV2_Descriptor plugins[] = {
 	    {BASE "synth", instantiate, connect, activate, run, deactivate, cleanup, extension},
-	    {BASE "effect", instantiate, connect, activate, run, deactivate, cleanup, extension}};
-	return index < 2 ? plugins + index : NULL;
+	    {BASE "effect", instantiate, connect, activate, run, deactivate, cleanup, extension},
+	    {BASE "gtk", instantiate, connect, activate, run, deactivate, cleanup, extension}};
+	return index < 3 ? plugins + index : NULL;
 }
 
 typedef struct {
@@ -147,7 +153,7 @@ typedef struct {
 	LV2UI_Write_Function write;
 	LV2UI_Controller controller;
 	LV2UI_Resize resize;
-	LV2_URID transfer, number;
+	LV2_URID transfer, number, chunk;
 	float gain;
 	int sent, received;
 } View;
@@ -168,6 +174,7 @@ static LV2UI_Handle ui_instantiate(const LV2UI_Descriptor *api, const char *plug
 	assert(parent && resize && map);
 	v->transfer = map->map(map->handle, LV2_ATOM__eventTransfer);
 	v->number = map->map(map->handle, LV2_ATOM__Float);
+	v->chunk = map->map(map->handle, LV2_ATOM__Chunk);
 	v->window = XCreateSimpleWindow(v->display, parent, 0, 0, 240, 90, 0, 0, 0x202020);
 	XSelectInput(v->display, v->window, ButtonPressMask | ExposureMask);
 	XMapWindow(v->display, v->window);
@@ -178,7 +185,7 @@ static LV2UI_Handle ui_instantiate(const LV2UI_Descriptor *api, const char *plug
 }
 static void ui_cleanup(LV2UI_Handle handle) {
 	View *v = handle;
-	assert(!v->sent || v->received);
+	assert(!v->sent || v->received == 3);
 	XDestroyWindow(v->display, v->window);
 	XCloseDisplay(v->display);
 	free(v);
@@ -190,8 +197,16 @@ static void port_event(LV2UI_Handle handle, uint32_t port, uint32_t size, uint32
 		v->gain = *(const float *)data;
 	} else if (protocol == v->transfer && port == 3) {
 		const LV2_Atom_Float *atom = data;
-		assert(size == sizeof(*atom) && atom->atom.type == v->number && atom->body == .625f);
-		v->received = 1;
+		if (atom->atom.type == v->number) {
+			assert(size == sizeof(*atom) && atom->body == .625f);
+			v->received |= 1;
+		} else {
+			assert(atom->atom.type == v->chunk && size == sizeof(LV2_Atom) + 70003 && atom->atom.size == 70003);
+			const unsigned char *body = (const unsigned char *)data + sizeof(LV2_Atom);
+			for (uint32_t i = 0; i < atom->atom.size; ++i)
+				assert(body[i] == (unsigned char)i);
+			v->received |= 2;
+		}
 	}
 }
 static int idle(LV2UI_Handle handle) {
@@ -204,6 +219,13 @@ static int idle(LV2UI_Handle handle) {
 			v->write(v->controller, 0, sizeof(gain), 0, &gain);
 			LV2_Atom_Float atom = {.atom = {sizeof(float), v->number}, .body = .625f};
 			v->write(v->controller, 2, sizeof(atom), v->transfer, &atom);
+			LV2_Atom *large = malloc(sizeof(*large) + 70003);
+			assert(large);
+			*large = (LV2_Atom){70003, v->chunk};
+			for (uint32_t i = 0; i < large->size; ++i)
+				((unsigned char *)(large + 1))[i] = i;
+			v->write(v->controller, 2, sizeof(*large) + large->size, v->transfer, large);
+			free(large);
 			v->sent = 1;
 		}
 	}

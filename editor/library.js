@@ -17,13 +17,19 @@ export function library(request, open, fail) {
         for (const entry of data.plugins) {
             const row = element("div", "", "catalog-item"), heading = element("div", "", "catalog-heading");
             row.dataset.path = entry.path;
+            row.dataset.available = String(!entry.error);
             const count = used.get(entry.id ? `${entry.path}\n${entry.id}` : entry.path);
-            heading.append(element("span", entry.name), element("small", `${entry.format || "Perone"} · ${entry.kind}${count ? ` · ${count} in use` : ""}`));
+            const status = entry.error ? "Unavailable" : entry.kind;
+            heading.append(element("span", entry.name),
+                element("small", `${entry.format || "Perone"} · ${status}${count ? ` · ${count} in use` : ""}`));
             row.append(heading, element("div", entry.path, "catalog-path"));
             if (entry.id) row.append(element("div", entry.id, "catalog-path"));
+            const note = entry.error || (entry["ui-error"] && `GUI unavailable: ${entry["ui-error"]}`);
+            if (note) row.append(element("div", note, "catalog-note"));
             list.append(row);
         }
-        byId("catalog-title").textContent = `Available plugins · ${data.plugins.length}`;
+        const unavailable = data.plugins.filter(entry => entry.error).length;
+        byId("catalog-title").textContent = `Plugins · ${data.plugins.length - unavailable} available${unavailable ? ` · ${unavailable} unavailable` : ""}`;
     }
 
     async function load() {

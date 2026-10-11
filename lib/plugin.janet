@@ -85,7 +85,7 @@
   (or (plugin/descriptions path)
       (let [entries (json/decode (host/scan path) true)]
         # Normalize once, before any caller sees or caches the description.
-        (each entry entries (plugin/sample-rate entry))
+        (each entry entries (unless (entry :error) (plugin/sample-rate entry)))
         (put plugin/descriptions path entries)
         entries)))
 
@@ -120,6 +120,7 @@
                       (or (if id (find |(= ($ :id) id) entries) (entries 0))
                           (error "plugin ID not found")))
                     (plugin/find format id)))
+                (assert (not (entry :error)) (string "plugin unavailable: " (entry :id) ": " (entry :error)))
                 (assert (= (string format) (get-in entry [:product :format])) "plugin format does not match reference")
                 entry))
             parameters (plugin/parameters (get-in description [:product :parameters]))

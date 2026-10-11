@@ -52,7 +52,8 @@ try {
             await click("#settings");
             await wait('document.querySelector("#settings-dialog").open');
             const plugins = await evaluate('[...document.querySelectorAll(".catalog-item")].map(row => row.dataset.path).sort()');
-            assert.deepEqual(plugins, expectedPlugins, "Settings must list the published plugin bundles");
+            assert.deepEqual(mode === "native" ? plugins.filter(path => path.endsWith(".perone")) : plugins,
+                expectedPlugins, "Settings must list the published Perone bundles alongside installed native plugins");
             assert(plugins.every(path => !/\/(fxpp_|synthpp_)/.test(path)));
             assert(await evaluate('document.querySelector("#plugin-paths").children.length > 0'));
             assert.match(await evaluate('document.querySelector("#catalog-list").textContent'), /in use/);

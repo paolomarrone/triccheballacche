@@ -24,15 +24,13 @@ static void sequence_clear(Lv2 *l, Lv2Port *p) {
 	if (p->input)
 		*p->events = (LV2_Atom_Sequence){.atom = {sizeof(LV2_Atom_Sequence_Body), l->sequence}};
 	else
-		p->events->atom = (LV2_Atom){LV2_ATOM_CAPACITY - sizeof(LV2_Atom), l->chunk};
+		p->events->atom = (LV2_Atom){p->capacity - sizeof(LV2_Atom), l->chunk};
 }
 static int append(Lv2 *l, Lv2Port *port, uint32_t type, uint32_t size, const void *data) {
 	LV2_Atom_Sequence *s = port->events;
 	size_t total = sizeof(LV2_Atom_Event) + lv2_atom_pad_size(size);
-	if (sizeof(LV2_Atom) + s->atom.size + total > LV2_ATOM_CAPACITY) {
-		atomic_store(&l->error, 1);
+	if (sizeof(LV2_Atom) + s->atom.size + total > port->capacity)
 		return -1;
-	}
 	LV2_Atom_Event *event = (void *)((char *)s + sizeof(LV2_Atom) + s->atom.size);
 	*event = (LV2_Atom_Event){.time.frames = 0, .body = {size, type}};
 	memcpy(event + 1, data, size);
@@ -41,15 +39,41 @@ static int append(Lv2 *l, Lv2Port *port, uint32_t type, uint32_t size, const voi
 	l->dirty = 1;
 	return 0;
 }
+static const LV2_Atom *position_atom(const Lv2 *l, const ProcessTime *time, uint64_t buffer[32]) {
+	LV2_Atom_Forge forge = l->forge;
+	LV2_Atom_Forge_Frame object;
+	lv2_atom_forge_set_buffer(&forge, (uint8_t *)buffer, 32 * sizeof(*buffer));
+	lv2_atom_forge_object(&forge, &object, 0, l->position);
+	lv2_atom_forge_key(&forge, l->frame);
+	lv2_atom_forge_long(&forge, time->frame);
+	lv2_atom_forge_key(&forge, l->speed);
+	lv2_atom_forge_float(&forge, time->playing ? 1 : 0);
+	lv2_atom_forge_key(&forge, l->tempo);
+	lv2_atom_forge_float(&forge, time->bpm);
+	lv2_atom_forge_key(&forge, l->beat);
+	lv2_atom_forge_double(&forge, time->beat);
+	lv2_atom_forge_pop(&forge, &object);
+	return (const void *)buffer;
+}
 int lv2_ui_send(Lv2 *l, uint32_t port, uint32_t size, const void *data) {
 	if (port >= l->description.count || l->description.ports[port].type != LV2_PORT_ATOM ||
-	    !l->description.ports[port].input || !data || size < sizeof(LV2_Atom) || size > MAX_MESSAGE - sizeof(uint64_t))
+	    !l->description.ports[port].input || !data || size < sizeof(LV2_Atom) ||
+	    size > l->from_ui.limit - sizeof(uint64_t))
 		return -1;
 	LV2_Atom atom;
 	memcpy(&atom, data, sizeof(atom));
 	if (!atom.type || atom.size != size - sizeof(atom))
 		return -1;
-	uint64_t message[MAX_MESSAGE / sizeof(uint64_t)];
+	Lv2Port *p = l->description.ports + port;
+	size_t needed = sizeof(LV2_Atom_Sequence) + sizeof(LV2_Atom_Event) + lv2_atom_pad_size(atom.size);
+	if (p->time) {
+		uint64_t buffer[32];
+		const LV2_Atom *pos = position_atom(l, &(ProcessTime){0}, buffer);
+		needed += sizeof(LV2_Atom_Event) + lv2_atom_pad_size(pos->size);
+	}
+	if (needed > p->capacity)
+		return -1;
+	uint64_t *message = l->ui_message;
 	message[0] = port;
 	memcpy(message + 1, data, size);
 	return message_push(&l->from_ui, size + sizeof(uint64_t), message);
@@ -75,40 +99,33 @@ static void reset(DSP *dsp) {
 }
 static void midi(DSP *dsp, size_t bus, const uint8_t *message) {
 	Lv2 *l = dsp->instance;
-	if (bus < l->description.count && l->description.ports[bus].midi)
-		append(l, l->description.ports + bus, l->midi, 3, message);
+	if (bus < l->description.count && l->description.ports[bus].midi &&
+	    append(l, l->description.ports + bus, l->midi, 3, message))
+		atomic_store(&l->error, 1);
 }
-static void sync(DSP *dsp) {
-	Lv2 *l = dsp->instance;
-	uint64_t message[MAX_MESSAGE / sizeof(uint64_t)];
+static void ui_events(Lv2 *l) {
 	size_t size;
-	for (int i = 0; i < MESSAGE_SLOTS && message_pop(&l->from_ui, &size, message); ++i) {
+	for (int i = 0; i < MESSAGE_SLOTS; ++i) {
+		const uint64_t *message = message_peek(&l->from_ui, &size);
+		if (!message)
+			break;
 		uint32_t port = message[0];
 		LV2_Atom atom;
 		memcpy(&atom, message + 1, sizeof(atom));
-		append(l, l->description.ports + port, atom.type, atom.size, (char *)(message + 1) + sizeof(atom));
+		// Leave the next message queued if this block is full. Preserve order across ports.
+		if (append(l, l->description.ports + port, atom.type, atom.size, (const char *)(message + 1) + sizeof(atom)))
+			break;
+		message_pop(&l->from_ui, &size, NULL);
 	}
 }
 static void position(Lv2 *l, const ProcessTime *time) {
 	if (!time)
 		return;
 	uint64_t buffer[32];
-	LV2_Atom_Forge_Frame object;
-	lv2_atom_forge_set_buffer(&l->forge, (uint8_t *)buffer, sizeof(buffer));
-	lv2_atom_forge_object(&l->forge, &object, 0, l->position);
-	lv2_atom_forge_key(&l->forge, l->frame);
-	lv2_atom_forge_long(&l->forge, time->frame);
-	lv2_atom_forge_key(&l->forge, l->speed);
-	lv2_atom_forge_float(&l->forge, time->playing ? 1 : 0);
-	lv2_atom_forge_key(&l->forge, l->tempo);
-	lv2_atom_forge_float(&l->forge, time->bpm);
-	lv2_atom_forge_key(&l->forge, l->beat);
-	lv2_atom_forge_double(&l->forge, time->beat);
-	lv2_atom_forge_pop(&l->forge, &object);
-	const LV2_Atom *atom = (const void *)buffer;
+	const LV2_Atom *atom = position_atom(l, time, buffer);
 	for (uint32_t i = 0; i < l->description.count; ++i)
-		if (l->description.ports[i].time)
-			append(l, l->description.ports + i, atom->type, atom->size, atom + 1);
+		if (l->description.ports[i].time && append(l, l->description.ports + i, atom->type, atom->size, atom + 1))
+			atomic_store(&l->error, 1);
 }
 static void read_outputs(Lv2 *l) {
 	for (uint32_t i = 0; i < l->description.count; ++i) {
@@ -121,7 +138,7 @@ static void read_outputs(Lv2 *l) {
 			continue;
 		LV2_Atom_Sequence *s = p->events;
 		if (s->atom.type != l->sequence || s->atom.size < sizeof(s->body) ||
-		    s->atom.size > LV2_ATOM_CAPACITY - sizeof(LV2_Atom))
+		    s->atom.size > p->capacity - sizeof(LV2_Atom))
 			continue;
 		uint32_t offset = sizeof(*s), end = sizeof(LV2_Atom) + s->atom.size;
 		while (end - offset >= sizeof(LV2_Atom_Event)) {
@@ -129,8 +146,8 @@ static void read_outputs(Lv2 *l) {
 			if (event->body.size > end - offset - sizeof(*event))
 				break;
 			size_t size = sizeof(LV2_Atom) + event->body.size;
-			uint64_t message[MAX_MESSAGE / sizeof(uint64_t)];
-			if (size + sizeof(uint64_t) > sizeof(message)) {
+			uint64_t *message = l->audio_message;
+			if (size + sizeof(uint64_t) > l->to_ui.limit) {
 				atomic_store(&l->dsp->overflow, 1);
 				break;
 			}
@@ -157,6 +174,7 @@ static int process(DSP *dsp, const float **inputs, float **outputs, size_t frame
 	int offline = time && time->offline;
 	lv2_worker_begin(l, offline);
 	position(l, time);
+	ui_events(l);
 	for (uint32_t i = 0; i < l->description.count; ++i) {
 		Lv2Port *p = l->description.ports + i;
 		if (p->freewheel)
@@ -185,7 +203,8 @@ static int poll_instance(DSP *dsp) {
 }
 static void idle(DSP *dsp, const ProcessTime *time) {
 	Lv2 *l = dsp->instance;
-	if (l->dirty || lv2_worker_pending(l))
+	size_t size;
+	if (l->dirty || message_peek(&l->from_ui, &size) || lv2_worker_pending(l))
 		process(dsp, NULL, NULL, 0, time);
 }
 static int restart(DSP *dsp) {
@@ -210,6 +229,8 @@ static void close_instance(DSP *dsp) {
 	free(l->scratch);
 	free(l->from_ui.data);
 	free(l->to_ui.data);
+	free(l->audio_message);
+	free(l->ui_message);
 	lv2_runtime_close(l);
 	free(l);
 }
@@ -218,7 +239,6 @@ static const DspOps ops = {.close = close_instance,
     .reset = reset,
     .midi = midi,
     .process = process,
-    .sync = sync,
     .idle = idle,
     .poll = poll_instance,
     .restart = restart,
@@ -236,8 +256,10 @@ int lv2_open(DSP *dsp, unsigned rate, size_t capacity) {
 	l->dsp = dsp;
 	atomic_init(&l->error, 0);
 	atomic_init(&l->latency, 0);
-	if (lv2_describe(&l->description, module_data(dsp->module), dsp->config.id))
+	if (lv2_describe(&l->description, module_data(dsp->module), dsp->config.id)) {
+		fprintf(stderr, "[LV2] %s: %s\n", dsp->config.id, l->description.error);
 		return -1;
+	}
 	Lv2Description *d = &l->description;
 	if (d->main_inputs != dsp->config.input || d->main_outputs != dsp->config.output ||
 	    d->inputs != dsp->config.inputs || d->midi != dsp->config.midi || d->nparams != dsp->config.nparams)
@@ -263,7 +285,17 @@ int lv2_open(DSP *dsp, unsigned rate, size_t capacity) {
 	l->rate = rate;
 	l->scale = 1;
 	l->max_block = capacity;
-	l->sequence_size = LV2_ATOM_CAPACITY;
+	l->sequence_size = LV2_ATOM_DEFAULT;
+	for (uint32_t i = 0; i < d->count; ++i) {
+		Lv2Port *p = d->ports + i;
+		if (p->type != LV2_PORT_ATOM)
+			continue;
+		if (p->capacity > (uint32_t)l->sequence_size)
+			l->sequence_size = p->capacity;
+		Messages *q = p->input ? &l->from_ui : &l->to_ui;
+		if (q->limit < p->capacity + sizeof(uint64_t))
+			q->limit = p->capacity + sizeof(uint64_t);
+	}
 	l->log = (LV2_Log_Log){l, log_printf, log_vprintf};
 	l->options[0] = (LV2_Options_Option){
 	    LV2_OPTIONS_INSTANCE, 0, lv2_map_uri(l, LV2_PARAMETERS__sampleRate), sizeof(float), l->forge.Float, &l->rate};
@@ -296,13 +328,16 @@ int lv2_open(DSP *dsp, unsigned rate, size_t capacity) {
 		return -1;
 	for (int i = 0; i < 2; ++i) {
 		Messages *q = i ? &l->to_ui : &l->from_ui;
-		q->limit = MAX_MESSAGE;
-		q->data = malloc(MESSAGE_SLOTS * q->limit);
+		q->data = q->limit ? malloc(MESSAGE_SLOTS * q->limit) : NULL;
 		atomic_init(&q->read, 0);
 		atomic_init(&q->write, 0);
-		if (!q->data)
+		if (q->limit && !q->data)
 			return -1;
 	}
+	l->audio_message = l->to_ui.limit ? malloc(l->to_ui.limit) : NULL;
+	l->ui_message = l->from_ui.limit ? malloc(l->from_ui.limit) : NULL;
+	if ((l->to_ui.limit && !l->audio_message) || (l->from_ui.limit && !l->ui_message))
+		return -1;
 	for (uint32_t i = 0; i < d->count; ++i) {
 		Lv2Port *p = d->ports + i;
 		void *data = NULL;
@@ -312,7 +347,7 @@ int lv2_open(DSP *dsp, unsigned rate, size_t capacity) {
 		} else if (p->type == LV2_PORT_AUDIO)
 			data = l->scratch + (p->input ? 0 : p->channel + 1) * capacity;
 		else if (p->type == LV2_PORT_ATOM) {
-			p->events = calloc(1, LV2_ATOM_CAPACITY);
+			p->events = calloc(1, p->capacity);
 			if (!p->events)
 				return -1;
 			sequence_clear(l, p);

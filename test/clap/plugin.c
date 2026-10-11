@@ -49,7 +49,7 @@ static bool init(const clap_plugin_t *plugin) {
 	p->values[126] = -1.75;
 	p->private_state = 1;
 	p->host->request_callback(p->host);
-	return true;
+	return !getenv("CLAP_TEST_FAIL_INIT");
 }
 static void destroy(const clap_plugin_t *plugin) {
 	Plugin *p = self(plugin);

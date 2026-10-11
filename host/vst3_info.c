@@ -1,4 +1,5 @@
 #include "vst3.h"
+#include "scan.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -217,10 +218,11 @@ int vst_scan(Json *j, const char *path) {
 		int created = vst_create(&v, m, id);
 		int error = created || metadata(&v, &description, module_path(m), &info, factory.vendor);
 		vst_destroy(&v);
-		if (error)
-			fprintf(stderr, "[Scan] %s: %s\n", info.name,
-			    created ? "VST3 initialization/parameters failed" : "unsupported VST3 layout/parameters");
-		else
+		if (error) {
+			json_print(j, "%s", found++ ? "," : "");
+			scan_error(j, "vst3", module_path(m), id, info.name,
+			    created ? "Initialization or parameter discovery failed" : "Unsupported audio layout or parameters");
+		} else
 			json_print(j, "%s%s", found++ ? "," : "", description.data);
 		free(description.data);
 	}
