@@ -473,37 +473,50 @@ static int restart(DSP *dsp) {
 	}
 	return 0;
 }
-static int64_t state_write(const clap_ostream_t *stream, const void *data, uint64_t size) {
-	size_t n = fwrite(data, 1, size, stream->ctx);
-	return n || !size ? (int64_t)n : -1;
-}
-static int64_t state_read(const clap_istream_t *stream, void *data, uint64_t size) {
-	size_t n = fread(data, 1, size, stream->ctx);
-	return ferror(stream->ctx) ? -1 : (int64_t)n;
-}
-static int state(DSP *dsp, const char *path, int write) {
+static int flush_state_controls(DSP *dsp) {
 	Clap *c = dsp->instance;
-	if (!c->state)
+	if (!c->params || !c->count)
+		return 0;
+	// Inactive plugins accept REQUIRES_PROCESS controls via flush(). Keep queued notes for playback.
+	ClapEvent *notes = malloc(c->count * sizeof(*notes));
+	if (!notes)
 		return -1;
-	StateFile file;
-	if (state_file_open(&file, path, write))
-		return -1;
+	uint32_t count = 0, parameters = 0;
+	for (uint32_t i = 0; i < c->count; ++i)
+		if (c->events[i].header.type == CLAP_EVENT_PARAM_VALUE)
+			c->events[parameters++] = c->events[i];
+		else
+			notes[count++] = c->events[i];
+	c->count = parameters;
+	flush_controls(dsp);
+	memcpy(c->events, notes, count * sizeof(*notes));
+	c->count = count;
+	free(notes);
+	return 0;
+}
+static int64_t stream_write(const clap_ostream_t *stream, const void *data, uint64_t size) {
+	return size > STATE_LIMIT || state_write(stream->ctx, data, size) ? -1 : (int64_t)size;
+}
+static int64_t stream_read(const clap_istream_t *stream, void *data, uint64_t size) {
+	return state_read(stream->ctx, data, size > STATE_LIMIT ? STATE_LIMIT : (size_t)size);
+}
+static int state(DSP *dsp, State *buffer, int write) {
+	Clap *c = dsp->instance;
+	if (!c->state || !c->state->save || !c->state->load)
+		return STATE_UNSUPPORTED;
 	flush_controls(dsp);
 	suspend(c);
-	clap_ostream_t out = {.ctx = file.stream, .write = state_write};
-	clap_istream_t in = {.ctx = file.stream, .read = state_read};
-	int ok = write ? c->state->save(c->plugin, &out) : c->state->load(c->plugin, &in);
-	// Close before reactivation, but publish a saved file only after compatibility succeeds.
-	if (fclose(file.stream))
-		ok = 0;
-	file.stream = NULL;
+	int flushed = !compatible(c) && !flush_state_controls(dsp);
+	clap_ostream_t out = {.ctx = buffer, .write = stream_write};
+	clap_istream_t in = {.ctx = buffer, .read = stream_read};
+	int ok = flushed && (write ? c->state->save(c->plugin, &out) : c->state->load(c->plugin, &in));
 	atomic_fetch_and(&c->requests, ~CLAP_HOST_RESTART);
 	if (compatible(c) || activate(c)) {
 		ok = 0;
 		atomic_fetch_or(&c->requests, CLAP_HOST_ERROR);
 	}
 	atomic_fetch_or(&c->requests, CLAP_HOST_VALUES);
-	return state_file_close(&file, ok);
+	return ok ? 0 : -1;
 }
 static void close_instance(DSP *dsp) {
 	Clap *c = dsp->instance;

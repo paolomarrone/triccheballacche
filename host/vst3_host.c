@@ -299,22 +299,23 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE stream_read(
 	b->position += n;
 	if (read)
 		*read = n;
-	return n == (size_t)size ? Steinberg_kResultOk : Steinberg_kResultFalse;
+	// A short read (including EOF) succeeds; numBytesRead carries the actual length.
+	return Steinberg_kResultOk;
 }
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE stream_write(
     void *s, void *data, Steinberg_int32 size, Steinberg_int32 *written) {
 	VstStream *b = s;
 	if (written)
 		*written = 0;
-	if (size < 0 || (size && !data) || (size_t)size > VST_STATE_LIMIT - b->position) {
+	if (size < 0 || (size && !data) || (size_t)size > STATE_LIMIT - b->position) {
 		b->failed = 1;
 		return Steinberg_kInvalidArgument;
 	}
 	size_t end = b->position + size;
 	if (end > b->capacity) {
 		size_t capacity = end > 2 * b->capacity ? end : 2 * b->capacity;
-		if (capacity > VST_STATE_LIMIT)
-			capacity = VST_STATE_LIMIT;
+		if (capacity > STATE_LIMIT)
+			capacity = STATE_LIMIT;
 		unsigned char *p = realloc(b->data, capacity);
 		if (!p) {
 			b->failed = 1;
@@ -338,7 +339,7 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE stream_seek(
     void *s, Steinberg_int64 offset, Steinberg_int32 mode, Steinberg_int64 *result) {
 	VstStream *b = s;
 	int64_t base = mode == 0 ? 0 : mode == 1 ? (int64_t)b->position : (int64_t)b->length;
-	if (mode < 0 || mode > 2 || offset < -base || offset > VST_STATE_LIMIT - base)
+	if (mode < 0 || mode > 2 || offset < -base || offset > STATE_LIMIT - base)
 		return Steinberg_kInvalidArgument;
 	b->position = base + offset;
 	if (result)

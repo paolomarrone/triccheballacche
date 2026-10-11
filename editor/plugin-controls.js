@@ -3,10 +3,9 @@
 export function pluginControls(product, request, fail) {
     const edits = new Map(), gestures = new Set(), messages = [];
     const changes = product.parameters.map(() => 0), uninitialized = new Set(changes.keys());
-    let ui, closed = false, sending = false;
+    let ui, closed = false, sending;
 
     async function flush() {
-        sending = true;
         try {
             while (!closed && (edits.size || messages.length)) {
                 for (const index of [...edits.keys()]) {
@@ -18,8 +17,10 @@ export function pluginControls(product, request, fail) {
                 }
                 if (!closed && messages.length) await request("message", messages.shift());
             }
-        } catch (error) { if (!closed) fail(error); }
-        finally { sending = false; }
+        } catch (error) {
+            if (!closed) fail(error);
+            return error;
+        } finally { sending = undefined; }
     }
 
     function send(op, ...args) {
@@ -27,7 +28,7 @@ export function pluginControls(product, request, fail) {
         if (op === "parameter") { ++changes[args[0]]; edits.set(args[0], args[1]); }
         else if (messages.length < 64) messages.push(args[0]);
         else { fail(Error("UI message queue full")); return; }
-        if (ui && !sending) flush();
+        if (ui && !sending) sending = flush();
     }
 
     function parameter(index, value) {
@@ -57,7 +58,7 @@ export function pluginControls(product, request, fail) {
         attach(view) {
             if (closed) return;
             ui = view;
-            if (edits.size || messages.length) flush();
+            if (!sending && (edits.size || messages.length)) sending = flush();
         },
         async poll() {
             if (!ui || closed) return false;
@@ -80,6 +81,11 @@ export function pluginControls(product, request, fail) {
                 }
                 return !closed && !uninitialized.size;
             } catch (error) { if (!closed) fail(error); return false; }
+        },
+        async flush() {
+            if (closed) throw Error("Plugin view closed");
+            const error = await sending;
+            if (error) throw error;
         },
         close() { closed = true; ui = undefined; edits.clear(); messages.length = 0; }
     };

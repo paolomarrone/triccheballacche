@@ -145,6 +145,10 @@ and updates the session's files. Reloading the page restores the published files
 - **Track names** open the plugin panel. Mute/solo affects audition, including
   routed groups. Plugin sections collapse; the window icon toggles a native UI
   where available. Manual parameter edits are temporary, not written to Janet.
+  ↓/↑ import/export a plugin preset (`.tbpreset.json`, up to 16 MiB of state).
+  Both pause playback. Native export asks for a destination path; web export
+  downloads a file. Presets change the prepared instance, not the score or its
+  automation; reevaluation and seeking still apply the score's parameter values.
 - **Settings** lists discovered bundles and active instances. Restart the native
   editor after rebuilding a loaded plugin.
 
@@ -185,6 +189,8 @@ the native `<platform>/<bundleName>.so` or `wasm32/<bundleName>.wasm`, and optio
 UI assets. Janet reads metadata; no per-plugin Janet wrapper is needed.
 DSP ABI v2 and optional native UI ABI v1 come from Tibia. Web UIs declare
 `product.ui.web` and may load their own Wasm. Native UI hosting currently uses X11.
+Native and Wasm DSPs receive playing/stopped status, BPM and quarter-note position;
+other transport fields are not advertised as valid.
 
 **CLAP** works natively on Linux, including original X11 plugin windows and the
 shared parameter panel. Settings lists modules from `CLAP_PATH` (colon-separated),
@@ -276,12 +282,18 @@ disconnected; LV2 and VST3 plugins with note outputs are rejected. Mono
 effects are not duplicated implicitly on stereo signals. Parallel paths are
 latency-compensated with buffers allocated before rendering; total output latency
 and effect tails still need room in the score's duration. Per-note expression,
-plugin-driven note routing and project/preset persistence are not implemented.
+plugin-driven note routing and whole-project persistence are not implemented.
 Settings lists unavailable plugins with their rejection reason. Unsupported LV2
 GUI requirements are reported separately and do not prevent using the DSP.
-CLAP and VST3 have opaque-state operations, tested independently from score
-snapshots. VST3 stores processor and controller state together in a host-owned file
-(not a `.vstpreset`); parameter arrays are never used as a substitute for plugin state.
+Plugin state uses a bounded memory buffer, independently of score snapshots.
+Perone uses its custom state callbacks when available, otherwise input parameters;
+Perone presets share an envelope across native and Wasm (custom payload portability
+belongs to the plugin). CLAP uses its state extension; VST3 stores processor and
+controller state together, not a `.vstpreset`. LV2 preserves input ports and portable
+properties with URI-based serialization. External files remain references, not
+embedded assets; LV2 states requiring `makePath` or non-portable properties are not
+supported. A failed import may already have changed the plugin; exports replace
+files only after success.
 
 The canonical library build is self-contained. Local plugin projects instead
 default to sibling `../tibia` and `../brickworks` checkouts. Tibia must provide

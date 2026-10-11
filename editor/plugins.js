@@ -1,5 +1,6 @@
 import {create as generic} from "./parameter-ui.js";
 import {pluginControls} from "./plugin-controls.js";
+import {readPreset, writePreset, presetLimit} from "./preset.js";
 import {trackNodes} from "./graph.js";
 
 // Views belong to the prepared project and survive transport stop/restart.
@@ -59,6 +60,35 @@ export function plugins(request, adapter, fail) {
         finally { entry.pending = false; buttons(entry); }
     }
 
+    async function preset(entry, file) {
+        if (!availableProject || busy || entry.pending) return;
+        const revision = score.controlRevision ?? score.revision, product = score.nodes[entry.id].product;
+        entry.pending = true; buttons(entry); entry.body.inert = true;
+        let detached = false;
+        try {
+            fail(null);
+            // Drain accepted gestures before capture or replacement.
+            await entry.token?.controls.flush();
+            let data;
+            if (file) {
+                if (file.size > presetLimit * 2 + 4096) throw Error("Preset file too large");
+                data = readPreset(product, await file.text());
+            }
+            if ((score.controlRevision ?? score.revision) !== revision || entries.get(entry.id) !== entry)
+                throw Error("Stale plugin view");
+            if (file) { detach(entry); detached = true; }
+            const result = await request(file ? "state-load" : "state-save", revision, entry.id, ...(file ? [data] : []));
+            if (!file) {
+                const name = (product.bundleName || product.name || "plugin").replace(/[^a-zA-Z0-9._-]/g, "_") + ".tbpreset.json";
+                await adapter.exportPreset(request, name, writePreset(product, result.data));
+            }
+        } catch (error) { fail(error); }
+        finally {
+            entry.pending = false; entry.body.inert = false; buttons(entry);
+            if (detached) await mount(entry);
+        }
+    }
+
     function render() {
         panel.hidden = !visible;
         if (!score) return;
@@ -92,6 +122,12 @@ export function plugins(request, adapter, fail) {
                 detach(entry); entry.details.open = true;
                 mount(entry).catch(fail); buttons(entry);
             });
+            const input = document.createElement("input");
+            input.type = "file"; input.accept = ".tbpreset.json,.json"; input.hidden = true;
+            input.onchange = () => { const file = input.files[0]; input.value = ""; if (file) preset(entry, file).catch(fail); };
+            details.append(input);
+            button("↓", "Import preset", () => input.click()).title = "Import preset · pauses playback";
+            button("↑", "Export preset", () => preset(entry).catch(fail)).title = "Export preset · pauses playback";
             if (available.has(id)) entry.window = button("↗", "Toggle native UI", () => windowView(entry));
             details.ontoggle = () => {
                 if (!details.open) detach(entry);

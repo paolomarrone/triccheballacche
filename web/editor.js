@@ -1,3 +1,5 @@
+import {encodeState, decodeState, download} from "../editor/preset.js";
+
 import {createPlayerHost, attachPlayer, closePlayer} from "./player.js";
 import {prepareBackground} from "./prepare.js";
 import {addFile} from "./host.js";
@@ -124,6 +126,13 @@ export async function command(op, ...args) {
             const [version, track, flags] = args;
             if (!player || version !== state.revision) throw Error("Stale track view");
             player.listen(track, flags);
+        } else if (op === "state-save" || op === "state-load") {
+            const [version, node, data] = args;
+            if (!player || version !== state.controlRevision) throw Error("Stale plugin view");
+            const bytes = op === "state-load" ? decodeState(data) : undefined;
+            await stop();
+            const saved = await player.state(node, bytes);
+            if (saved) result.data = encodeState(saved);
         } else if (["watch", "controls", "parameter", "message"].includes(op)) {
             const [version, node, ...values] = args;
             if (!player || version !== state.controlRevision) throw Error("Stale plugin view");
@@ -194,4 +203,8 @@ export function uiUrl(node) {
     const url = assets.get(host.perone.path(node.bundle + "/" + node.product.ui.web));
     if (!url) throw Error("UI missing from the catalog: rebuild with make web");
     return url;
+}
+
+export async function exportPreset(request, name, text) {
+    download(name, text);
 }

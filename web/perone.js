@@ -1,17 +1,10 @@
+import {callback, peroneState} from "./perone-state.js";
+
 // Perone ABI 2 host. Buffer transfer follows Tibia's web processor;
 // typed callbacks follow tibia/test/perone_wasm.js (GPL-3.0-or-later).
 // No product metadata is parsed here.
 const names = ["alloc", "free", "init", "fini", "set_sample_rate", "mem_req", "mem_set", "reset", "process",
     "set_parameter", "get_parameter", "midi_msg_in", "set_transport", "msg_in", "state_save", "state_load"];
-const callbackModule = new WebAssembly.Module(new Uint8Array([
-    0, 97, 115, 109, 1, 0, 0, 0, 1, 6, 1, 0x60, 1, 0x7f, 1, 0x7f,
-    2, 7, 1, 1, 104, 1, 102, 0, 0, 7, 5, 1, 1, 102, 0, 0
-]));
-
-const messageModule = new WebAssembly.Module(new Uint8Array([
-    0, 97, 115, 109, 1, 0, 0, 0, 1, 7, 1, 0x60, 3, 0x7f, 0x7f, 0x7f, 0,
-    2, 7, 1, 1, 104, 1, 102, 0, 0, 7, 5, 1, 1, 102, 0, 0
-]));
 const slots = 64;
 
 // Fixed storage: DSP callbacks never allocate or post unbounded streams to the page.
@@ -112,21 +105,16 @@ export class Perone {
                 (_, hex) => String.fromCharCode(parseInt(hex, 16)));
             const bytes = Uint8Array.from(text, c => c.charCodeAt(0)), pointer = allocate(bytes.length);
             new Uint8Array(wasm.memory.buffer, pointer, bytes.length).set(bytes);
-            const bridge = new WebAssembly.Instance(callbackModule, {h: {f: () => pointer}});
-            const index = table.grow(1);
-            table.set(index, bridge.exports.f);
-            return index;
+            return callback(table, [0x7f], 0x7f, () => pointer);
         };
         try {
             const bin = path.slice(0, path.lastIndexOf("/")), data = bin.slice(0, bin.lastIndexOf("/"));
-            const bridge = new WebAssembly.Instance(messageModule, {h: {f: (_, size, pointer) => {
+            const message = callback(table, [0x7f, 0x7f, 0x7f], 0, (_, size, pointer) => {
                 if (!p.watching) return;
                 try { p.toUi.push(new Uint8Array(wasm.memory.buffer, pointer, size)); }
                 catch { p.overflow = true; }
-            }}});
-            const callback = table.grow(1);
-            table.set(callback, bridge.exports.f);
-            const callbacks = words([0, directory(bin), directory(data), callback]);
+            });
+            const callbacks = words([0, directory(bin), directory(data), message]);
             p.instance = api.alloc() >>> 0;
             if (!p.instance || api.init(p.instance, callbacks)) throw Error("Perone initialization failed");
             p.initialized = true;
@@ -141,15 +129,12 @@ export class Perone {
             p.inputs = inputChannels ? words(x) : 0;
             p.outputs = words(y);
             const midi = allocate(3);
+            p.transportPointer = api.set_transport ? allocate(64) : 0;
             p.messagePointer = toDsp ? allocate(toDsp) : 0;
-            p.memory = wasm.memory.buffer;
-            p.x = x.map(pointer => new Float32Array(p.memory, pointer, capacity));
-            p.y = y.map(pointer => new Float32Array(p.memory, pointer, capacity));
-            p.pointers = new Uint32Array(p.memory, p.inputs, inputChannels);
-            p.addresses = x;
-            p.midi = new Uint8Array(p.memory, midi, 3);
+            p.addresses = x; p.outputAddresses = y;
             p.midiPointer = midi;
-            p.message = new Uint8Array(p.memory, p.messagePointer, toDsp);
+            this.views(p);
+            if (p.transport) new Uint8Array(p.memory, p.transportPointer, 64).fill(0);
             this.next = Math.max(this.next, id + 1);
             this.instances.set(id, p);
             return id;
@@ -157,6 +142,28 @@ export class Perone {
             this.dispose(p);
             throw error;
         }
+    }
+
+    views(p) {
+        const {capacity, inputChannels, toDsp = 0} = p.config;
+        p.memory = p.wasm.memory.buffer;
+        p.x = p.addresses.map(pointer => new Float32Array(p.memory, pointer, capacity));
+        p.y = p.outputAddresses.map(pointer => new Float32Array(p.memory, pointer, capacity));
+        p.pointers = new Uint32Array(p.memory, p.inputs, inputChannels);
+        p.midi = new Uint8Array(p.memory, p.midiPointer, 3);
+        p.message = new Uint8Array(p.memory, p.messagePointer, toDsp);
+        p.transport = p.transportPointer ? new DataView(p.memory, p.transportPointer, 64) : null;
+    }
+
+    state(id, bytes) {
+        const p = this.instances.get(id);
+        if (!p) throw Error("Unknown Perone instance");
+        this.sync(id);
+        try {
+            const result = peroneState(p, bytes);
+            if (bytes === undefined) return result;
+            for (const [index, value] of result) this.set(id, index, value);
+        } finally { this.views(p); }
     }
 
     dispose(p) {
@@ -283,6 +290,17 @@ export class Perone {
         const p = this.instances.get(id), heap = this.host.HEAPU8;
         for (let i = 0; i < 3; i++) p.midi[i] = heap[pointer + i];
         p.api.midi_msg_in(p.instance, bus, p.midiPointer);
+    }
+
+    transport(id, playing, bpm, beat) {
+        const p = this.instances.get(id);
+        if (!p?.transport || playing < 0) return;
+        // Perone ABI v2, wasm32 layout. Only playing, BPM and quarter position are valid.
+        const t = p.transport;
+        t.setUint32(0, 13, true); t.setUint32(4, 13, true);
+        t.setUint8(8, playing ? 1 : 0);
+        t.setFloat32(16, bpm, true); t.setFloat64(24, beat, true);
+        p.api.set_transport(p.instance, p.transportPointer);
     }
 
     process(id, inputs, outputs, frames) {

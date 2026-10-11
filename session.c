@@ -619,3 +619,22 @@ int session_restart(Session *s) {
 				return fail(s, "plugin configuration changed; prepare the score again");
 	return prepare_latency(s, session_score(s));
 }
+
+int session_state(Session *s, int node, State *state, int write) {
+	if (!state || !s->audio || node < 0 || node >= s->nnodes || !s->nodes[node].dsp[0].dsp)
+		return -1;
+	session_sync(s);
+	State saved = {0};
+	int result = state_dsp(s->nodes[node].dsp[0].dsp, write ? &saved : state, write);
+	if (!result && !write && s->nodes[node].dsp[1].dsp)
+		result = state_dsp(s->nodes[node].dsp[1].dsp, state, 0);
+	session_sync(s);
+	if (session_poll(s) < 0 || session_restart(s))
+		result = -1;
+	if (write && !result) {
+		state_free(state);
+		*state = saved;
+	} else
+		state_free(&saved);
+	return result;
+}

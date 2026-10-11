@@ -68,5 +68,7 @@ void session_sync(Session *s); // Audio stopped; apply controls and service plug
 // Main thread: 1 requests a restart with audio stopped; -1 indicates a plugin error.
 int session_poll(Session *s);
 int session_restart(Session *s);
+// Audio stopped. Presets apply to both instances of a duplicated mono effect.
+int session_state(Session *s, int node, State *state, int write);
 void session_free(Session *s);
 #endif

@@ -53,3 +53,43 @@ try {
     assert.deepEqual(perone.control("controls", left).messages, []);
 } finally { perone.closeAll(); }
 console.log("OK: Wasm control acknowledgement, actual stereo edits, automation, binary messages, FIFO bounds, detach and overflow recovery");
+
+for (const effect of [false, true]) {
+    const path = `build/test/${effect ? 'effect' : 'fixture'}.perone/wasm32/fixture.wasm`;
+    await perone.add(path, await readFile(path));
+    const id = perone.open({...config, path, outputChannels: effect ? 1 : 2, inputChannels: effect ? 1 : 0,
+        midiBus: effect ? -1 : 0, minimum: [0, 0, 0], maximum: [1, 1, effect ? 1 : 3], flags: [1, 0, effect ? 0 : 2]});
+    const p = perone.instances.get(id);
+    try {
+        perone.control("watch", id, true);
+        perone.control("parameter", id, 1, .625);
+        const state = perone.state(id);
+        // Same envelope and little-endian parameter values as the native fixtures.
+        const expected = new Uint8Array(effect ? 20 : 16), view = new DataView(expected.buffer);
+        view.setUint32(0, 0x31524550, true); view.setUint32(4, effect ? 0 : 1, true);
+        view.setFloat32(effect ? 12 : 8, .625, true);
+        assert.deepEqual(state, expected);
+        perone.set(id, 1, .125);
+        perone.state(id, state);
+        assert.equal(perone.control("controls", id).values[1], .625);
+        assert.throws(() => perone.state(id, state.subarray(0, state.length - 1)));
+        new DataView(state.buffer).setFloat32(effect ? 12 : 8, NaN, true);
+        assert.throws(() => perone.state(id, state));
+        assert.equal(perone.control("controls", id).values[1], .625);
+        if (!effect) {
+            const save = p.api.state_save;
+            p.api.state_save = (...args) => { p.wasm.memory.grow(1); return save(...args); };
+            const memory = p.memory;
+            perone.state(id);
+            assert.notEqual(p.memory, memory, "State allocation may grow memory; audio views must be refreshed");
+            perone.set(id, 1, .5); perone.set(id, 2, 2);
+            perone.transport(id, 1, 180, 2.5);
+            p.api.process(p.instance, 0, p.outputs, 1);
+            assert.equal(p.y[0][0], 2.5);
+            perone.transport(id, 0, 180, 2.5);
+            p.api.process(p.instance, 0, p.outputs, 1);
+            assert.equal(p.y[0][0], 2);
+        }
+    } finally { perone.close(id); }
+}
+console.log("OK: Wasm custom/parameter presets match native envelopes, reject invalid data, refresh grown memory and deliver transport");

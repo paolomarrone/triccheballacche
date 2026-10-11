@@ -119,6 +119,11 @@ export async function attachPlayer(host, score) {
                 if (!dsp) throw Error("Invalid plugin node");
                 return workletReply(setup, "control", {send: true, payload: {player, args: [op, dsp, ...args]}});
             },
+            state(id, data) {
+                if (stopping || context.state !== "suspended") throw Error("Stop audio before accessing plugin state");
+                if (!Number.isInteger(id) || !host._score_dsp(score, id)) throw Error("Invalid plugin node");
+                return workletReply(setup, "state", {send: true, payload: {score, node: id, data}});
+            },
             // Transfer only the immutable projection; closing this player still owns all audio resources.
             takeView() {
                 if (stopping) throw Error("Player closing or closed");

@@ -106,6 +106,23 @@ static void latency_test(void) {
 	session_free(&s);
 	puts("OK: parallel-path latency compensation, activation notifications and quiescent restart");
 }
+static void pending_state_test(void) {
+	Session s = {0};
+	Output output;
+	assert(!load_score(&s, &output, "test/clap/score.janet"));
+	DSP *dsp = s.nodes[0].dsp[0].dsp;
+	assert(!session_seek(&s, llround(.06 * s.sample_rate))); // Held notes are queued, not rendered.
+	edit_dsp(dsp, 127, .25);                                 // This control requires process() while active.
+	State state = {0};
+	assert(!state_dsp(dsp, &state, 1));
+	double value;
+	memcpy(&value, state.data + 127 * sizeof(double), sizeof(value));
+	assert(value == .25);
+	float audio[6];
+	assert(!session_render(&s, audio, 3) && audio[0] == .46875); // Capture preserved the queued note.
+	state_free(&state);
+	session_free(&s);
+}
 static void parameter_test(void) {
 	Session s = {0};
 	Output output;
@@ -123,8 +140,8 @@ static void parameter_test(void) {
 		bool valid;
 	} cases[] = {{1.75, 1, true}, {-1.75, -1, true}, {0.99999997, 0, true}, {1.00000003, 1, true}, {3, 3, true},
 	    {-3, -3, true}, {3.01, 0, false}, {-3.01, 0, false}, {NAN, 0, false}, {INFINITY, 0, false}};
-	const char *path = "build/test/clap-parameters.state";
-	assert(!state_dsp(dsp, path, 1));
+	State state = {0};
+	assert(!state_dsp(dsp, &state, 1));
 	for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); ++i) {
 		edit_dsp(dsp, 126, 0);
 		session_sync(&s);
@@ -136,13 +153,12 @@ static void parameter_test(void) {
 		// State loading exercises get_value/rescan independently of output events.
 		edit_dsp(dsp, 126, 0);
 		session_sync(&s);
-		FILE *state = fopen(path, "r+b");
-		assert(state && !fseek(state, 126 * sizeof(double), SEEK_SET));
-		assert(fwrite(&cases[i].value, sizeof(double), 1, state) == 1 && !fclose(state));
-		assert(!state_dsp(dsp, path, 0) && !session_poll(&s));
+		memcpy(state.data + 126 * sizeof(double), &cases[i].value, sizeof(double));
+		assert(!state_dsp(dsp, &state, 0) && !session_poll(&s));
 		assert(read_dsp(dsp, 126, &value) && value == cases[i].expected);
 	}
 	session_free(&s);
+	state_free(&state);
 	puts("OK: CLAP stepped values, signed truncation, bounds and invalid output/rescan values");
 }
 int main(int argc, char **argv) {
@@ -227,19 +243,17 @@ int main(int argc, char **argv) {
 	edit_dsp(synth, 0, .625);
 	session_sync(&s);
 	assert(read_dsp(synth, 0, &value) && value == .625);
-	assert(!state_dsp(synth, "build/test/clap.state", 1));
-	assert(state_dsp(synth, "build/test/missing-directory/clap.state", 1) == -1);
+	State state = {0};
+	assert(!state_dsp(synth, &state, 1));
 	edit_dsp(synth, 0, .125);
 	session_sync(&s);
 	assert(!setenv("CLAP_TEST_FAIL_SAVE", "1", 1));
-	assert(state_dsp(synth, "build/test/clap.state", 1) == -1);
-	assert(!unsetenv("CLAP_TEST_FAIL_SAVE")); // A failed save must leave the previous file intact.
-	FILE *state = fopen("build/test/clap.state", "r+b");
-	assert(state);
+	assert(state_dsp(synth, &state, 1) == -1);
+	assert(!unsetenv("CLAP_TEST_FAIL_SAVE")); // A failed save leaves the previous bytes intact.
 	double private_value = 2;
-	assert(!fseek(state, 130 * sizeof(double), SEEK_SET) && fwrite(&private_value, sizeof(double), 1, state) == 1);
-	fclose(state);
-	assert(!state_dsp(synth, "build/test/clap.state", 0));
+	memcpy(state.data + 130 * sizeof(double), &private_value, sizeof(double));
+	assert(!state_dsp(synth, &state, 0));
+	state_free(&state);
 	assert(session_poll(&s) == 0);
 	assert(read_dsp(synth, 0, &value) && value == .625);
 	assert(!session_seek(&s, llround(.06 * s.sample_rate)) && !session_render(&s, audio, 3));
@@ -255,5 +269,6 @@ int main(int argc, char **argv) {
 		puts("OK: CLAP native X11 UI, timers, edits in both directions and repeated window lifetime");
 	latency_test();
 	parameter_test();
+	pending_state_test();
 	return 0;
 }

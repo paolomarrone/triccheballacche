@@ -1,0 +1,5 @@
+(def synth (daw/plugin "build/test/fixture.perone" {:mode 2 :gain 0.5}))
+(daw/output synth)
+(daw/schedule 0 90 {:length 1 :streams [{:offset 0 :events [[0 0.5 [:note synth 60 100]]]}]})
+(daw/schedule 1 180 {:length 1 :streams [{:offset 0 :events [[0 0.5 [:note synth 64 100]]]}]})
+(daw/end 2)

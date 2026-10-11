@@ -1,3 +1,5 @@
+import {destination} from "./preset.js";
+
 export const saveLabel = "Save", saveTitle = "Save · Ctrl+S";
 
 export async function connect() {
@@ -21,4 +23,9 @@ export async function command(op, ...args) {
 
 export function uiUrl(node, revision, id) {
     return new URL(`/perone/${revision}/${id}/${node.product.ui.web}`, location.href).href;
+}
+
+export async function exportPreset(request, name, text) {
+    const path = await destination(name);
+    if (path) await request("preset-file", path, text);
 }

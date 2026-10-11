@@ -115,3 +115,8 @@ dialog h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
 #file-list p { padding: 0 8px; color: var(--muted); }
 #file-error { margin: 0; padding: 8px; color: light-dark(#a32e20, #ff9b8e); }
 #file-local { padding: 8px; border-top: 1px solid var(--border); }
+
+.preset-dialog { width: min(32rem, 90vw); }
+.preset-dialog form { display: flex; flex-wrap: wrap; gap: .5rem; justify-content: flex-end; }
+.preset-dialog label { flex: 1 0 100%; }
+.preset-dialog input { display: block; width: 100%; margin-top: .5rem; }

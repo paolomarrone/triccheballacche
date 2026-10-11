@@ -203,7 +203,61 @@ static void discovery_test(void) {
 	free(error);
 	score_free(&score);
 }
+static const void *seed(LV2_State_Handle handle, uint32_t key, size_t *size, uint32_t *type, uint32_t *flags) {
+	Lv2 *l = handle;
+	static const float value = 2;
+	if (key != lv2_map_uri(l, "urn:triccheballacche:test:lv2:private"))
+		return NULL;
+	if (size)
+		*size = sizeof(value);
+	if (type)
+		*type = lv2_map_uri(l, LV2_ATOM__Float);
+	if (flags)
+		*flags = LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE;
+	return &value;
+}
+static void state_test(void) {
+	Session s = {0};
+	Output output;
+	assert(!load_score(&s, &output, "test/lv2/score.janet"));
+	DSP *dsp = s.nodes[0].dsp[0].dsp;
+	Lv2 *l = dsp->instance;
+	const LV2_State_Interface *api = lilv_instance_get_extension_data(l->instance, LV2_STATE__interface);
+	State state = {0};
+	edit_dsp(dsp, 0, .625);
+	assert(!session_state(&s, 0, &state, 1));
+
+	assert(!api->restore(lilv_instance_get_handle(l->instance), seed, l, 0, l->feature_ptrs));
+	edit_dsp(dsp, 0, .125);
+	assert(!setenv("LV2_TEST_FAIL_SAVE", "1", 1));
+	assert(session_state(&s, 0, &state, 1) == -1);
+	assert(!unsetenv("LV2_TEST_FAIL_SAVE"));
+	assert(!setenv("LV2_TEST_FAIL_LOAD", "1", 1));
+	assert(session_state(&s, 0, &state, 0) == -1);
+	assert(!unsetenv("LV2_TEST_FAIL_LOAD"));
+	assert(!session_state(&s, 0, &state, 0));
+	double value;
+	assert(read_dsp(dsp, 0, &value) && value == .625);
+	assert(session_state(&s, 1, &state, 0) == -1); // Different plugin URI.
+	assert(!session_seek(&s, llround(.06 * s.sample_rate)));
+	float audio[6];
+	assert(!session_render(&s, audio, 3) && audio[0] == .375); // Opaque gain restored to one.
+	--state.length;
+	assert(session_state(&s, 0, &state, 0) == -1);
+	++state.length;
+	// Restore into a fresh instance with a different sample rate and independently assigned URIDs.
+	session_free(&s);
+	s.sample_rate = 48000;
+	assert(!load_score(&s, &output, "test/lv2/score.janet"));
+	assert(!session_state(&s, 0, &state, 0));
+	assert(!session_render(&s, audio, 3)); // Fixture checks the rate-scaled control.
+	state_free(&state);
+	session_free(&s);
+	puts("OK: LV2 ports, opaque properties, portable URIDs, sample rates, failed saves/loads and malformed presets");
+}
+
 int main(int argc, char **argv) {
+	state_test();
 	int ui = argc > 1 && !strcmp(argv[1], "--ui");
 	discovery_test();
 	Modules modules = {0};

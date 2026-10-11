@@ -347,12 +347,59 @@ static void test_bundle(const char *path) {
 	close_plugin(&e);
 }
 
+static void test_state(void) {
+	for (int effect = 0; effect < 2; ++effect) {
+		Plugin p = {0};
+		assert(!open_bundle(&p, effect ? "build/test/effect.perone" : "build/test/fixture.perone", 48000));
+		DSP *dsp = p.dsp;
+		State state = {0};
+		edit_dsp(dsp, 1, .625); // Capture must include pending edits, even without a visible UI.
+		assert(!state_dsp(dsp, &state, 1));
+		assert(state.length == (effect ? 20 : 16));
+		if (!effect) {
+			assert(!setenv("PERONE_TEST_FAIL", "state", 1));
+			assert(state_dsp(dsp, &state, 1) == -1);
+			assert(!unsetenv("PERONE_TEST_FAIL"));
+		}
+		set_dsp(dsp, 1, .125);
+		assert(!state_dsp(dsp, &state, 0));
+		double value;
+		assert(read_dsp(dsp, 1, &value) && value == .625);
+		--state.length;
+		assert(state_dsp(dsp, &state, 0) == -1);
+		++state.length;
+		float invalid = NAN;
+		memcpy(state.data + (effect ? 12 : 8), &invalid, sizeof(invalid));
+		assert(state_dsp(dsp, &state, 0) == -1);
+		assert(read_dsp(dsp, 1, &value) && value == .625);
+		state_free(&state);
+		if (!effect) {
+			set_dsp(dsp, 1, .5);
+			set_dsp(dsp, 2, 2);
+			float left[1], right[1];
+			float *outputs[] = {left, right};
+			ProcessTime time = {.bpm = 180, .beat = 2.5, .playing = 1};
+			assert(!process_dsp(dsp, NULL, outputs, 1, &time) && left[0] == 2.5);
+			time.playing = 0;
+			idle_dsp(dsp, &time);
+			assert(!process_dsp(dsp, NULL, outputs, 1, NULL) && left[0] == 2);
+		}
+		close_plugin(&p);
+	}
+	State bounded = {0};
+	assert(state_write(&bounded, "", (size_t)STATE_LIMIT + 1) == -1 && !bounded.data);
+	state_free(&bounded);
+	puts(
+	    "OK: Perone custom/parameter state, pending edits, failed saves, malformed loads and playing/stopped transport");
+}
+
 int main(int argc, char **argv) {
 	if (argc > 1) {
 		for (int i = 1; i < argc; ++i)
 			test_bundle(argv[i]);
 		return 0;
 	}
+	test_state();
 	test_messages();
 	test_controls();
 	test_mono_adapter();

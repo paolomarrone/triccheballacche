@@ -20,20 +20,20 @@ CLAP ?= .deps/clap-$(CLAP_VERSION)
 VST3_REV = 93a116f7c6c52a317ec3aaee9b13789068b5234e
 VST3 ?= .deps/vst3-c-api-$(VST3_REV)
 LV2_DEPS ?= .deps/lv2
-LV2_INCLUDES = -I$(LV2_DEPS)/include -I$(LV2_DEPS)/include/lilv-0
+LV2_INCLUDES = -I$(LV2_DEPS)/include -I$(LV2_DEPS)/include/lilv-0 -I$(LV2_DEPS)/include/sratom-0 -I$(LV2_DEPS)/include/serd-0 -I$(LV2_DEPS)/include/sord-0
 LV2_LIBS = $(addprefix $(LV2_DEPS)/lib/,liblilv-0.a libsratom-0.a libsord-0.a libserd-0.a libzix-0.a)
 WEBUI ?= .deps/webui-$(WEBUI_REV)
 PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
 PERONE_SUFFIX ?= .so
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
-PLUGIN_SOURCES = plugin.c script.c trace.c
+PLUGIN_SOURCES = plugin.c script.c trace.c state.c
 SCORE_SOURCES = score_janet.c score.c score_view.c score_automation.c session.c sequence.c $(PLUGIN_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c transport.c
-HOST_SOURCES = host/dsp.c host/module.c host/scan.c host/perone.c host/clap.c host/clap_info.c host/lv2.c host/lv2_info.c host/vst3.c host/vst3_info.c host/vst3_host.c
+HOST_SOURCES = host/dsp.c host/module.c host/scan.c host/perone.c host/clap.c host/clap_info.c host/lv2.c host/lv2_info.c host/lv2_state.c host/vst3.c host/vst3_info.c host/vst3_host.c
 HOST_PLATFORM_SOURCES = posix/host.c posix/clap.c posix/lv2.c posix/vst3.c x11/info.c
 HOST_OBJECTS = $(addprefix build/obj/native/,$(HOST_SOURCES:.c=.o) $(HOST_PLATFORM_SOURCES:.c=.o))
 UI_OBJECTS = $(addprefix build/obj/native/,x11/ui.o x11/perone_ui.o x11/clap_ui.o x11/lv2_ui.o x11/vst3_ui.o x11/window.o)
-PLUGIN_OBJECTS = $(HOST_OBJECTS) $(addprefix build/obj/native/,plugin.o posix/discovery.o json_write.o script.o trace.o json.o janet.o)
+PLUGIN_OBJECTS = $(HOST_OBJECTS) $(addprefix build/obj/native/,plugin.o state.o posix/discovery.o json_write.o script.o trace.o json.o janet.o)
 SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o score_automation.o session.o sequence.o) $(PLUGIN_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host build/tools/plugin-scan
@@ -116,7 +116,7 @@ $(VST3_OBJECTS): $(VST3)/vst3_c_api.h $(VST3)/LICENSE.txt
 $(LV2_DEPS)/.ready: tools/lv2-deps.sh
 	CC="$(CC)" sh tools/lv2-deps.sh "$(LV2_DEPS)"
 
-LV2_OBJECTS = $(addprefix build/obj/native/,host/lv2.o host/lv2_info.o posix/lv2.o x11/lv2_ui.o x11/info.o tools/plugin-scan.o test/lv2.o)
+LV2_OBJECTS = $(addprefix build/obj/native/,host/lv2.o host/lv2_info.o host/lv2_state.o posix/lv2.o x11/lv2_ui.o x11/info.o tools/plugin-scan.o test/lv2.o)
 $(LV2_OBJECTS): override CPPFLAGS += $(LV2_INCLUDES)
 $(LV2_OBJECTS): $(LV2_DEPS)/.ready
 $(filter-out build/test/score_view,$(NATIVE_PROGRAMS) $(NATIVE_TESTS)): $(LV2_DEPS)/.ready
@@ -140,7 +140,7 @@ build/gui: $(addprefix build/obj/native/,posix/gui.o posix/prepare.o posix/files
 build/tools/perone-host: build/obj/native/tools/perone-host.o $(PLUGIN_OBJECTS) build/obj/native/audio.o
 build/gui build/test/ui build/test/clap build/test/lv2 build/test/vst3: private LDLIBS += -lX11
 
-build/tools/plugin-scan: build/obj/native/tools/plugin-scan.o $(HOST_OBJECTS) build/obj/native/json_write.o
+build/tools/plugin-scan: build/obj/native/tools/plugin-scan.o $(HOST_OBJECTS) $(addprefix build/obj/native/,plugin.o state.o json_write.o)
 $(filter-out build/tools/plugin-scan,$(NATIVE_PROGRAMS)) $(filter-out build/test/score_view,$(NATIVE_TESTS)): | build/tools/plugin-scan
 
 
@@ -313,7 +313,7 @@ VIEW_EXPORTS = "_score_prepare","_score_describe","_score_pack_web","_score_pack
 SCORE_EXPORTS = "_score_new","_web_score_free","_score_listen","_score_duration","_score_can_seek"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sWASM_WORKERS -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
-PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_player_time","_score_player","_transport_update_web","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node"]'
+PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_score_state_save","_score_state_load","_player_time","_score_player","_transport_update_web","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node"]'
 # Publish C Brickworks examples only; fxpp_* and synthpp_* are duplicate C++ variants.
 WEB_CONTENT ?= lib examples $(wildcard plugins/*/build/*.perone \
     $(BRICKWORKS_PERONE)/fx_*/build/*.perone $(BRICKWORKS_PERONE)/synth_*/build/*.perone \

@@ -139,3 +139,17 @@ char *transport_json_web(
 	const double args[] = {a, b, c, d, e, f};
 	return transport_json(t, op, time, args);
 }
+
+void *score_state_save(WebScore *score, int node, size_t *length) {
+	State buffer = {0};
+	if (session_state(&score->session, node, &buffer, 1)) {
+		state_free(&buffer);
+		return NULL;
+	}
+	*length = buffer.length;
+	return buffer.data ? buffer.data : malloc(1);
+}
+int score_state_load(WebScore *score, int node, void *data, size_t length) {
+	State buffer = {.data = data, .length = length};
+	return session_state(&score->session, node, &buffer, 0);
+}

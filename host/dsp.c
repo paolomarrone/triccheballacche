@@ -165,8 +165,25 @@ int poll_dsp(DSP *dsp) {
 int restart_dsp(DSP *dsp) {
 	return dsp && dsp->ops->restart ? dsp->ops->restart(dsp) : 0;
 }
-int state_dsp(DSP *dsp, const char *path, int write) {
-	return dsp && dsp->ops->state ? dsp->ops->state(dsp, path, write) : -1;
+int state_dsp(DSP *dsp, State *state, int write) {
+	if (!dsp || !dsp->ops->state)
+		return STATE_UNSUPPORTED;
+	if (!state || state->length > STATE_LIMIT || (state->length && !state->data))
+		return -1;
+	sync_dsp(dsp, NULL);
+	State buffer = write ? (State){0} : *state;
+	buffer.position = 0;
+	int result = dsp->ops->state(dsp, &buffer, write);
+	if (buffer.failed)
+		result = -1;
+	if (write) {
+		if (!result) {
+			state_free(state);
+			*state = buffer;
+		} else
+			state_free(&buffer);
+	}
+	return result;
 }
 int process_dsp(DSP *dsp, const float **inputs, float **outputs, size_t frames, const ProcessTime *time) {
 	return dsp->ops->process(dsp, inputs, outputs, frames, time);

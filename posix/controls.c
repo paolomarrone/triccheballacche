@@ -40,6 +40,30 @@ static int hex(char c) {
 	return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
 }
 
+static const char *preset(Session *s, int node, State *state, const char *text, int write) {
+	if (!write) {
+		size_t length = strlen(text);
+		if (length % 2 || length > 32 * 1024 * 1024)
+			return "Invalid preset data";
+		state->data = malloc(length / 2 + 1);
+		if (!state->data)
+			return "Out of memory";
+		state->length = state->capacity = length / 2;
+		for (size_t i = 0; i < length; i += 2) {
+			int a = hex(text[i]), b = hex(text[i + 1]);
+			if (a < 0 || b < 0)
+				return "Invalid preset data";
+			state->data[i / 2] = 16 * a + b;
+		}
+	}
+	int result = session_state(s, node, state, write);
+	if (result == STATE_UNSUPPORTED)
+		return "Plugin does not support state saving and loading";
+	if (result)
+		return "Plugin state operation failed";
+	return state->length > 16 * 1024 * 1024 ? "Preset exceeds 16 MiB" : NULL;
+}
+
 void controls_command(Controls *c, Session *s, unsigned revision, webui_event_t *event) {
 	const char *op = webui_get_string_at(event, 0), *error = NULL;
 	double version = number(event, 1), id = number(event, 2);
@@ -74,6 +98,29 @@ void controls_command(Controls *c, Session *s, unsigned revision, webui_event_t 
 			watch_dsp(dsp, 1);
 			c->watched[n] = 1;
 		}
+	} else if (!strcmp(op, "state-save") || !strcmp(op, "state-load")) {
+		State state = {0};
+		int write = !strcmp(op, "state-save");
+		error = preset(s, n, &state, webui_get_string_at(event, 3), write);
+		json_print(&json, "\"playing\":false,");
+		if (!error && write) {
+			char *text = malloc(state.length * 2 + 1);
+			if (!text)
+				error = "Out of memory";
+			else {
+				const char digits[] = "0123456789abcdef";
+				for (size_t i = 0; i < state.length; ++i) {
+					text[2 * i] = digits[state.data[i] >> 4];
+					text[2 * i + 1] = digits[state.data[i] & 15];
+				}
+				text[state.length * 2] = 0;
+				json_print(&json, "\"data\":");
+				json_string(&json, text);
+				json_print(&json, ",");
+				free(text);
+			}
+		}
+		state_free(&state);
 	} else if (!c->watched[n]) {
 		error = "Web view not attached";
 	} else if (!strcmp(op, "parameter")) {

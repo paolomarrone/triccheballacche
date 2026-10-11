@@ -567,12 +567,9 @@ static uint32_t latency(DSP *dsp) {
 	Vst *v = dsp->instance;
 	return v->processor->lpVtbl->getLatencySamples(v->processor);
 }
-static int state(DSP *dsp, const char *path, int write) {
+static int state(DSP *dsp, State *buffer, int write) {
 	Vst *v = dsp->instance;
 	if (atomic_load(&v->requests) & VST_ERROR)
-		return -1;
-	StateFile file;
-	if (state_file_open(&file, path, write))
 		return -1;
 	sync_dsp(dsp, NULL);
 	idle(dsp, NULL);
@@ -596,24 +593,24 @@ static int state(DSP *dsp, const char *path, int write) {
 			for (int b = 0; b < 4; ++b)
 				header[24 + i * 4 + b] = parts[i]->length >> (8 * b);
 		}
-		ok = ok && fwrite(header, 1, sizeof(header), file.stream) == sizeof(header);
+		ok = ok && !state_write(buffer, header, sizeof(header));
 		for (int i = 0; ok && i < 2; ++i)
-			ok = !parts[i]->length || fwrite(parts[i]->data, 1, parts[i]->length, file.stream) == parts[i]->length;
+			ok = !parts[i]->length || !state_write(buffer, parts[i]->data, parts[i]->length);
 	} else if (ok) {
 		unsigned char read[32];
-		ok = fread(read, 1, sizeof(read), file.stream) == sizeof(read) && !memcmp(read, header, 24);
+		ok = state_read(buffer, read, sizeof(read)) == sizeof(read) && !memcmp(read, header, 24);
 		for (int i = 0; ok && i < 2; ++i) {
 			uint32_t size = 0;
 			for (int b = 0; b < 4; ++b)
 				size |= (uint32_t)read[24 + i * 4 + b] << (8 * b);
-			ok = size <= VST_STATE_LIMIT;
+			ok = size <= STATE_LIMIT;
 			if (ok && size) {
 				parts[i]->data = malloc(size);
 				parts[i]->capacity = parts[i]->length = size;
-				ok = parts[i]->data && fread(parts[i]->data, 1, size, file.stream) == size;
+				ok = parts[i]->data && state_read(buffer, parts[i]->data, size) == size;
 			}
 		}
-		ok = ok && fgetc(file.stream) == EOF && !ferror(file.stream);
+		ok = ok && buffer->position == buffer->length;
 		if (ok)
 			ok = v->component->lpVtbl->setState(v->component, &parts[0]->api) == Steinberg_kResultOk;
 		if (ok && v->controller) {
@@ -625,9 +622,6 @@ static int state(DSP *dsp, const char *path, int write) {
 	}
 	for (int i = 0; i < 2; ++i)
 		vst_release(parts[i]);
-	if (fclose(file.stream))
-		ok = 0;
-	file.stream = NULL;
 	atomic_fetch_and(&v->requests,
 	    VST_ERROR | Steinberg_Vst_RestartFlags_kParamValuesChanged | Steinberg_Vst_RestartFlags_kReloadComponent |
 	        Steinberg_Vst_RestartFlags_kParamIDMappingChanged);
@@ -637,7 +631,7 @@ static int state(DSP *dsp, const char *path, int write) {
 	}
 	if (!write && v->controller)
 		atomic_fetch_or(&v->requests, Steinberg_Vst_RestartFlags_kParamValuesChanged);
-	return state_file_close(&file, ok);
+	return ok ? 0 : -1;
 }
 static void close_instance(DSP *dsp) {
 	Vst *v = dsp->instance;

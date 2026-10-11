@@ -1,3 +1,4 @@
+import {presets} from "./preset-ui.mjs";
 import assert from "node:assert/strict";
 import {execFileSync} from "node:child_process";
 import {once} from "node:events";
@@ -57,6 +58,8 @@ try {
             await click("#views");
             await click("#play");
             await wait(`${synthRoot}?.querySelectorAll(".parameter-controls label").length === 3`);
+            await presets({evaluate, wait, click}, mode === "native", directory);
+            await click("#play");
             const toggle = async (track, bit, pressed) => {
                 const button = `document.querySelector('#track-list .track:nth-child(${track + 1}) [data-listen="${bit}"]')`;
                 await wait(`${button} && !${button}.disabled`);

@@ -621,7 +621,28 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 	score_free(&description);
 }
 
+static void test_plugin_state(void) {
+	Session s = {0};
+	Output output;
+	assert(!load_score(&s, &output, "test/playback.janet"));
+	assert(s.nodes[1].dsp[1].dsp); // Perone mono effect duplicated for a stereo source.
+	State saved = {0};
+	assert(!session_state(&s, 1, &saved, 1));
+	edit_dsp(s.nodes[1].dsp[0].dsp, 1, .25);
+	session_sync(&s);
+	assert(!session_state(&s, 1, &saved, 0));
+	for (int i = 0; i < 2; ++i) {
+		double value;
+		assert(read_dsp(s.nodes[1].dsp[i].dsp, 1, &value) && value == 1);
+	}
+	assert(session_state(&s, -1, &saved, 0) == -1);
+	state_free(&saved);
+	session_free(&s);
+	puts("OK: plugin presets restore both instances of a stereo-adapted mono effect");
+}
+
 int main(void) {
+	test_plugin_state();
 	test_buffer_score();
 	test_source_trace();
 	test_sample_rate();

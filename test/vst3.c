@@ -146,27 +146,37 @@ static void latency_test(void) {
 	assert(!latency_dsp(effect) && !s.nodes[2].inputs[0].length);
 	session_free(&s);
 }
+static void stream_test(void) {
+	VstStream *stream = vst_stream_new();
+	assert(stream);
+	unsigned char data[] = {1, 0, 255}, read[4096];
+	Steinberg_int32 count = -1;
+	assert(!stream->api.lpVtbl->write(stream, data, sizeof(data), &count) && count == sizeof(data));
+	assert(!stream->api.lpVtbl->seek(stream, 0, 0, NULL));
+	assert(!stream->api.lpVtbl->read(stream, read, sizeof(read), &count) && count == sizeof(data));
+	assert(!memcmp(data, read, sizeof(data)));
+	assert(!stream->api.lpVtbl->read(stream, read, sizeof(read), &count) && count == 0);
+	vst_release(stream);
+}
 static void state_test(Session *s) {
+	State state = {0};
 	DSP *dsp = s->nodes[0].dsp[0].dsp;
 	edit_dsp(dsp, 0, .625);
 	session_sync(s);
-	assert(!state_dsp(dsp, "build/test/vst3.state", 1));
+	assert(!state_dsp(dsp, &state, 1));
 	edit_dsp(dsp, 0, .125);
 	session_sync(s);
 	assert(!setenv("VST3_TEST_FAIL_SAVE", "1", 1));
-	assert(state_dsp(dsp, "build/test/vst3.state", 1) == -1);
+	assert(state_dsp(dsp, &state, 1) == -1);
 	assert(!unsetenv("VST3_TEST_FAIL_SAVE"));
 	assert(!setenv("VST3_TEST_FAIL_CONTROLLER_SAVE", "1", 1));
-	assert(state_dsp(dsp, "build/test/vst3.state", 1) == -1);
+	assert(state_dsp(dsp, &state, 1) == -1);
 	assert(!unsetenv("VST3_TEST_FAIL_CONTROLLER_SAVE"));
-	assert(state_dsp(s->nodes[1].dsp[0].dsp, "build/test/vst3.state", 0) == -1);
+	assert(state_dsp(s->nodes[1].dsp[0].dsp, &state, 0) == -1);
 	// An opaque processor value must survive state loading and subsequent seeks.
-	FILE *file = fopen("build/test/vst3.state", "r+b");
-	assert(file);
 	double value = 2;
-	assert(!fseek(file, 32 + 4 * sizeof(double), SEEK_SET) && fwrite(&value, sizeof(value), 1, file) == 1);
-	assert(!fclose(file));
-	assert(!state_dsp(dsp, "build/test/vst3.state", 0));
+	memcpy(state.data + 32 + 4 * sizeof(double), &value, sizeof(value));
+	assert(!state_dsp(dsp, &state, 0));
 	assert(!session_poll(s));
 	session_sync(s);
 	assert(read_dsp(dsp, 0, &value) && value == .625);
@@ -174,19 +184,21 @@ static void state_test(Session *s) {
 	float audio[6];
 	assert(!session_render(s, audio, 3) && audio[0] == .75);
 	assert(!setenv("VST3_TEST_NO_CONTROLLER_STATE", "1", 1));
-	assert(!state_dsp(dsp, "build/test/vst3.state", 1));
+	assert(!state_dsp(dsp, &state, 1));
 	assert(!unsetenv("VST3_TEST_NO_CONTROLLER_STATE"));
-	assert(!state_dsp(dsp, "build/test/vst3.state", 0));
+	assert(!state_dsp(dsp, &state, 0));
 	assert(!session_poll(s));
+	state_free(&state);
 }
 static void reload_test(Session *s) {
+	State state = {0};
 	DSP *dsp = s->nodes[0].dsp[0].dsp;
 	Vst *v = dsp->instance;
 	// A full reload needs a new score; a soft restart cannot satisfy it.
 	assert(!v->handler.lpVtbl->restartComponent(&v->handler, Steinberg_Vst_RestartFlags_kReloadComponent));
 	assert(poll_dsp(dsp) == 1 && restart_dsp(dsp) == -1);
 	assert(restart_dsp(dsp) == -1 && poll_dsp(dsp) == -1);
-	assert(state_dsp(dsp, "build/test/vst3.state", 1) == -1 && poll_dsp(dsp) == -1);
+	assert(state_dsp(dsp, &state, 1) == -1 && poll_dsp(dsp) == -1);
 }
 int main(int argc, char **argv) {
 	int ui = argc > 1 && !strcmp(argv[1], "--ui");
@@ -194,6 +206,7 @@ int main(int argc, char **argv) {
 	assert(json && strstr(json, "VST3 test synth") && strstr(json, "VST3 test effect"));
 	free(json);
 	initialization_failure();
+	stream_test();
 	Modules modules = {0};
 	Module *previous = NULL;
 	for (int offline = 0; offline < 2; ++offline) {

@@ -12,6 +12,21 @@ registerProcessor("perone-setup", class extends AudioWorkletProcessor {
                 else if (data.type === "control") {
                     result = host.perone.control(...data.args);
                     if (data.player) host._player_sync(data.player);
+                } else if (data.type === "state") {
+                    const loading = data.data !== undefined;
+                    let pointer = host._malloc(loading ? Math.max(1, data.data.length) : 4), bytes = 0;
+                    if (!pointer) throw Error("Out of memory");
+                    try {
+                        if (loading) {
+                            host.HEAPU8.set(data.data, pointer);
+                            if (host._score_state_load(data.score, data.node, pointer, data.data.length))
+                                throw Error("Cannot restore plugin state");
+                        } else {
+                            bytes = host._score_state_save(data.score, data.node, pointer);
+                            if (!bytes) throw Error("Plugin state unavailable or export failed");
+                            result = host.HEAPU8.slice(bytes, bytes + host.HEAPU32[pointer / 4]);
+                        }
+                    } finally { host._free(bytes); host._free(pointer); }
                 } else if (data.type === "seek") {
                     if (host._player_seek(data.player, data.seconds)) throw Error("Cannot seek score");
                 } else throw Error("Unknown worklet request");

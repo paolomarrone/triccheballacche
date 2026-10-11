@@ -3,6 +3,27 @@ import {once} from "node:events";
 import {mkdir, mkdtemp, writeFile, rm} from "node:fs/promises";
 import {serve} from "./server.mjs";
 import {withBrowser} from "./chromium.mjs";
+import {pluginControls} from "../editor/plugin-controls.js";
+
+// Preset capture must wait for accepted edits and abort if the backend rejects them.
+{
+    const failures = [], error = Error("Parameter write failed");
+    let reject;
+    const controls = pluginControls({parameters: [{direction: "input", minimum: 0, maximum: 1}]},
+        () => new Promise((_, fail) => { reject = fail; }), failure => failures.push(failure));
+    controls.attach({});
+    controls.callbacks.set_parameter(0, .625);
+    let settled = false;
+    const pending = controls.flush();
+    pending.then(() => { settled = true; }, () => { settled = true; });
+    await Promise.resolve();
+    assert(!settled, "Capture waits for the pending parameter write");
+    reject(error);
+    await assert.rejects(pending, error);
+    assert.deepEqual(failures, [error]);
+    controls.close();
+    console.log("OK: preset capture waits for edits and propagates write failures");
+}
 
 // Shared UI behavior needs only the browser and metadata, without audio builds.
 await mkdir("build/test", {recursive: true});

@@ -67,6 +67,7 @@ typedef struct {
 LilvWorld *lv2_world_open(const char *path);
 int lv2_describe(Lv2Description *d, LilvWorld *world, const char *id);
 int lv2_metadata(Lv2Description *d, Json *json, const char *path);
+int lv2_state(DSP *dsp, State *buffer, int write);
 int lv2_scan(Json *json, const char *path);
 LilvUIs *lv2_uis(Lv2Description *d, const LilvUI **selected);
 int lv2_ui_fixed(Lv2Description *d, const LilvUI *ui);

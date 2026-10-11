@@ -47,7 +47,6 @@ typedef struct {
 	size_t length, position, capacity;
 	int failed;
 } VstStream;
-enum { VST_STATE_LIMIT = 64 * 1024 * 1024 };
 VstStream *vst_stream_new(void);
 
 typedef struct {

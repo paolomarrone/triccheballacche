@@ -201,6 +201,15 @@ static void command(Editor *editor, webui_event_t *event) {
 		reply(event, editor, error, NULL, "", 0);
 		return;
 	}
+	if (!strcmp(op, "state-save") || !strcmp(op, "state-load")) {
+		const char *error =
+		    decimal(event, 1) != editor->transport.control_revision ? "Stale plugin view" : pause_editor(editor);
+		if (error)
+			reply(event, editor, error, NULL, "", 0);
+		else
+			controls_command(&editor->controls, &editor->session, editor->transport.control_revision, event);
+		return;
+	}
 	if (!strcmp(op, "watch") || !strcmp(op, "controls") || !strcmp(op, "parameter") || !strcmp(op, "message")) {
 		controls_command(&editor->controls, &editor->session, editor->transport.control_revision, event);
 		return;
@@ -219,11 +228,11 @@ static void command(Editor *editor, webui_event_t *event) {
 	int changed = 0;
 	if (!*path)
 		path = editor->entry;
-	if (webui_get_size_at(event, 2) > MAX_SOURCE) {
-		error = "Score too large (at most 8 MiB)";
+	if (webui_get_size_at(event, 2) > (!strcmp(op, "preset-file") ? 32 * 1024 * 1024 + 4096 : MAX_SOURCE)) {
+		error = "File too large";
 	} else if (!strcmp(op, "open")) {
 		error = file_read(path, &text);
-	} else if (!strcmp(op, "save")) {
+	} else if (!strcmp(op, "save") || !strcmp(op, "preset-file")) {
 		error = file_save(path, source);
 	} else if (!strcmp(op, "run") || !strcmp(op, "update")) {
 		int live = !strcmp(op, "update");

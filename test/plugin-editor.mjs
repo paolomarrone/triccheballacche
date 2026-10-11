@@ -1,3 +1,4 @@
+import {presets} from "./preset-ui.mjs";
 import assert from "node:assert/strict";
 import {mkdtemp, readFile, writeFile, rm} from "node:fs/promises";
 import {withBrowser} from "./chromium.mjs";
@@ -46,13 +47,14 @@ try {
         await wait('document.querySelector("#stop").disabled');
         await evaluate(`(() => { const s = ${slider}; s.value = .6; s.dispatchEvent(new Event('input')); s.dispatchEvent(new Event('change')); })()`);
         await wait(`${value}.textContent === '0.6'`);
+        await presets({evaluate, wait, click}, true, directory);
         const window = '.plugin[data-node="0"] button[aria-label="Toggle native UI"]';
         await click(window);
         await wait(`document.querySelector('${window}').getAttribute('aria-pressed') === 'true'`);
         await click(window);
         await wait(`document.querySelector('${window}').getAttribute('aria-pressed') === 'false'`);
         await evaluate(`document.querySelector('.plugin[data-node="0"]').open = true`);
-        await wait(`${value}?.textContent === '0.6'`);
+        await wait(`${value}?.textContent === '0.625'`);
         await click("#play");
         await wait('!document.querySelector("#stop").disabled');
         await click("#stop");

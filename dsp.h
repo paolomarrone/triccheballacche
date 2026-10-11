@@ -2,6 +2,7 @@
 #define DSP_H
 #include <stddef.h>
 #include <stdint.h>
+#include "state.h"
 
 enum { MAX_PARAMS = 65536, MAX_INPUTS = 8 };
 enum { PLUGIN_PERONE, PLUGIN_CLAP, PLUGIN_LV2, PLUGIN_VST3, PLUGIN_FORMATS };
@@ -55,5 +56,6 @@ int process_dsp(DSP *dsp, const float **inputs, float **outputs, size_t frames, 
 int poll_dsp(DSP *dsp);
 uint32_t latency_dsp(DSP *dsp);
 int restart_dsp(DSP *dsp);
-int state_dsp(DSP *dsp, const char *path, int write);
+// Save replaces the buffer only on success. Load may modify a plugin even on failure.
+int state_dsp(DSP *dsp, State *state, int write);
 #endif

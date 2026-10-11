@@ -30,10 +30,10 @@ typedef struct {
 	void (*sync)(DSP *);                      // Audio role, also while the device is stopped.
 	void (*idle)(DSP *, const ProcessTime *); // Control thread, no concurrent rendering.
 	void (*message)(DSP *, size_t, const void *);
-	int (*poll)(DSP *);                     // Main thread. 1 requests a quiescent restart, -1 reports an error.
-	int (*restart)(DSP *);                  // Main thread, no concurrent audio calls.
-	uint32_t (*latency)(DSP *);             // Main thread, active.
-	int (*state)(DSP *, const char *, int); // Main thread, stopped; save if write != 0.
+	int (*poll)(DSP *);                // Main thread. 1 requests a quiescent restart, -1 reports an error.
+	int (*restart)(DSP *);             // Main thread, no concurrent audio calls.
+	uint32_t (*latency)(DSP *);        // Main thread, active.
+	int (*state)(DSP *, State *, int); // Main thread, stopped; save if write != 0.
 } DspOps;
 struct DSP {
 	const DspOps *ops;

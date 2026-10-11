@@ -7,6 +7,7 @@
 #include <lv2/time/time.h>
 #include <lv2/ui/ui.h>
 #include <lv2/worker/worker.h>
+#include <lv2/state/state.h>
 #include <X11/Xlib.h>
 #include <assert.h>
 #include <stdlib.h>
@@ -19,7 +20,7 @@ typedef struct {
 	LV2_URID_Map *map;
 	LV2_Worker_Schedule *worker;
 	LV2_URID sequence, midi, position, object, number, chunk;
-	float delay[2][7], rate;
+	float delay[2][7], rate, private_value;
 	int effect, held, active, requested, replied;
 	unsigned cursor, capacity;
 } Plugin;
@@ -54,6 +55,7 @@ static LV2_Handle instantiate(
 	p->chunk = p->map->map(p->map->handle, LV2_ATOM__Chunk);
 	p->effect = !strcmp(api->URI, BASE "effect");
 	p->rate = rate;
+	p->private_value = 1;
 	return p;
 }
 static void connect(LV2_Handle handle, uint32_t port, void *data) {
@@ -108,7 +110,8 @@ static void run(LV2_Handle handle, uint32_t frames) {
 	}
 	for (uint32_t i = 0; i < frames; ++i) {
 		for (int c = 0; c < 2; ++c) {
-			float value = (p->effect ? ((float *)p->ports[6 + c])[i] : !!p->held) * *(float *)p->ports[0];
+			float value =
+			    (p->effect ? ((float *)p->ports[6 + c])[i] : !!p->held) * *(float *)p->ports[0] * p->private_value;
 			if (lag) {
 				float delayed = p->delay[c][p->cursor];
 				p->delay[c][p->cursor] = value;
@@ -131,8 +134,49 @@ static LV2_Worker_Status response(LV2_Handle handle, uint32_t size, const void *
 	p->replied = 1;
 	return LV2_WORKER_SUCCESS;
 }
+static LV2_State_Status save(LV2_Handle handle, LV2_State_Store_Function store, LV2_State_Handle context,
+    uint32_t flags, const LV2_Feature *const *features) {
+	Plugin *p = handle;
+	assert(flags & LV2_STATE_IS_PORTABLE);
+	assert(feature(features, LV2_STATE__mapPath) && feature(features, LV2_STATE__freePath));
+	if (getenv("LV2_TEST_FAIL_SAVE"))
+		return LV2_STATE_ERR_UNKNOWN;
+	uint32_t key = p->map->map(p->map->handle, BASE "private"), flags_out = LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE;
+	// A host can reject a representation; the plugin may retry with a portable one.
+	assert(store(context, key, &p->private_value, sizeof(float), p->number, LV2_STATE_IS_NATIVE) ==
+	    LV2_STATE_ERR_BAD_FLAGS);
+	LV2_State_Status status = store(context, key, &p->private_value, sizeof(float), p->number, flags_out);
+	if (status)
+		return status;
+	uint32_t type = p->map->map(p->map->handle, LV2_ATOM__URID), uri = p->map->map(p->map->handle, BASE "value");
+	return store(context, p->map->map(p->map->handle, BASE "uri"), &uri, sizeof(uri), type, flags_out);
+}
+static LV2_State_Status restore(LV2_Handle handle, LV2_State_Retrieve_Function retrieve, LV2_State_Handle context,
+    uint32_t flags, const LV2_Feature *const *features) {
+	(void)flags;
+	(void)features;
+	Plugin *p = handle;
+	if (getenv("LV2_TEST_FAIL_LOAD"))
+		return LV2_STATE_ERR_UNKNOWN;
+	size_t size;
+	uint32_t type, property_flags;
+	const float *value = retrieve(context, p->map->map(p->map->handle, BASE "private"), &size, &type, &property_flags);
+	if (!value || size != sizeof(float) || type != p->number)
+		return LV2_STATE_ERR_BAD_TYPE;
+	p->private_value = *value;
+	const uint32_t *uri = retrieve(context, p->map->map(p->map->handle, BASE "uri"), &size, &type, &property_flags);
+	if (uri)
+		assert(size == sizeof(*uri) && type == p->map->map(p->map->handle, LV2_ATOM__URID) &&
+		    *uri == p->map->map(p->map->handle, BASE "value"));
+	assert(retrieve(context, p->map->map(p->map->handle, BASE "private"), NULL, NULL, NULL) == value);
+	assert(!retrieve(context, p->map->map(p->map->handle, BASE "missing"), NULL, NULL, NULL));
+	return LV2_STATE_SUCCESS;
+}
 static const void *extension(const char *uri) {
 	static const LV2_Worker_Interface worker = {work, response, NULL};
+	static const LV2_State_Interface state = {save, restore};
+	if (!strcmp(uri, LV2_STATE__interface))
+		return &state;
 	return !strcmp(uri, LV2_WORKER__interface) ? &worker : NULL;
 }
 static void cleanup(LV2_Handle handle) {

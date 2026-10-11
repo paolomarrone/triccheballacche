@@ -11,6 +11,7 @@
 
 typedef struct {
 	perone_callbacks callbacks;
+	perone_transport transport;
 	float gain, control, rate, gate, state, *memory;
 	int initialized;
 	unsigned char message[16];
@@ -119,7 +120,10 @@ static void process(void *p, const float **in, float **out, size_t n) {
 		out[0][k] = (in[0][k] - i->state) * i->gain;
 #else
 		assert(!in);
-		out[0][k] = i->gain * i->gate * (i->control == 3 ? i->rate / 44100 : 1);
+		out[0][k] = i->gain * i->gate *
+		    (i->control == 3          ? i->rate / 44100
+		            : i->control == 2 ? i->transport.bpm / 120 + i->transport.quarter + i->transport.playing
+		                              : 1);
 		out[1][k] = -out[0][k];
 #endif
 	}
@@ -140,6 +144,37 @@ static void midi(void *p, size_t bus, const uint8_t *data) {
 }
 #endif
 
+static void transport(void *p, const perone_transport *value) {
+	assert(value->valid == (PERONE_TRANSPORT_PLAYING | PERONE_TRANSPORT_BPM | PERONE_TRANSPORT_QUARTER));
+	((Instance *)p)->transport = *value;
+}
+#ifndef PERONE_TEST_EFFECT
+static int save(void *p, const perone_state_callbacks *cb, float sample_rate) {
+	Instance *i = p;
+	assert(sample_rate == i->rate);
+	cb->lock(cb->handle);
+	float values[] = {i->gain, i->control};
+	cb->unlock(cb->handle);
+	if (fails("state"))
+		return -1;
+	// Multiple writes exercise the host's append contract.
+	return cb->write(cb->handle, (const char *)values, sizeof(float)) ||
+	    cb->write(cb->handle, (const char *)(values + 1), sizeof(float));
+}
+static int load(const perone_state_callbacks *cb, float sample_rate, const char *data, size_t size) {
+	assert(sample_rate > 0);
+	if (size != 2 * sizeof(float))
+		return -1;
+	float values[2];
+	memcpy(values, data, sizeof(values));
+	cb->lock(cb->handle);
+	cb->set_parameter(cb->handle, 1, values[0]);
+	cb->set_parameter(cb->handle, 2, values[1]);
+	cb->unlock(cb->handle);
+	return 0;
+}
+#endif
+
 __attribute__((visibility("default"))) const perone_api *perone_get_api(uint32_t version) {
 	static const perone_api api = {
 	    .alloc = allocate,
@@ -154,8 +189,11 @@ __attribute__((visibility("default"))) const perone_api *perone_get_api(uint32_t
 	    .set_parameter = set,
 	    .get_parameter = get,
 	    .msg_in = message,
+	    .set_transport = transport,
 #ifndef PERONE_TEST_EFFECT
 	    .midi_msg_in = midi,
+	    .state_save = save,
+	    .state_load = load,
 #endif
 	};
 	static const perone_api missing = {0};

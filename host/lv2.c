@@ -235,6 +235,7 @@ static void close_instance(DSP *dsp) {
 	free(l);
 }
 static const DspOps ops = {.close = close_instance,
+    .state = lv2_state,
     .set = set,
     .reset = reset,
     .midi = midi,
