@@ -19,6 +19,11 @@ int lv2_is(LilvWorld *world, const LilvNode *subject, const char *predicate, con
 	lilv_node_free(o);
 	return result;
 }
+int lv2_default_state(Lv2Description *d) {
+	const LilvNode *uri = lilv_plugin_get_uri(d->plugin);
+	return lv2_is(d->world, uri, LV2_CORE__requiredFeature, LV2_STATE__loadDefaultState) ||
+	    lv2_is(d->world, uri, LV2_CORE__optionalFeature, LV2_STATE__loadDefaultState);
+}
 LilvWorld *lv2_world_open(const char *path) {
 	LilvWorld *world = lilv_world_new();
 	if (!world)
@@ -238,6 +243,7 @@ int lv2_metadata(Lv2Description *d, Json *j, const char *path) {
 		json_print(j, ",\"ui\":{\"userResizable\":%s}", lv2_ui_fixed(d, ui) ? "false" : "true");
 	lilv_uis_free(uis);
 	json_print(j, ",\"parameters\":[");
+	int defaults = lv2_default_state(d);
 	int n = 0;
 	for (uint32_t i = 0; i < d->count; ++i) {
 		Lv2Port *p = d->ports + i;
@@ -249,15 +255,24 @@ int lv2_metadata(Lv2Description *d, Json *j, const char *path) {
 		lilv_port_get_range(d->plugin, port, &def, &min, &max);
 		double low = number(min, 0), high = number(max, i == (uint32_t)d->latency ? 3840000 : 1);
 		double value = number(def, fmax(low, fmin(high, 0)));
+		LilvNode *initial = defaults && p->input ? lv2_get(d->world, node, LV2_PRESETS__value) : NULL;
+		int has_initial = initial != NULL;
+		double start = number(initial, NAN);
+		lilv_node_free(initial);
 		lilv_node_free(def);
 		lilv_node_free(min);
 		lilv_node_free(max);
 		if (!isfinite(low) || !isfinite(high) || !isfinite(value) || low > high || value < low || value > high ||
-		    fabs(low) > FLT_MAX || fabs(high) > FLT_MAX)
+		    fabs(low) > FLT_MAX || fabs(high) > FLT_MAX ||
+		    (has_initial &&
+		        (!isfinite(start) || fabs(start) > FLT_MAX || (!p->scaled && (start < low || start > high)))))
 			return -1;
 		name = lilv_port_get_name(d->plugin, port);
 		json_print(j, "%s{\"id\":", n++ ? "," : "");
 		json_string(j, lilv_node_as_string(lilv_port_get_symbol(d->plugin, port)));
+		// State port values are absolute; only range/default metadata uses sample-rate scaling.
+		if (has_initial)
+			json_print(j, ",\"initialValue\":%.17g", start);
 		json_print(j, ",\"nativeId\":%u,\"sampleRate\":%s,\"automatable\":%s,\"name\":", i,
 		    p->scaled ? "true" : "false",
 		    p->freewheel || lv2_is(d->world, node, LV2_CORE__portProperty, LV2_PORT_PROPS__notAutomatic) ? "false"

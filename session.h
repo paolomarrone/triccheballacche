@@ -41,7 +41,7 @@ typedef struct {
 	uint64_t (*held)[128]; // Note-off obligations survive a musical revision.
 	uint64_t next_off;
 	const char *error;
-	int offline; // Non-realtime rendering may perform plugin worker jobs synchronously.
+	int offline; // Changed by session_offline(), with audio stopped.
 } Session;
 
 // The control thread may borrow this until collect/free; audio owns the active cursor.
@@ -68,6 +68,8 @@ void session_sync(Session *s); // Audio stopped; apply controls and service plug
 // Main thread: 1 requests a restart with audio stopped; -1 indicates a plugin error.
 int session_poll(Session *s);
 int session_restart(Session *s);
+// Audio stopped. Changing mode may reset DSP history; latency compensation is rebuilt.
+int session_offline(Session *s, int offline);
 // Audio stopped. Presets apply to both instances of a duplicated mono effect.
 int session_state(Session *s, int node, State *state, int write);
 void session_free(Session *s);

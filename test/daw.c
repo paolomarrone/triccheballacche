@@ -520,6 +520,7 @@ static void failed_exports(size_t frames, int overflow) {
 				Session s = {0};
 				export_session(&s, frames, overflow);
 				assert(write_score(&s, &(Output){pcm16, normalize ? .94f : 0}, path) < 0 && s.error);
+				assert(!s.offline);
 				if (overflow)
 					assert(!strcmp(s.error, "non-finite audio"));
 				if (frames == 2)
@@ -599,6 +600,7 @@ static void test_wav(float value, float gain, Output cfg, float expected) {
 	assert(!score_set(&description, tr, 0, gain) && !score_set(&description, tr, 1, -1));
 	output_tracks(&description);
 	assert(!start_score(&s, &description, 1025) && !write_score(&s, &cfg, "build/test/export-test.wav"));
+	assert(!s.offline);
 	FILE *f = fopen("build/test/export-test.wav", "rb");
 	unsigned char header[44];
 	assert(f && fread(header, 1, sizeof(header), f) == sizeof(header));

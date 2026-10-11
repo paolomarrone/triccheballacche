@@ -200,6 +200,27 @@ static void reload_test(Session *s) {
 	assert(restart_dsp(dsp) == -1 && poll_dsp(dsp) == -1);
 	assert(state_dsp(dsp, &state, 1) == -1 && poll_dsp(dsp) == -1);
 }
+static void render_mode_test(void) {
+	Session s = {0};
+	Output output;
+	assert(!load_score(&s, &output, "test/vst3/score.janet"));
+	Vst *synth = s.nodes[0].dsp[0].dsp->instance, *effect = s.nodes[1].dsp[0].dsp->instance;
+	assert(!setenv("VST3_TEST_FAIL_OFFLINE", "1", 1));
+	assert(session_offline(&s, 1) == -1 && !s.offline);
+	assert(!unsetenv("VST3_TEST_FAIL_OFFLINE") && !session_poll(&s));
+	assert(synth->mode == Steinberg_Vst_ProcessModes_kRealtime && effect->mode == synth->mode);
+	for (int i = 0; i < 4; ++i) {
+		int offline = !(i % 2);
+		assert(!session_seek(&s, llround(.02 * s.sample_rate)));
+		assert(!session_offline(&s, offline) && !session_poll(&s));
+		assert(synth->mode == (offline ? Steinberg_Vst_ProcessModes_kOffline : Steinberg_Vst_ProcessModes_kRealtime));
+		assert(effect->mode == synth->mode);
+		float audio[6];
+		assert(!session_render(&s, audio, 3) && audio[0] == .25);
+	}
+	session_free(&s);
+	puts("OK: VST3 bus arrangements, inactive auxiliary buses, realtime/offline setup and rollback");
+}
 int main(int argc, char **argv) {
 	int ui = argc > 1 && !strcmp(argv[1], "--ui");
 	char *json = scan_plugins("build/test/fixture.vst3");
@@ -213,7 +234,7 @@ int main(int argc, char **argv) {
 		Session s = {.modules = &modules, .sample_rate = offline ? 48000 : 44100};
 		Output output;
 		assert(!load_score(&s, &output, "test/vst3/score.janet"));
-		s.offline = offline;
+		assert(!session_offline(&s, offline));
 		const PluginConfig *c = &session_score(&s)->nodes[0].config;
 		assert(c->format == PLUGIN_VST3 && c->nparams == 4 && c->parameters[0].id == 987654321);
 		assert(c->parameters[1].maximum == 3 && (c->parameters[1].flags & PARAM_INTEGER));
@@ -261,6 +282,7 @@ int main(int argc, char **argv) {
 	}
 	modules_free(&modules);
 	latency_test();
+	render_mode_test();
 	if (ui) {
 		Session s = {0};
 		Output output;

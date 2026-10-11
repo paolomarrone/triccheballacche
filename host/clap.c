@@ -188,6 +188,7 @@ int clap_create(Clap *c, Module *module, const char *id) {
 	c->notes = p->get_extension(p, CLAP_EXT_NOTE_PORTS);
 	c->state = p->get_extension(p, CLAP_EXT_STATE);
 	c->latency = p->get_extension(p, CLAP_EXT_LATENCY);
+	c->render = p->get_extension(p, CLAP_EXT_RENDER);
 	c->gui = p->get_extension(p, CLAP_EXT_GUI);
 	c->timer = p->get_extension(p, CLAP_EXT_TIMER_SUPPORT);
 	return clap_parameters(c);
@@ -473,7 +474,7 @@ static int restart(DSP *dsp) {
 	}
 	return 0;
 }
-static int flush_state_controls(DSP *dsp) {
+static int flush_inactive_controls(DSP *dsp) {
 	Clap *c = dsp->instance;
 	if (!c->params || !c->count)
 		return 0;
@@ -492,7 +493,28 @@ static int flush_state_controls(DSP *dsp) {
 	memcpy(c->events, notes, count * sizeof(*notes));
 	c->count = count;
 	free(notes);
-	return 0;
+	return atomic_load(&c->requests) & CLAP_HOST_ERROR ? -1 : 0;
+}
+static int offline(DSP *dsp, int enabled) {
+	Clap *c = dsp->instance;
+	if (atomic_load(&c->requests) & CLAP_HOST_ERROR)
+		return -1;
+	if (!c->render || c->offline == enabled)
+		return 0;
+	if (enabled && c->render->has_hard_realtime_requirement(c->plugin))
+		return -1;
+	flush_controls(dsp);
+	suspend(c);
+	int ok = !compatible(c) && !flush_inactive_controls(dsp) &&
+	    c->render->set(c->plugin, enabled ? CLAP_RENDER_OFFLINE : CLAP_RENDER_REALTIME);
+	if (ok)
+		c->offline = enabled;
+	atomic_fetch_and(&c->requests, ~CLAP_HOST_RESTART);
+	if (compatible(c) || activate(c)) {
+		atomic_fetch_or(&c->requests, CLAP_HOST_ERROR);
+		return -1;
+	}
+	return ok && !(atomic_load(&c->requests) & CLAP_HOST_ERROR) ? 0 : -1;
 }
 static int64_t stream_write(const clap_ostream_t *stream, const void *data, uint64_t size) {
 	return size > STATE_LIMIT || state_write(stream->ctx, data, size) ? -1 : (int64_t)size;
@@ -506,7 +528,7 @@ static int state(DSP *dsp, State *buffer, int write) {
 		return STATE_UNSUPPORTED;
 	flush_controls(dsp);
 	suspend(c);
-	int flushed = !compatible(c) && !flush_state_controls(dsp);
+	int flushed = !compatible(c) && !flush_inactive_controls(dsp);
 	clap_ostream_t out = {.ctx = buffer, .write = stream_write};
 	clap_istream_t in = {.ctx = buffer, .read = stream_read};
 	int ok = flushed && (write ? c->state->save(c->plugin, &out) : c->state->load(c->plugin, &in));
@@ -533,6 +555,7 @@ static const DspOps ops = {.close = close_instance,
     .sync = flush_controls,
     .poll = poll_instance,
     .restart = restart,
+    .offline = offline,
     .state = state,
     .latency = latency};
 int clap_open(DSP *dsp, unsigned rate, size_t capacity) {

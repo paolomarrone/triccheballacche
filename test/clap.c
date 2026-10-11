@@ -106,6 +106,41 @@ static void latency_test(void) {
 	session_free(&s);
 	puts("OK: parallel-path latency compensation, activation notifications and quiescent restart");
 }
+static void render_mode_test(void) {
+	Session s = {0};
+	Output output;
+	assert(!load_score(&s, &output, "test/clap/latency.janet"));
+	Clap *synth = s.nodes[0].dsp[0].dsp->instance, *effect = s.nodes[1].dsp[0].dsp->instance;
+	const char *errors[] = {"CLAP_TEST_HARD_REALTIME", "CLAP_TEST_FAIL_OFFLINE"};
+	for (size_t i = 0; i < sizeof(errors) / sizeof(*errors); ++i) {
+		assert(!setenv(errors[i], "1", 1));
+		assert(session_offline(&s, 1) == -1 && !s.offline && !synth->offline && !effect->offline);
+		assert(!unsetenv(errors[i]) && !session_poll(&s));
+	}
+	float audio[32];
+	for (int i = 0; i < 4; ++i) {
+		int offline = !(i % 2);
+		assert(!session_seek(&s, llround(.02 * s.sample_rate)));
+		edit_dsp(s.nodes[1].dsp[0].dsp, 129, 0);
+		session_sync(&s);
+		assert(!session_restart(&s));
+		edit_dsp(s.nodes[0].dsp[0].dsp, 127, .25);
+		assert(!session_offline(&s, offline) && !session_poll(&s));
+		double value;
+		assert(synth->params->get_value(synth->plugin, synth->info[127].id, &value) && value == .25);
+		assert(s.offline == offline && synth->offline == offline && effect->offline == offline);
+		assert(latency_dsp(s.nodes[1].dsp[0].dsp) == (offline ? 7 : 0));
+		assert(s.nodes[2].inputs[0].length == (offline ? 14 : 0));
+		State state = {0};
+		assert(!session_state(&s, 1, &state, 1) && !session_state(&s, 1, &state, 0));
+		state_free(&state);
+		assert(!session_render(&s, audio, 16));
+		for (int j = 0; j < 16; ++j)
+			assert(audio[j * 2] == (offline && j < 7 ? 0 : 1.25));
+	}
+	session_free(&s);
+	puts("OK: CLAP render modes, offline latency compensation, rejection and rollback");
+}
 static void pending_state_test(void) {
 	Session s = {0};
 	Output output;
@@ -268,6 +303,7 @@ int main(int argc, char **argv) {
 	if (ui)
 		puts("OK: CLAP native X11 UI, timers, edits in both directions and repeated window lifetime");
 	latency_test();
+	render_mode_test();
 	parameter_test();
 	pending_state_test();
 	return 0;

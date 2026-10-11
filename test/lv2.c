@@ -93,7 +93,8 @@ static void latency_test(void) {
 	Output output;
 	assert(!load_score(&s, &output, "test/lv2/latency.janet"));
 	assert(!session_poll(&s) && latency_dsp(s.nodes[1].dsp[0].dsp) == 7);
-	s.offline = 1;
+	assert(!session_offline(&s, 1));
+	assert(!session_poll(&s) && latency_dsp(s.nodes[1].dsp[0].dsp) == 3 && s.nodes[2].inputs[0].length == 6);
 	float audio[74];
 	while (s.time < s.frames) {
 		uint64_t start = s.time;
@@ -102,11 +103,13 @@ static void latency_test(void) {
 		for (size_t i = 0; i < n; ++i) {
 			uint64_t t = start + i;
 			float expected =
-			    t >= (uint64_t)llround(.01 * s.sample_rate) + 7 && t < (uint64_t)llround(.11 * s.sample_rate) + 7 ? 1
+			    t >= (uint64_t)llround(.01 * s.sample_rate) + 3 && t < (uint64_t)llround(.11 * s.sample_rate) + 3 ? 1
 			                                                                                                      : 0;
 			assert(audio[i * 2] == expected && audio[i * 2 + 1] == expected);
 		}
 	}
+	assert(!session_offline(&s, 0));
+	assert(!session_poll(&s) && latency_dsp(s.nodes[1].dsp[0].dsp) == 7 && s.nodes[2].inputs[0].length == 14);
 	session_free(&s);
 }
 static void messages_test(Session *s) {
@@ -192,6 +195,7 @@ static void discovery_test(void) {
 	assert(strstr(json, "Port 0 requires 2097152 bytes (limit 1048576)"));
 	assert(strstr(json, "Port 0 has an invalid minimum buffer size"));
 	assert(strstr(json, "\"ui-error\":"));
+	assert(strstr(json, "\"id\":\"gain\",\"initialValue\":0.75"));
 	free(json);
 	Score score = {0};
 	Output output;
@@ -202,6 +206,34 @@ static void discovery_test(void) {
 	assert(error && strstr(error, "MIDI output routing is not supported"));
 	free(error);
 	score_free(&score);
+}
+static void defaults_test(void) {
+	const char *source =
+	    "(def s (daw/plugin {:format :lv2 :path \"build/test/fixture.lv2\" :id \"urn:triccheballacche:test:lv2:synth\"}))"
+	    "(daw/output s) (daw/note s 0 0.1 60 100) (daw/end 0.2)";
+	for (int offline = 0; offline < 2; ++offline) {
+		Score score = {.sample_rate = offline ? 48000 : 44100};
+		Session s = {0};
+		Output output;
+		assert(!prepare_score(&score, &output, "test/lv2/score.janet", source, NULL, NULL));
+		assert(!session_activate(&s, &score) && !session_offline(&s, offline));
+		DSP *dsp = s.nodes[0].dsp[0].dsp;
+		Lv2 *l = dsp->instance;
+		double value;
+		assert(read_dsp(dsp, 0, &value) && value == .75);
+		assert(read_dsp(dsp, 4, &value) && value == 10000); // State values are not rate-scaled bounds.
+		lv2_worker_begin(l, offline);
+		uint32_t request = 256;
+		assert(!lv2_schedule(l, sizeof(request), &request));
+		lv2_worker_wait(l); // Responses schedule more work, beyond a single queue-sized drain.
+		assert(l->description.ports[11].value == 1 && !lv2_worker_pending(l));
+		edit_dsp(dsp, 0, .125);
+		session_sync(&s);
+		float audio[2];
+		assert(!session_seek(&s, 0) && !session_render(&s, audio, 1) && audio[0] == .75);
+		session_free(&s);
+	}
+	puts("OK: LV2 initial state, explicit score values, sample-rate bounds and recursive worker drain");
 }
 static const void *seed(LV2_State_Handle handle, uint32_t key, size_t *size, uint32_t *type, uint32_t *flags) {
 	Lv2 *l = handle;
@@ -224,8 +256,11 @@ static void state_test(void) {
 	Lv2 *l = dsp->instance;
 	const LV2_State_Interface *api = lilv_instance_get_extension_data(l->instance, LV2_STATE__interface);
 	State state = {0};
+	float first[2];
+	assert(!session_render(&s, first, 1)); // Queues a chain of asynchronous worker jobs.
 	edit_dsp(dsp, 0, .625);
 	assert(!session_state(&s, 0, &state, 1));
+	assert(l->description.ports[11].value == 1 && !lv2_worker_pending(l));
 
 	assert(!api->restore(lilv_instance_get_handle(l->instance), seed, l, 0, l->feature_ptrs));
 	edit_dsp(dsp, 0, .125);
@@ -251,12 +286,21 @@ static void state_test(void) {
 	assert(!load_score(&s, &output, "test/lv2/score.janet"));
 	assert(!session_state(&s, 0, &state, 0));
 	assert(!session_render(&s, audio, 3)); // Fixture checks the rate-scaled control.
+	dsp = s.nodes[0].dsp[0].dsp;
+	l = dsp->instance;
+	lv2_worker_begin(l, 1);
+	assert(!setenv("LV2_TEST_FAIL_WORK", "1", 1));
+	uint32_t request = 1;
+	assert(!lv2_schedule(l, sizeof(request), &request));
+	assert(!unsetenv("LV2_TEST_FAIL_WORK"));
+	assert(state_dsp(dsp, &state, 1) == -1); // A worker failure must not produce a successful snapshot.
 	state_free(&state);
 	session_free(&s);
 	puts("OK: LV2 ports, opaque properties, portable URIDs, sample rates, failed saves/loads and malformed presets");
 }
 
 int main(int argc, char **argv) {
+	defaults_test();
 	state_test();
 	int ui = argc > 1 && !strcmp(argv[1], "--ui");
 	discovery_test();
@@ -266,9 +310,9 @@ int main(int argc, char **argv) {
 		Session s = {.modules = &modules, .sample_rate = offline ? 48000 : 44100};
 		Output output;
 		assert(!load_score(&s, &output, "test/lv2/score.janet"));
-		s.offline = offline;
+		assert(!session_offline(&s, offline));
 		const PluginConfig *config = &session_score(&s)->nodes[0].config;
-		assert(config->format == PLUGIN_LV2 && config->nparams == 6 && config->parameters[4].id == 10);
+		assert(config->format == PLUGIN_LV2 && config->nparams == 7 && config->parameters[4].id == 10);
 		DSP *synth = s.nodes[0].dsp[0].dsp;
 		Module *alias = module_open(&modules, "./build/test/../test/fixture.lv2", PLUGIN_LV2);
 		assert(alias == synth->module && alias == s.nodes[1].dsp[0].dsp->module);

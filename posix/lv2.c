@@ -168,7 +168,12 @@ void lv2_worker_wait(Lv2 *l) {
 	while (atomic_load(&w->pending))
 		pthread_cond_wait(&w->done, &w->mutex);
 	pthread_mutex_unlock(&w->mutex);
-	emit(l);
+	// Responses may schedule more work. Drain that work here, with no worker in flight.
+	int synchronous = w->synchronous;
+	w->synchronous = 1;
+	while (lv2_worker_pending(l))
+		emit(l);
+	w->synchronous = synchronous;
 }
 void lv2_worker_close(Lv2 *l) {
 	Lv2Worker *w = &l->runtime->worker;
@@ -186,7 +191,7 @@ void lv2_worker_close(Lv2 *l) {
 }
 void lv2_worker_begin(Lv2 *l, int offline) {
 	Lv2Worker *w = &l->runtime->worker;
-	if (offline && !w->synchronous)
+	if (offline)
 		lv2_worker_wait(l);
 	w->synchronous = offline;
 	emit(l);

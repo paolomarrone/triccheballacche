@@ -171,14 +171,14 @@ static void read_outputs(Lv2 *l) {
 }
 static int process(DSP *dsp, const float **inputs, float **outputs, size_t frames, const ProcessTime *time) {
 	Lv2 *l = dsp->instance;
-	int offline = time && time->offline;
-	lv2_worker_begin(l, offline);
+	// Zero-frame calls initialize the plugin or service stopped controls on the main thread.
+	lv2_worker_begin(l, !frames || l->offline);
 	position(l, time);
 	ui_events(l);
 	for (uint32_t i = 0; i < l->description.count; ++i) {
 		Lv2Port *p = l->description.ports + i;
 		if (p->freewheel)
-			p->value = offline;
+			p->value = l->offline;
 		if (p->type != LV2_PORT_AUDIO)
 			continue;
 		float *data = p->input ? (inputs && inputs[p->channel] ? (float *)inputs[p->channel] : l->scratch)
@@ -212,6 +212,17 @@ static int restart(DSP *dsp) {
 	l->applied_latency = atomic_load(&l->latency);
 	return 0;
 }
+static int offline(DSP *dsp, int enabled) {
+	Lv2 *l = dsp->instance;
+	if (atomic_load(&l->error))
+		return -1;
+	if (l->offline == enabled)
+		return 0;
+	l->offline = enabled;
+	if (process(dsp, NULL, NULL, 0, NULL))
+		return -1;
+	return restart(dsp);
+}
 static uint32_t latency(DSP *dsp) {
 	return atomic_load(&((Lv2 *)dsp->instance)->latency);
 }
@@ -243,6 +254,7 @@ static const DspOps ops = {.close = close_instance,
     .idle = idle,
     .poll = poll_instance,
     .restart = restart,
+    .offline = offline,
     .latency = latency};
 int lv2_open(DSP *dsp, unsigned rate, size_t capacity) {
 	Lv2 *l = calloc(1, sizeof(*l));
@@ -356,16 +368,16 @@ int lv2_open(DSP *dsp, unsigned rate, size_t capacity) {
 		}
 		lilv_instance_connect_port(l->instance, i, data);
 	}
-	if (lv2_is(d->world, lilv_plugin_get_uri(d->plugin), LV2_CORE__requiredFeature, LV2_STATE__loadDefaultState) ||
-	    lv2_is(d->world, lilv_plugin_get_uri(d->plugin), LV2_CORE__optionalFeature, LV2_STATE__loadDefaultState)) {
+	if (lv2_default_state(d)) {
 		LilvState *state = lilv_state_new_from_world(d->world, &l->map, lilv_plugin_get_uri(d->plugin));
 		if (!state)
 			return -1;
+		// Port values already include the default state and the score's explicit overrides.
 		lilv_state_restore(state, l->instance, NULL, NULL, LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE, l->feature_ptrs);
 		lilv_state_free(state);
 	}
 	reset(dsp);
-	if (process(dsp, NULL, NULL, 0, &(ProcessTime){.offline = 1}))
+	if (process(dsp, NULL, NULL, 0, NULL))
 		return -1;
 	restart(dsp);
 	return 0;

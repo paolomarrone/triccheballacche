@@ -21,7 +21,7 @@ typedef struct {
 	const clap_host_timer_support_t *host_timer;
 	_Atomic double values[PARAMETERS];
 	atomic_int edited;
-	int effect, active, processing, held;
+	int effect, active, processing, held, offline;
 	unsigned limit, latency, position, generation;
 	float delay[2][7];
 	Display *display;
@@ -65,7 +65,7 @@ static bool activate(const clap_plugin_t *plugin, double rate, uint32_t min, uin
 	assert(!p->active && rate > 0 && min == 1 && max > 0);
 	p->active = 1;
 	p->limit = max;
-	p->latency = p->effect && p->values[129] >= .5 ? 7 : 0;
+	p->latency = p->effect && (p->offline || p->values[129] >= .5) ? 7 : 0;
 	const clap_host_latency_t *latency = p->host->get_extension(p->host, CLAP_EXT_LATENCY);
 	assert(latency);
 	latency->changed(p->host);
@@ -357,12 +357,27 @@ static uint32_t latency(const clap_plugin_t *plugin) {
 	assert(self(plugin)->active);
 	return self(plugin)->latency;
 }
+static bool hard_realtime(const clap_plugin_t *plugin) {
+	main_thread(self(plugin));
+	return self(plugin)->effect && getenv("CLAP_TEST_HARD_REALTIME");
+}
+static bool render_mode(const clap_plugin_t *plugin, clap_plugin_render_mode mode) {
+	Plugin *p = self(plugin);
+	main_thread(p);
+	assert(!p->active && !p->processing);
+	assert(mode == CLAP_RENDER_REALTIME || mode == CLAP_RENDER_OFFLINE);
+	if (p->effect && mode == CLAP_RENDER_OFFLINE && getenv("CLAP_TEST_FAIL_OFFLINE"))
+		return false;
+	p->offline = mode == CLAP_RENDER_OFFLINE;
+	return true;
+}
 static const void *extension(const clap_plugin_t *plugin, const char *id) {
 	(void)plugin;
 	static const clap_plugin_params_t params = {param_count, param_info, get_value, value_text, text_value, flush};
 	static const clap_plugin_audio_ports_t audio = {audio_count, audio_info};
 	static const clap_plugin_note_ports_t notes = {note_count, note_info};
 	static const clap_plugin_latency_t lag = {latency};
+	static const clap_plugin_render_t render = {hard_realtime, render_mode};
 	static const clap_plugin_state_t state = {save, load};
 	static const clap_plugin_gui_t gui = {.is_api_supported = gui_supported,
 	    .create = gui_create,
@@ -381,6 +396,8 @@ static const void *extension(const clap_plugin_t *plugin, const char *id) {
 		return &notes;
 	if (!strcmp(id, CLAP_EXT_LATENCY))
 		return &lag;
+	if (!strcmp(id, CLAP_EXT_RENDER))
+		return &render;
 	if (!strcmp(id, CLAP_EXT_STATE))
 		return &state;
 	if (!strcmp(id, CLAP_EXT_GUI))

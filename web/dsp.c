@@ -103,6 +103,11 @@ int restart_dsp(DSP *dsp) {
 	(void)dsp;
 	return 0;
 }
+int offline_dsp(DSP *dsp, int offline) {
+	(void)dsp;
+	(void)offline;
+	return 0;
+}
 // clang-format off
 EM_JS(int, wasm_state, (DSP *id, unsigned char **data, size_t *size, int write), {
 	try {

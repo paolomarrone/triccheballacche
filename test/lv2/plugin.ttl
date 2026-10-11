@@ -10,18 +10,23 @@
 @prefix time: <http://lv2plug.in/ns/ext/time#> .
 @prefix rsz: <http://lv2plug.in/ns/ext/resize-port#> .
 @prefix test: <urn:triccheballacche:test:lv2:> .
+@prefix state: <http://lv2plug.in/ns/ext/state#> .
+@prefix pset: <http://lv2plug.in/ns/ext/presets#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 test:synth a lv2:InstrumentPlugin ; doap:name "LV2 test synth" ;
+    lv2:optionalFeature state:loadDefaultState ;
+    state:state [ test:private "1.0"^^xsd:float ] ;
     lv2:requiredFeature urid:map, opts:options, bufs:boundedBlockLength, work:schedule ;
     opts:requiredOption bufs:maxBlockLength, bufs:sequenceSize ;
     lv2:extensionData work:interface ; ui:ui test:ui ;
     lv2:port test:gain, test:meter, test:events, test:notify, test:left, test:right,
-        test:inleft, test:inright, test:latency, test:lag, test:scaled, test:worked .
+        test:inleft, test:inright, test:latency, test:lag, test:scaled, test:worked, test:freewheel .
 test:effect a lv2:AmplifierPlugin ; doap:name "LV2 test effect" ;
     lv2:requiredFeature urid:map, opts:options, bufs:boundedBlockLength, work:schedule ;
     lv2:extensionData work:interface ; ui:ui test:ui ;
     lv2:port test:gain, test:meter, test:events, test:notify, test:left, test:right,
-        test:inleft, test:inright, test:latency, test:lag, test:scaled, test:worked .
+        test:inleft, test:inright, test:latency, test:lag, test:scaled, test:worked, test:freewheel .
 test:unsupported a lv2:Plugin ; doap:name "Unsupported feature" ;
     lv2:requiredFeature <urn:unsupported:feature> ; lv2:port test:left .
 test:unsupported-options a lv2:Plugin ; doap:name "Unsupported option" ;
@@ -42,10 +47,10 @@ test:gtk a lv2:Plugin ; doap:name "LV2 GTK synth" ; ui:ui test:gtk-ui ;
     lv2:requiredFeature urid:map, opts:options, bufs:boundedBlockLength, work:schedule ;
     lv2:extensionData work:interface ;
     lv2:port test:gain, test:meter, test:events, test:notify, test:left, test:right,
-        test:inleft, test:inright, test:latency, test:lag, test:scaled, test:worked .
+        test:inleft, test:inright, test:latency, test:lag, test:scaled, test:worked, test:freewheel .
 
 test:gain a lv2:InputPort, lv2:ControlPort ; lv2:index 0 ; lv2:symbol "gain" ; lv2:name "Gain" ;
-    lv2:minimum 0 ; lv2:maximum 1 ; lv2:default 0.25 .
+    lv2:minimum 0 ; lv2:maximum 1 ; lv2:default 0.25 ; pset:value 0.75 .
 test:meter a lv2:OutputPort, lv2:ControlPort ; lv2:index 1 ; lv2:symbol "meter" ; lv2:name "Meter" ;
     lv2:minimum 0 ; lv2:maximum 1 .
 test:events a lv2:InputPort, atom:AtomPort ; lv2:index 2 ; lv2:symbol "events" ; lv2:name "Events" ;
@@ -61,9 +66,11 @@ test:latency a lv2:OutputPort, lv2:ControlPort ; lv2:index 8 ; lv2:symbol "laten
 test:lag a lv2:InputPort, lv2:ControlPort ; lv2:index 9 ; lv2:symbol "lag" ; lv2:name "Delay" ;
     lv2:minimum 0 ; lv2:maximum 1 ; lv2:default 0 ; lv2:portProperty lv2:toggled .
 test:scaled a lv2:InputPort, lv2:ControlPort ; lv2:index 10 ; lv2:symbol "scaled" ; lv2:name "Scaled" ;
-    lv2:minimum 0 ; lv2:maximum 0.5 ; lv2:default 0.25 ; lv2:portProperty lv2:sampleRate .
+    lv2:minimum 0 ; lv2:maximum 0.5 ; lv2:default 0.25 ; pset:value 10000 ; lv2:portProperty lv2:sampleRate .
 test:worked a lv2:OutputPort, lv2:ControlPort ; lv2:index 11 ; lv2:symbol "worked" ; lv2:name "Worker replies" ;
     lv2:minimum 0 ; lv2:maximum 1 .
+test:freewheel a lv2:InputPort, lv2:ControlPort ; lv2:index 12 ; lv2:symbol "freewheel" ; lv2:name "Freewheel" ;
+    lv2:designation lv2:freeWheeling ; lv2:minimum 0 ; lv2:maximum 1 ; lv2:default 0 ; lv2:portProperty lv2:toggled .
 test:ui lv2:requiredFeature ui:parent, ui:idleInterface, urid:map, ui:resize ;
     opts:requiredOption ui:scaleFactor ;
     lv2:extensionData ui:idleInterface, ui:resize .

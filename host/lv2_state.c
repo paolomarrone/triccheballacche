@@ -177,7 +177,9 @@ int lv2_state(DSP *dsp, State *buffer, int write) {
 	features[n++] = &map;
 	features[n++] = &release;
 	features[n] = NULL;
-	lv2_worker_wait(l);
+	lv2_worker_begin(l, 1);
+	if (atomic_load(&l->error))
+		goto done;
 	// State callbacks require the instantiation thread and no concurrent run/worker calls.
 	LV2_Handle instance = lilv_instance_get_handle(l->instance);
 	uint32_t flags = LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE;
@@ -185,7 +187,7 @@ int lv2_state(DSP *dsp, State *buffer, int write) {
 	                         : api->restore(instance, retrieve, &s, flags, features))
 	                : 0;
 	lv2_worker_wait(l);
-	if (error || buffer->failed)
+	if (error || buffer->failed || atomic_load(&l->error))
 		goto done;
 	if (write) {
 		size_t end = buffer->position;

@@ -45,7 +45,10 @@ int write_score(Session *s, const Output *cfg, const char *path) {
 		return -1;
 	}
 	int offline = s->offline;
-	s->offline = 1;
+	if (session_offline(s, 1)) {
+		free(temporary);
+		return -1;
+	}
 	sprintf(temporary, "%s.XXXXXX", path);
 	int result = -1, fd = mkstemp(temporary);
 	FILE *spool = NULL;
@@ -108,6 +111,8 @@ done:
 		result = -1;
 	if (wav.failed)
 		result = -1;
+	if (session_offline(s, offline))
+		result = -1;
 	if (!result && rename(temporary, path))
 		result = -1;
 	if (result) {
@@ -117,6 +122,5 @@ done:
 			s->error = "cannot write WAV";
 	}
 	free(temporary);
-	s->offline = offline;
 	return result;
 }

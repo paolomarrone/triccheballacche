@@ -96,6 +96,7 @@ typedef struct Vst {
 	float **input_channels, **output_channels, *silence, *scratch;
 	int ninputs, noutputs, input_slots, output_slots, midi;
 	unsigned rate, block;
+	int mode;
 	Steinberg_TUID cid;
 } Vst;
 
@@ -105,6 +106,7 @@ void vst_update_controller(Vst *v);
 int vst_parameters(Vst *v);
 int vst_parameter(Vst *v, uint32_t id);
 int vst_layout(Vst *v, int *input, int *output, int *midi);
+int vst_arrange(Vst *v);
 double vst_scale(const struct Steinberg_Vst_ParameterInfo *p);
 void vst_string(char *out, size_t capacity, const Steinberg_char16 *in, size_t length);
 void vst_id(char out[33], const Steinberg_TUID id);

@@ -16,7 +16,7 @@
 
 #define BASE "urn:triccheballacche:test:lv2:"
 typedef struct {
-	void *ports[12];
+	void *ports[13];
 	LV2_URID_Map *map;
 	LV2_Worker_Schedule *worker;
 	LV2_URID sequence, midi, position, object, number, chunk;
@@ -60,7 +60,7 @@ static LV2_Handle instantiate(
 }
 static void connect(LV2_Handle handle, uint32_t port, void *data) {
 	Plugin *p = handle;
-	assert(port < 12);
+	assert(port < 13);
 	p->ports[port] = data;
 }
 static void activate(LV2_Handle handle) {
@@ -78,7 +78,7 @@ static void deactivate(LV2_Handle handle) {
 static void run(LV2_Handle handle, uint32_t frames) {
 	Plugin *p = handle;
 	assert(p->active && frames <= p->capacity);
-	assert(*(float *)p->ports[10] == p->rate * .25f);
+	assert(*(float *)p->ports[10] > 0 && *(float *)p->ports[10] <= p->rate * .5f);
 	LV2_Atom_Sequence *in = p->ports[2], *out = p->ports[3];
 	assert(in->atom.type == p->sequence);
 	uint32_t capacity = out->atom.size;
@@ -99,12 +99,12 @@ static void run(LV2_Handle handle, uint32_t frames) {
 	}
 	if (frames)
 		assert(position);
-	int lag = p->effect && *(float *)p->ports[9] >= .5 ? 7 : 0;
+	int lag = p->effect && *(float *)p->ports[9] >= .5 ? (*(float *)p->ports[12] ? 3 : 7) : 0;
 	*(float *)p->ports[8] = lag;
 	*(float *)p->ports[1] = *(float *)p->ports[0];
 	*(float *)p->ports[11] = p->replied;
 	if (frames && !p->requested) {
-		uint32_t request = 42;
+		uint32_t request = 256;
 		assert(!p->worker->schedule_work(p->worker->handle, sizeof(request), &request));
 		p->requested = 1;
 	}
@@ -119,25 +119,34 @@ static void run(LV2_Handle handle, uint32_t frames) {
 			}
 			((float *)p->ports[4 + c])[i] = value;
 		}
-		p->cursor = (p->cursor + 1) % 7;
+		p->cursor = (p->cursor + 1) % (lag ? lag : 7);
 	}
 }
 static LV2_Worker_Status work(
     LV2_Handle handle, LV2_Worker_Respond_Function respond, void *context, uint32_t size, const void *data) {
 	(void)handle;
-	assert(size == sizeof(uint32_t) && *(const uint32_t *)data == 42);
+	assert(size == sizeof(uint32_t) && *(const uint32_t *)data > 0);
+	if (getenv("LV2_TEST_FAIL_WORK"))
+		return LV2_WORKER_ERR_UNKNOWN;
 	return respond(context, size, data);
 }
 static LV2_Worker_Status response(LV2_Handle handle, uint32_t size, const void *data) {
 	Plugin *p = handle;
-	assert(size == sizeof(uint32_t) && *(const uint32_t *)data == 42);
-	p->replied = 1;
+	assert(size == sizeof(uint32_t) && *(const uint32_t *)data > 0);
+	uint32_t next = *(const uint32_t *)data - 1;
+	if (next)
+		assert(!p->worker->schedule_work(p->worker->handle, sizeof(next), &next));
+	else {
+		p->replied = 1;
+		*(float *)p->ports[11] = 1;
+	}
 	return LV2_WORKER_SUCCESS;
 }
 static LV2_State_Status save(LV2_Handle handle, LV2_State_Store_Function store, LV2_State_Handle context,
     uint32_t flags, const LV2_Feature *const *features) {
 	Plugin *p = handle;
 	assert(flags & LV2_STATE_IS_PORTABLE);
+	assert(!p->requested || p->replied);
 	assert(feature(features, LV2_STATE__mapPath) && feature(features, LV2_STATE__freePath));
 	if (getenv("LV2_TEST_FAIL_SAVE"))
 		return LV2_STATE_ERR_UNKNOWN;
@@ -156,6 +165,7 @@ static LV2_State_Status restore(LV2_Handle handle, LV2_State_Retrieve_Function r
 	(void)flags;
 	(void)features;
 	Plugin *p = handle;
+	assert(!p->requested || p->replied);
 	if (getenv("LV2_TEST_FAIL_LOAD"))
 		return LV2_STATE_ERR_UNKNOWN;
 	size_t size;

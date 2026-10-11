@@ -165,6 +165,9 @@ int poll_dsp(DSP *dsp) {
 int restart_dsp(DSP *dsp) {
 	return dsp && dsp->ops->restart ? dsp->ops->restart(dsp) : 0;
 }
+int offline_dsp(DSP *dsp, int offline) {
+	return dsp && dsp->ops->offline ? dsp->ops->offline(dsp, !!offline) : 0;
+}
 int state_dsp(DSP *dsp, State *state, int write) {
 	if (!dsp || !dsp->ops->state)
 		return STATE_UNSUPPORTED;

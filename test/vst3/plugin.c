@@ -18,6 +18,7 @@ struct Instance {
 	Interface component, processor, controller, connection, mapping;
 	unsigned refs;
 	int effect, control_only, initialized, active, processing, note, cursor;
+	int arranged, mode;
 	Steinberg_FUnknown *host;
 	Steinberg_Vst_IComponentHandler *handler;
 	Steinberg_Vst_IConnectionPoint *peer;
@@ -145,16 +146,17 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE io_mode(void *self, Steinberg_Vs
 static Steinberg_int32 SMTG_STDMETHODCALLTYPE bus_count(
     void *self, Steinberg_Vst_MediaType type, Steinberg_Vst_BusDirection dir) {
 	Instance *p = ((Interface *)self)->owner;
-	return type == 0 ? (dir == 1 || p->effect) : (!p->effect && dir == 0);
+	return type == 0 ? (dir == 1 || p->effect ? 2 : 1) : (!p->effect && dir == 0);
 }
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE bus_info(void *self, Steinberg_Vst_MediaType type,
     Steinberg_Vst_BusDirection dir, Steinberg_int32 index, struct Steinberg_Vst_BusInfo *b) {
-	if (index || !bus_count(self, type, dir))
+	Instance *p = ((Interface *)self)->owner;
+	if (index < 0 || index >= bus_count(self, type, dir))
 		return Steinberg_kInvalidArgument;
 	*b = (struct Steinberg_Vst_BusInfo){.mediaType = type,
 	    .direction = dir,
 	    .channelCount = type ? 16 : 2,
-	    .busType = Steinberg_Vst_BusTypes_kMain,
+	    .busType = !index && (type || dir || p->effect) ? Steinberg_Vst_BusTypes_kMain : Steinberg_Vst_BusTypes_kAux,
 	    .flags = 1};
 	text(b->name, type ? "Notes" : "Audio");
 	return Steinberg_kResultOk;
@@ -168,8 +170,9 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE routing(
 }
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE bus_active(void *s, Steinberg_Vst_MediaType type,
     Steinberg_Vst_BusDirection dir, Steinberg_int32 index, Steinberg_TBool active) {
-	(void)active;
-	assert(!index && bus_count(s, type, dir));
+	Instance *p = ((Interface *)s)->owner;
+	assert(index >= 0 && index < bus_count(s, type, dir));
+	assert(active == (!index && (type || dir || p->effect)));
 	return Steinberg_kResultOk;
 }
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE active(void *self, Steinberg_TBool state) {
@@ -205,16 +208,19 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE load(void *self, Steinberg_IBStr
 }
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE arrangements(void *s, Steinberg_Vst_SpeakerArrangement *in,
     Steinberg_int32 ni, Steinberg_Vst_SpeakerArrangement *out, Steinberg_int32 no) {
-	(void)s;
-	(void)in;
-	(void)ni;
-	(void)out;
-	(void)no;
+	Instance *p = ((Interface *)s)->owner;
+	assert(p->initialized && !p->active && !p->processing);
+	assert(ni == bus_count(s, 0, 0) && no == bus_count(s, 0, 1));
+	for (int i = 0; i < ni; ++i)
+		assert(in[i] == 3);
+	for (int i = 0; i < no; ++i)
+		assert(out[i] == 3);
+	p->arranged = 1;
 	return Steinberg_kResultOk;
 }
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE arrangement(
     void *s, Steinberg_Vst_BusDirection dir, Steinberg_int32 i, Steinberg_Vst_SpeakerArrangement *out) {
-	assert(bus_count(s, 0, dir) && !i);
+	assert(i >= 0 && i < bus_count(s, 0, dir));
 	*out = 3;
 	return Steinberg_kResultOk;
 }
@@ -228,8 +234,13 @@ static Steinberg_uint32 SMTG_STDMETHODCALLTYPE latency(void *self) {
 }
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE setup(void *self, struct Steinberg_Vst_ProcessSetup *s) {
 	Instance *p = ((Interface *)self)->owner;
-	assert(p->initialized && !p->active && !p->processing);
+	assert(p->initialized && p->arranged && !p->active && !p->processing);
 	assert(s->sampleRate > 0 && s->maxSamplesPerBlock > 0 && s->symbolicSampleSize == 0);
+	assert(s->processMode == Steinberg_Vst_ProcessModes_kRealtime ||
+	    s->processMode == Steinberg_Vst_ProcessModes_kOffline);
+	if (p->effect && s->processMode == Steinberg_Vst_ProcessModes_kOffline && getenv("VST3_TEST_FAIL_OFFLINE"))
+		return Steinberg_kResultFalse;
+	p->mode = s->processMode;
 	return Steinberg_kResultOk;
 }
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE processing(void *self, Steinberg_TBool state) {
@@ -246,7 +257,8 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE processing(void *self, Steinberg
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE process(void *self, struct Steinberg_Vst_ProcessData *b) {
 	Instance *p = ((Interface *)self)->owner;
 	assert(p->active && p->processing && b->processContext && b->processContext->sampleRate > 0);
-	assert(b->symbolicSampleSize == 0 && b->numOutputs == 1 && b->numInputs == p->effect);
+	assert(b->symbolicSampleSize == 0 && b->numOutputs == 2 && b->numInputs == (p->effect ? 2 : 1));
+	assert(b->processMode == p->mode);
 	Steinberg_Vst_IParameterChanges *changes = b->inputParameterChanges;
 	for (int i = 0; i < changes->lpVtbl->getParameterCount(changes); ++i) {
 		Steinberg_Vst_IParamValueQueue *q = changes->lpVtbl->getParameterData(changes, i);

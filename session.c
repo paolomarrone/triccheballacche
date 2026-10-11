@@ -254,8 +254,7 @@ static int process(
 		state->dsp[c].time = (ProcessTime){.frame = s->time,
 		    .bpm = score->sequence.bpm,
 		    .beat = (double)s->time / s->sample_rate * score->sequence.bpm / 60,
-		    .playing = 1,
-		    .offline = s->offline};
+		    .playing = 1};
 	float input[BLOCK * 2];
 	if (!node->ninputs) {
 		if (render_plugin(state->dsp, out, NULL, frames))
@@ -618,6 +617,36 @@ int session_restart(Session *s) {
 			if (restart_dsp(s->nodes[i].dsp[c].dsp))
 				return fail(s, "plugin configuration changed; prepare the score again");
 	return prepare_latency(s, session_score(s));
+}
+
+int session_offline(Session *s, int offline) {
+	if (!s->audio)
+		return fail(s, "render mode requires a prepared session");
+	offline = !!offline;
+	if (s->offline == offline)
+		return 0;
+	int failed = 0;
+	const char *error = "plugin rejected render mode";
+	session_sync(s);
+	for (int i = 0; i < s->nnodes; ++i)
+		for (int c = 0; c < 2; ++c)
+			if (offline_dsp(s->nodes[i].dsp[c].dsp, offline))
+				goto rollback;
+	if (prepare_latency(s, session_score(s))) {
+		error = s->error;
+		goto rollback;
+	}
+	s->offline = offline;
+	return 0;
+rollback:
+	for (int i = 0; i < s->nnodes; ++i)
+		for (int c = 0; c < 2; ++c)
+			failed |= offline_dsp(s->nodes[i].dsp[c].dsp, s->offline);
+	if (failed)
+		return fail(s, "cannot restore render mode; prepare the score again");
+	if (prepare_latency(s, session_score(s)))
+		return -1;
+	return fail(s, error);
 }
 
 int session_state(Session *s, int node, State *state, int write) {

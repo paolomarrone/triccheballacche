@@ -271,13 +271,15 @@ labels. MIDI notes, pressure and mapped controllers, sample-accurate automation,
 transport, latency, and separate or combined controllers are supported.
 Controller metadata updates preserve playing voices. Changes to the graph,
 parameter identity or a request to reload the component require preparing the score again.
-WAV export uses prefetch processing at realtime quality; VST3's separate offline
-quality mode is not selected.
 Native VST3 binaries do not run in the Wasm editor.
 
+WAV export selects offline mode (VST3 processing, CLAP render and LV2 freewheel),
+then restores the previous mode. Changes run with audio stopped and rebuild
+latency compensation. A plugin that rejects offline rendering prevents export.
+
 For CLAP, LV2 and VST3, the audio graph routes the main mono/stereo buses. Additional inputs
-receive silence; additional outputs and note outputs are not routed. Plugins
-with more than one note input are currently rejected. CLAP note outputs may remain
+receive silence (VST3 auxiliary buses stay inactive); additional outputs and note outputs
+are not routed. Plugins with more than one note input are currently rejected. CLAP note outputs may remain
 disconnected; LV2 and VST3 plugins with note outputs are rejected. Mono
 effects are not duplicated implicitly on stereo signals. Parallel paths are
 latency-compensated with buffers allocated before rendering; total output latency

@@ -116,6 +116,22 @@ int vst_layout(Vst *v, int *input, int *output, int *midi) {
 	v->midi = *midi;
 	return 0;
 }
+int vst_arrange(Vst *v) {
+	int input, output, midi;
+	if (vst_layout(v, &input, &output, &midi))
+		return -1;
+	Steinberg_Vst_SpeakerArrangement inputs[MAX_INPUTS], outputs[64];
+	for (int dir = 0; dir < 2; ++dir)
+		for (int i = 0; i < (dir ? v->noutputs : v->ninputs); ++i)
+			if (v->processor->lpVtbl->getBusArrangement(v->processor, dir, i, (dir ? outputs : inputs) + i) !=
+			    Steinberg_kResultOk)
+				return -1;
+	// Keep the advertised layouts. Auxiliary buses retain their shape but stay inactive.
+	return v->processor->lpVtbl->setBusArrangements(v->processor, inputs, v->ninputs, outputs, v->noutputs) ==
+	        Steinberg_kResultOk
+	    ? 0
+	    : -1;
+}
 static void scale_points(Vst *v, int index, Json *j) {
 	const struct Steinberg_Vst_ParameterInfo *p = v->info + index;
 	if (p->stepCount <= 0 || p->stepCount > 128)
@@ -216,7 +232,7 @@ int vst_scan(Json *j, const char *path) {
 		Vst v = {0};
 		Json description = {0};
 		int created = vst_create(&v, m, id);
-		int error = created || metadata(&v, &description, module_path(m), &info, factory.vendor);
+		int error = created || vst_arrange(&v) || metadata(&v, &description, module_path(m), &info, factory.vendor);
 		vst_destroy(&v);
 		if (error) {
 			json_print(j, "%s", found++ ? "," : "");

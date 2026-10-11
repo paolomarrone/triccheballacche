@@ -37,6 +37,7 @@ typedef struct Clap {
 	const clap_plugin_note_ports_t *notes;
 	const clap_plugin_state_t *state;
 	const clap_plugin_latency_t *latency;
+	const clap_plugin_render_t *render;
 	const clap_plugin_gui_t *gui;
 	const clap_plugin_timer_support_t *timer;
 	clap_param_info_t *info;
@@ -52,7 +53,7 @@ typedef struct Clap {
 	clap_output_events_t out;
 	const void *main_thread;
 	atomic_uint requests;
-	int active, processing;
+	int active, processing, offline;
 	unsigned rate, block;
 	int64_t steady;
 	ClapTimer timers[64];

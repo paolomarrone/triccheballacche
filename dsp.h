@@ -29,7 +29,7 @@ typedef struct {
 typedef struct {
 	uint64_t frame;
 	double bpm, beat;
-	int playing, offline;
+	int playing;
 } ProcessTime;
 
 typedef struct DSP DSP;
@@ -51,11 +51,13 @@ void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message);
 void sync_dsp(DSP *dsp, DSP *paired);
 void idle_dsp(DSP *dsp, const ProcessTime *time); // Service messages with audio stopped, without advancing time.
 // Planar buffers belong to the caller; NULL optional inputs remain disconnected.
+// Zero-frame calls use the control thread and may finish pending worker jobs.
 int process_dsp(DSP *dsp, const float **inputs, float **outputs, size_t frames, const ProcessTime *time);
-// Control thread only; the caller must stop audio before restart or state access.
+// Control thread only; stop audio before restart, changing render mode or state access.
 int poll_dsp(DSP *dsp);
 uint32_t latency_dsp(DSP *dsp);
 int restart_dsp(DSP *dsp);
+int offline_dsp(DSP *dsp, int offline);
 // Save replaces the buffer only on success. Load may modify a plugin even on failure.
 int state_dsp(DSP *dsp, State *state, int write);
 #endif

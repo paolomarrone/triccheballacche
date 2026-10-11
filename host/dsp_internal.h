@@ -32,6 +32,7 @@ typedef struct {
 	void (*message)(DSP *, size_t, const void *);
 	int (*poll)(DSP *);                // Main thread. 1 requests a quiescent restart, -1 reports an error.
 	int (*restart)(DSP *);             // Main thread, no concurrent audio calls.
+	int (*offline)(DSP *, int);        // Main thread, stopped; may reactivate the plugin.
 	uint32_t (*latency)(DSP *);        // Main thread, active.
 	int (*state)(DSP *, State *, int); // Main thread, stopped; save if write != 0.
 } DspOps;

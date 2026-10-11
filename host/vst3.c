@@ -420,9 +420,7 @@ static int process(DSP *dsp, const float **inputs, float **outputs, size_t frame
 	}
 	for (int i = 0; i < v->events.count; ++i)
 		v->events.events[i].ppqPosition = context.projectTimeMusic;
-	struct Steinberg_Vst_ProcessData block = {.processMode = time && time->offline
-	        ? Steinberg_Vst_ProcessModes_kPrefetch
-	        : Steinberg_Vst_ProcessModes_kRealtime,
+	struct Steinberg_Vst_ProcessData block = {.processMode = v->mode,
 	    .symbolicSampleSize = Steinberg_Vst_SymbolicSampleSizes_kSample32,
 	    .numSamples = frames,
 	    .numInputs = v->ninputs,
@@ -516,15 +514,16 @@ static int compatible(Vst *v) {
 	return 0;
 }
 static int activate(Vst *v) {
-	struct Steinberg_Vst_ProcessSetup setup = {
-	    Steinberg_Vst_ProcessModes_kRealtime, Steinberg_Vst_SymbolicSampleSizes_kSample32, v->block, v->rate};
+	struct Steinberg_Vst_ProcessSetup setup = {v->mode, Steinberg_Vst_SymbolicSampleSizes_kSample32, v->block, v->rate};
 	if (v->processor->lpVtbl->setupProcessing(v->processor, &setup) != Steinberg_kResultOk)
 		return -1;
 	for (int dir = 0; dir < 2; ++dir)
-		for (int i = 0; i < (dir ? v->noutputs : v->ninputs); ++i)
-			if (v->component->lpVtbl->activateBus(v->component, Steinberg_Vst_MediaTypes_kAudio, dir, i, 1) !=
+		for (int i = 0; i < (dir ? v->noutputs : v->ninputs); ++i) {
+			int connected = !i && (dir ? v->dsp->config.output : v->dsp->config.input);
+			if (v->component->lpVtbl->activateBus(v->component, Steinberg_Vst_MediaTypes_kAudio, dir, i, connected) !=
 			    Steinberg_kResultOk)
 				return -1;
+		}
 	if (v->midi >= 0 &&
 	    v->component->lpVtbl->activateBus(v->component, Steinberg_Vst_MediaTypes_kEvent,
 	        Steinberg_Vst_BusDirections_kInput, v->midi, 1) != Steinberg_kResultOk)
@@ -534,6 +533,24 @@ static int activate(Vst *v) {
 		return -1;
 	v->active = 1;
 	return 0;
+}
+static int offline(DSP *dsp, int enabled) {
+	Vst *v = dsp->instance;
+	int mode = enabled ? Steinberg_Vst_ProcessModes_kOffline : Steinberg_Vst_ProcessModes_kRealtime;
+	if (atomic_load(&v->requests) & VST_ERROR)
+		return -1;
+	if (v->mode == mode)
+		return 0;
+	idle(dsp, NULL);
+	suspend(v);
+	int previous = v->mode;
+	v->mode = mode;
+	if (!activate(v))
+		return 0;
+	v->mode = previous;
+	if (activate(v))
+		atomic_fetch_or(&v->requests, VST_ERROR);
+	return -1;
 }
 static int restart(DSP *dsp) {
 	Vst *v = dsp->instance;
@@ -552,7 +569,8 @@ static int restart(DSP *dsp) {
 		idle(dsp, NULL);
 		suspend(v);
 	}
-	if ((atomic_load(&v->requests) & VST_ERROR) || compatible(v) || (reactivate && activate(v)))
+	if ((atomic_load(&v->requests) & VST_ERROR) || (reactivate && vst_arrange(v)) || compatible(v) ||
+	    (reactivate && activate(v)))
 		goto fail;
 	// Mapping and metadata updates must preserve voices and effect tails.
 	if (!reactivate && (flags & Steinberg_Vst_RestartFlags_kMidiCCAssignmentChanged))
@@ -625,7 +643,7 @@ static int state(DSP *dsp, State *buffer, int write) {
 	atomic_fetch_and(&v->requests,
 	    VST_ERROR | Steinberg_Vst_RestartFlags_kParamValuesChanged | Steinberg_Vst_RestartFlags_kReloadComponent |
 	        Steinberg_Vst_RestartFlags_kParamIDMappingChanged);
-	if ((atomic_load(&v->requests) & VST_ERROR) || compatible(v) || activate(v)) {
+	if ((atomic_load(&v->requests) & VST_ERROR) || vst_arrange(v) || compatible(v) || activate(v)) {
 		ok = 0;
 		atomic_fetch_or(&v->requests, VST_ERROR);
 	}
@@ -648,6 +666,7 @@ static const DspOps ops = {.close = close_instance,
     .idle = idle,
     .poll = poll_instance,
     .restart = restart,
+    .offline = offline,
     .latency = latency,
     .state = state};
 int vst3_open(DSP *dsp, unsigned rate, size_t capacity) {
@@ -664,7 +683,7 @@ int vst3_open(DSP *dsp, unsigned rate, size_t capacity) {
 	v->rate = rate;
 	v->block = capacity;
 	v->events.api.lpVtbl = &events;
-	if (compatible(v) || changes_init(&v->in, v) || changes_init(&v->out, v))
+	if (vst_arrange(v) || compatible(v) || changes_init(&v->in, v) || changes_init(&v->out, v))
 		return -1;
 	v->inputs = calloc(v->ninputs, sizeof(*v->inputs));
 	v->outputs = calloc(v->noutputs, sizeof(*v->outputs));

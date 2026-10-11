@@ -14,6 +14,7 @@
 #include <lv2/parameters/parameters.h>
 #include <lv2/port-groups/port-groups.h>
 #include <lv2/port-props/port-props.h>
+#include <lv2/presets/presets.h>
 #include <lv2/resize-port/resize-port.h>
 #include <lv2/time/time.h>
 #include <lv2/ui/ui.h>
@@ -54,7 +55,7 @@ typedef struct {
 	int32_t min_block, max_block, sequence_size;
 	float rate, scale;
 	float *scratch;
-	int active, dirty;
+	int active, dirty, offline;
 	atomic_int error;
 	atomic_uint latency;
 	uint32_t applied_latency;
@@ -73,6 +74,7 @@ LilvUIs *lv2_uis(Lv2Description *d, const LilvUI **selected);
 int lv2_ui_fixed(Lv2Description *d, const LilvUI *ui);
 LilvNode *lv2_get(LilvWorld *world, const LilvNode *subject, const char *predicate);
 int lv2_is(LilvWorld *world, const LilvNode *subject, const char *predicate, const char *object);
+int lv2_default_state(Lv2Description *d);
 int lv2_ui_send(Lv2 *l, uint32_t port, uint32_t size, const void *data);
 extern const char *const lv2_ui_type;
 // Platform runtime: synchronized URI mapping and background work. It outlives the plugin instance.
