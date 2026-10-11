@@ -5,7 +5,7 @@ import {once} from "node:events";
 import {serve} from "./server.mjs";
 import {withBrowser} from "./chromium.mjs";
 
-const entry = process.argv[2] || "examples/prog/polpo.janet";
+const entry = process.argv[2] || "examples/polpo.janet";
 const downloads = await mkdtemp("build/test/editor-downloads-");
 const server = serve(0);
 await once(server, "listening");

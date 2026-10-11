@@ -8,7 +8,7 @@ import {addFile} from "./host.js";
 export const saveLabel = "Download", saveTitle = "Download a copy of the score · Ctrl+S";
 export const canUpload = true;
 const options = new URLSearchParams(location.search);
-const entry = options.get("score") || "examples/prog/polpo.janet";
+const entry = options.get("score") || "examples/polpo.janet";
 const assets = new Map();
 let library;
 let host, player, transport = 0, sampleRate = 48000, failure = "", midiFailed = false, log = [];

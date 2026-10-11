@@ -17,8 +17,8 @@ Lilv and its dependencies; the plugin library needs Node.js and npm.
 ```sh
 make -j4 cli library
 mkdir -p renders
-./build/cli examples/brickworks.janet renders/brickworks.wav 48000
-./build/cli --play examples/brickworks.janet 48000
+./build/cli examples/patterns.janet renders/patterns.wav 48000
+./build/cli --play examples/patterns.janet 48000
 ```
 
 Dependencies are downloaded into `.deps/` at pinned versions. Janet and Spork's
@@ -42,8 +42,8 @@ ALSA development headers on Linux. WebUI and PortMidi are fetched automatically.
 
 ```sh
 make gui
-./build/gui examples/brickworks.janet
-./build/gui --serve examples/brickworks.janet  # Use a browser instead of a WebView.
+./build/gui examples/patterns.janet
+./build/gui --serve examples/patterns.janet  # Use a browser instead of a WebView.
 ```
 
 For browser playback, install Emscripten **5.0.6** and Node.js. Version 6.0.9 has a
@@ -55,7 +55,7 @@ make web
 node test/server.mjs
 ```
 
-Open <http://localhost:8000/editor/index.html?score=examples/brickworks.janet>.
+Open <http://localhost:8000/editor/index.html?score=examples/patterns.janet>.
 The test server supplies the required COOP/COEP headers. Hosting requires HTTPS
 or localhost, AudioWorklet and shared memory; the score view requires WebGL 2.
 Without WebGL, editing and audio remain available.
@@ -203,28 +203,31 @@ and updates the session's files. Reloading the page restores the published files
   (default `~/.config/…`). **Defaults** restores the paths below. The browser lists
   its published Perone/Wasm catalog. Restart after rebuilding a loaded native plugin.
 
-Start with [brickworks](examples/brickworks.janet) and [patterns](examples/patterns.janet)
-for the canonical library, or [Rame](examples/rame.janet) for a complete piece.
-[hello](examples/hello.janet), [live](examples/live.janet),
-[routing](examples/routing.janet), [automation](examples/automation.janet) and
-[Polpo](examples/prog/polpo.janet) use the local plugins below.
+All scores are directly in `examples/`; `examples/sources/` holds imported themes.
+
+| Example | Focus |
+| --- | --- |
+| [patterns](examples/patterns.janet) | Brickworks instruments, stereo effects, pattern transforms and automation. Start here. |
+| [live](examples/live.janet) | Loops and quantized updates. |
+| [routing](examples/routing.janet) | Groups, parallel effects and crossfades. |
+| [midi](examples/midi.janet) | Keyboard input and MIDI output. |
+| [gui](examples/gui.janet) | A-SID and Tibia UIs following automation. |
+| [surge](examples/surge.janet) | Surge XT and Surge XT Effects; set `format` to `:clap`, `:lv2` or `:vst3`. Native only. |
+
+[Rame](examples/rame.janet) is a complete piece using the canonical library.
+[Polpo](examples/polpo.janet), [Oculus](examples/oculus.janet), live and routing
+use the local plugins below.
 [Denti](examples/denti.janet), [Sempiterno](examples/sempiterno.janet) and
-[Falalalan](examples/falalalan.janet) also use A-SID;
-[gui](examples/gui.janet) demonstrates A-SID and Tibia's plugin UIs.
-[Oculus](examples/oculus.janet) uses the local synth, drums, shape and echo;
-[Campagnola](examples/campagnola.janet) uses the optional sampled piano.
+[Falalalan](examples/falalalan.janet) also use A-SID.
+[Campagnola](examples/campagnola.janet) and
+[Insetti di vetro](examples/insetti-di-vetro.janet) need the optional sampled piano.
 [Crocevia](examples/crocevia.janet) combines local Perone drums/synths, Surge XT CLAP,
 A-SID LV2 from `../asid` (override with `ASID_LV2`) and Brickworks `fx_comb` VST3.
 Surge and the comb use the native plugin search paths described below.
-[denoiser](examples/denoiser.janet) combines Clack.DIGITAL Ue Ue Wah on the lead with
-Bertom Denoiser Classic on a noisy radio bus, both VST3. A 126 BPM electro-funk piece
-with syncopated bass, electric keys and short denoiser A/B comparisons in the intro
-and break. It also uses local Perone plugins and the canonical Brickworks library.
-[Insetti di vetro](examples/insetti-di-vetro.janet) is 150 seconds of fractured
-electronica with an original piano/glass theme, acid bass, broken drums and
-eight sections. It uses the canonical Brickworks library, local drums and piano.
-[Due corpi](examples/due-corpi.janet) is a 50-second electro miniature with Samplo
-and Vitsel CLAP, Perone drums and Brickworks effects. Install
+[Denoiser](examples/denoiser.janet) adds Clack.DIGITAL Ue Ue Wah and Bertom Denoiser
+Classic VST3 to local Perone plugins and the canonical library.
+[Due corpi](examples/due-corpi.janet) uses Samplo and Vitsel CLAP, Perone drums and
+Brickworks effects. Install
 [Samplo](https://github.com/mlm-games/samplo-clap) and
 [Vitsel](https://github.com/mlm-games/vitsel-clap) for your platform in a CLAP search
 path. Generate its original SFZ bank with `python examples/due-corpi.py DIRECTORY`,
@@ -255,9 +258,9 @@ An explicit path also works outside those directories:
 # :id is optional only when the module exports one supported plugin.
 ```
 
-[examples/clap.janet](examples/clap.janet) uses separately installed Surge XT and
-Surge XT Effects; both were tested with version 1.3.4, including their original
-windows. `CLAP_PATH=/path/to/plugins ./build/gui examples/clap.janet` runs it.
+The [Surge example](examples/surge.janet) uses separately installed Surge XT and
+Surge XT Effects 1.3.4, tested in all three native formats with their original UIs.
+For CLAP, run `CLAP_PATH=/path/to/plugins ./build/gui examples/surge.janet`.
 Use `build/tools/plugin-scan /path/to/plugin.clap` to inspect IDs and parameters.
 CLAP parameter keywords are native numeric IDs, such as `:825615485`;
 `daw/info` exposes their labels, ranges and automation flags. Enumeration indices
@@ -283,9 +286,8 @@ URI; an explicit `:path` selects a bundle outside those directories:
 # Or {:format :lv2 :path "/path/to/plugin.lv2" :id "urn:plugin:uri"}.
 ```
 
-[examples/lv2.janet](examples/lv2.janet) uses Surge XT and Surge XT Effects 1.3.4.
-Run `LV2_PATH=/path/to/bundles ./build/gui examples/lv2.janet` and use each
-plugin's window icon to open its original X11 UI. GTK/Qt UIs are not embedded;
+Set `format` to `:lv2` in [surge](examples/surge.janet) to try it.
+Use each plugin's window icon to open its original X11 UI. GTK/Qt UIs are not embedded;
 control ports still appear in the shared parameter panel. Parameter keywords
 are port symbols, such as `:gain`; `daw/info` lists them. Numeric `patch` properties
 are not yet exposed as Janet parameters, though original UIs can exchange Atom
@@ -313,9 +315,8 @@ and `/usr/lib/vst3`. References identify the processor class by its 32-digit ID:
 ```
 
 `build/tools/plugin-scan /path/to/plugin.vst3` lists classes and parameters.
-Run `VST3_PATH=/path/to/bundles ./build/gui examples/vst3.janet` with separately
-installed Surge XT and Surge XT Effects. Both original GUIs and DSPs were tested
-with version 1.3.4; A-SID's Tibia-generated VST3 was also checked.
+Set `format` to `:vst3` in [surge](examples/surge.janet) to try it;
+A-SID's Tibia-generated VST3 was also checked.
 Parameter keywords are native numeric IDs. Continuous values use VST3's normalized
 `0..1` range; discrete values use integer step indices and expose the plugin's
 labels. MIDI notes, pressure and mapped controllers, sample-accurate automation,

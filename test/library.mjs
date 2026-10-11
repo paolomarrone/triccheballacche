@@ -6,7 +6,7 @@ import {serve} from "./server.mjs";
 import {withBrowser} from "./chromium.mjs";
 import {nativeEditor} from "./native.mjs";
 
-const entry = "examples/prog/polpo.janet", original = await readFile(entry, "utf8");
+const entry = "examples/polpo.janet", original = await readFile(entry, "utf8");
 const published = JSON.parse(await readFile("build/web/project.json", "utf8")).map(file => file.path);
 const expectedPlugins = published.filter(path => path.endsWith(".perone/product.json"))
     .map(path => path.slice(0, -"/product.json".length)).sort();
@@ -14,7 +14,7 @@ const expectedExamples = published.filter(path => path.startsWith("examples/") &
     !path.startsWith("examples/sources/")).sort();
 assert(expectedPlugins.includes("plugins/synth_mono/build/plugin.perone"));
 assert(expectedExamples.includes(entry));
-assert(expectedExamples.includes("examples/brickworks.janet"));
+assert(expectedExamples.includes("examples/patterns.janet"));
 assert(expectedExamples.includes("examples/oculus.janet"));
 assert(expectedExamples.includes("examples/campagnola.janet"));
 assert(published.includes("examples/sources/oculus-non-vidit.janet"), "Imports must be published with their scores");
@@ -25,7 +25,7 @@ const pickedSource = '(import ./helper)\n(error helper/message)\n';
 await writeFile(picked, pickedSource);
 await writeFile(`${directory}/helper.janet`, '(def message "Selected file imports its neighbor")\n');
 const upload = `${directory}/upload 音.janet`;
-const uploadedSource = '(import ../../lib/pattern :as p)\n(error "Uploaded file imports pattern")\n';
+const uploadedSource = '(import ../lib/pattern :as p)\n(error "Uploaded file imports pattern")\n';
 await writeFile(upload, uploadedSource);
 const server = serve(0);
 await once(server, "listening");
@@ -80,15 +80,17 @@ try {
             const guiSource = await readFile("examples/gui.janet", "utf8");
             assert.equal(await evaluate('document.querySelector("#code").value'), guiSource);
             await click("#open");
-            await wait(fileButton("prog"));
+            await wait(fileButton("sources"));
             assert.equal(await evaluate('document.querySelector("#code").value'), guiSource, "Opening the picker does not load anything");
-            await click('#file-list [data-name="prog"]');
+            await click('#file-list [data-name="sources"]');
+            await wait(fileButton("oculus-non-vidit.janet"));
+            await click("#file-up");
             await wait(fileButton("polpo.janet"));
             await screenshot("files");
             await click('#file-list [data-name="polpo.janet"]');
             await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#play").disabled');
             assert.equal(await evaluate('document.querySelector("#code").value'), original);
-            assert.match(await evaluate('document.querySelector("#path").value'), /\/examples\/prog\/polpo\.janet$/);
+            assert.match(await evaluate('document.querySelector("#path").value'), /\/examples\/polpo\.janet$/);
             await screenshot("toolbar");
             await click("#open");
             await key("Escape", "Escape");
@@ -115,12 +117,12 @@ try {
                 await call("DOM.setFileInputFiles", {nodeId, files: [upload]});
                 await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#play").disabled');
                 assert.equal(await evaluate('document.querySelector("#code").value'), uploadedSource);
-                assert.equal(await evaluate('document.querySelector("#path").value'), "/examples/prog/upload 音.janet");
+                assert.equal(await evaluate('document.querySelector("#path").value'), "/examples/upload 音.janet");
             }
             await click("#play");
             await wait(`document.querySelector("#errors").textContent.includes(${JSON.stringify(mode === "native" ? "Selected file imports its neighbor" : "Uploaded file imports pattern")})`);
             await set("#examples", entry);
-            await wait('document.querySelector("#path").value === "examples/prog/polpo.janet" && !document.querySelector("#play").disabled');
+            await wait('document.querySelector("#path").value === "examples/polpo.janet" && !document.querySelector("#play").disabled');
             await click("#open");
             await set("#file-directory", "/no/such/directory");
             await evaluate('document.querySelector("#file-location").requestSubmit()');

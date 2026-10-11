@@ -61,7 +61,7 @@ if (root === "build/library/brickworks") delete env.BRICKWORKS_PERONE;
 else env.BRICKWORKS_PERONE = root;
 writeFileSync("build/test/library-score.janet",
     '(spit "build/test/library-native.json" (eval-string (slurp "lib/library.janet")))\n' +
-    '(dofile "examples/brickworks.janet")\n');
+    '(dofile "examples/patterns.janet")\n');
 execFileSync("./build/cli", ["build/test/library-score.janet", "build/test/library-smoke.wav", "48000"],
     {stdio: "inherit", env});
 const catalog = JSON.parse(readFileSync("build/test/library-native.json", "utf8"));

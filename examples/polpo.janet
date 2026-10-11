@@ -1,7 +1,7 @@
 # Il polpo a sette gomiti — 30 seconds for an imaginary prog band.
 # Tempo changes are baked into event positions; at 60 BPM one beat is one second.
-(import ../../lib/music)
-(import ../../lib/pattern :as p)
+(import ../lib/music)
+(import ../lib/pattern :as p)
 
 (def tracks @[])
 

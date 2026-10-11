@@ -10,7 +10,7 @@ import {createHost, addFile} from "../web/host.js";
 import {testPlayback} from "./playback.mjs";
 
 const run = document.querySelector("#run");
-const status = document.querySelector("#status"), score = "examples/prog/polpo.janet";
+const status = document.querySelector("#status"), score = "examples/polpo.janet";
 try {
     if (!crossOriginIsolated) throw Error("Run node test/server.mjs (COOP/COEP headers required).");
     const host = await createPlayerHost(), reference = await createHost();

@@ -280,7 +280,7 @@ test-midi-ui: gui test-web
 	node test/midi-devices.mjs
 	node test/midi-ui.mjs
 
-.PHONY: test test-plugins test-ui test-editor test-prog test-brickworks check-plugins prog
+.PHONY: test test-plugins test-ui test-editor test-polpo test-brickworks check-plugins polpo
 test: $(addprefix build/test/,dsp daw player routing score_view sequence) $(NATIVE_FIXTURES) $(MIXER_FIXTURE)
 	./build/test/dsp
 	./build/test/daw
@@ -304,13 +304,13 @@ test-ui: build/test/ui
 test-editor: gui test
 	node test/editor.mjs
 
-prog: check-plugins cli
+polpo: check-plugins cli
 	mkdir -p renders
-	./build/cli examples/prog/polpo.janet renders/il_polpo_a_sette_gomiti.wav
+	./build/cli examples/polpo.janet renders/il_polpo_a_sette_gomiti.wav
 
-test-prog: check-plugins cli | build/test
-	./build/cli examples/prog/polpo.janet build/test/polpo.wav
-	./build/cli examples/prog/polpo.janet build/test/polpo-repeat.wav
+test-polpo: check-plugins cli | build/test
+	./build/cli examples/polpo.janet build/test/polpo.wav
+	./build/cli examples/polpo.janet build/test/polpo-repeat.wav
 	cmp build/test/polpo-repeat.wav build/test/polpo.wav
 
 build/test:
