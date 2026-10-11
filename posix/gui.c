@@ -34,6 +34,7 @@ typedef struct {
 	Player *player;
 	MidiDevices *midi;
 	Controls controls;
+	unsigned sample_rate;
 	const char *entry;
 	char *error;
 } Editor;
@@ -147,6 +148,7 @@ static void finish(Editor *editor) {
 	controls_close(&editor->controls, &editor->session);
 	transport_detach(&editor->transport);
 	session_free(&editor->session);
+	assets_set(NULL, 0);
 }
 
 static double decimal(webui_event_t *request, int index) {
@@ -222,12 +224,29 @@ static void command(Editor *editor, webui_event_t *event) {
 	}
 	if (!strcmp(op, "audio-info")) {
 		Json json = {0};
-		json_print(&json, "{\"sampleRate\":%u,\"output\":", session_rate(&editor->session));
+		json_print(&json,
+		    "{\"sampleRate\":%u,\"output\":", editor->player ? editor->player->device.sampleRate : editor->sample_rate);
 		json_string(&json, editor->player ? editor->player->device.playback.name : "System default");
 		json_print(&json, ",\"latency\":%.6f}",
 		    editor->player ? (double)editor->player->latency / session_rate(&editor->session) : 0);
 		webui_return_string(event, json.failed ? "{\"error\":\"Cannot read audio device\"}" : json.data);
 		free(json.data);
+		return;
+	}
+	if (!strcmp(op, "sample-rate")) {
+		double rate = decimal(event, 1);
+		const char *error = NULL;
+		if (editor->player && player_active(editor->player))
+			error = "Turn the engine off before changing sample rate";
+		else if (!isfinite(rate) || rate < 1 || rate > 384000 || rate != floor(rate))
+			error = "Sample rate must be within 1..384000 Hz";
+		else if (rate != editor->sample_rate) {
+			finish(editor);
+			editor->sample_rate = (unsigned)rate;
+			free(editor->error);
+			editor->error = NULL;
+		}
+		reply(event, editor, error, NULL, "", 0);
 		return;
 	}
 	if (!strcmp(op, "midi-devices") || !strcmp(op, "midi-refresh") || !strcmp(op, "midi-connect")) {
@@ -350,7 +369,7 @@ static void command(Editor *editor, webui_event_t *event) {
 		if (!next)
 			error = "Out of memory";
 		if (!error) {
-			next->sample_rate = 48000;
+			next->sample_rate = editor->sample_rate;
 			if (prepare_background(next, &output, path, source, &diagnostics, &score))
 				error = diagnostics ? diagnostics : next->error ? next->error : "Preparation failed";
 		}
@@ -450,7 +469,7 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Usage: %s [--serve] [score.janet]\n", argv[0]);
 		return 1;
 	}
-	Editor editor = {.entry = argc > arg ? argv[arg] : "examples/gui.janet"};
+	Editor editor = {.sample_rate = 48000, .entry = argc > arg ? argv[arg] : "examples/gui.janet"};
 	size_t window = webui_new_window();
 	webui_set_timeout(0);
 	webui_set_config(show_wait_connection, false);
@@ -506,6 +525,5 @@ int main(int argc, char **argv) {
 	free(editor.error);
 	webui_exit();
 	webui_clean();
-	assets_set(NULL, 0);
 	return !serve && !shown;
 }

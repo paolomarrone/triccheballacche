@@ -22,7 +22,7 @@ try {
     for (const mode of ["web", "native"]) {
         const url = mode === "web" ? `http://127.0.0.1:${server.address().port}/editor/index.html?score=${entry}&project=../${catalog}` :
             await (app = nativeEditor(entry)).url;
-        await withBrowser(async ({call, evaluate, wait, click, diagnostics}) => {
+        await withBrowser(async ({call, evaluate, wait, click, set, diagnostics}) => {
             if (mode === "web") await call("Page.addScriptToEvaluateOnNewDocument", {source: `
 window.midiSent = [];
 window.midiInput = {id: "keys", name: "Test keyboard", type: "input", state: "connected", open: async () => {}, close: async () => {}};
@@ -100,6 +100,27 @@ Object.defineProperty(navigator, "requestMIDIAccess", {value: async () => ({
             assert.equal(await evaluate('document.querySelector("#state").textContent'), "Stopped");
             await click("#views");
             await wait('document.querySelector("#plugin-list .plugin")');
+            await click("#settings");
+            await click("#settings-midi-tab");
+            if (mode === "web") {
+                await wait('!document.querySelector(".midi-device select").disabled');
+                await set('.midi-device select', "0");
+                await wait('!document.querySelector(".midi-device select").disabled');
+            }
+            await click("#settings-audio-tab");
+            await click("#settings-audio-engine");
+            await wait('!document.querySelector("#audio-rate").disabled');
+            await set("#audio-rate", "44100");
+            await wait('!document.querySelector("#audio-rate").disabled');
+            await click("#settings-midi-tab");
+            if (mode === "web") {
+                await wait('[...document.querySelectorAll(".midi-device select")].every(s => s.disabled && s.value === "-1" && s.options.length === 1)');
+                assert((await evaluate('midiBackend.command("midi-devices")')).devices.every(port => port.node === -1));
+            }
+            await click('#settings-dialog [data-close]');
+            await click("#prepare");
+            await wait('!document.querySelector("#prepare").disabled && document.querySelector("#audio").checked');
+            assert.equal((await evaluate('midiBackend.command("audio-info")')).sampleRate, 44100);
             assert.deepEqual(diagnostics, []);
             // Avoid the draft confirmation on test teardown.
             await evaluate('window.onbeforeunload = null');

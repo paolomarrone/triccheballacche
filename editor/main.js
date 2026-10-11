@@ -124,20 +124,19 @@ function request(op, ...args) {
 
 async function action(op, entry = path.value, file) {
     if (!ready || busy) return;
-    if (op === "play" && needsEvaluation()) op = "run";
     const opening = op === "open" || op === "import";
-    const evaluating = op === "run" || op === "prepare";
-    const updating = evaluating && live && playing && entry === tracedPath;
     if (opening && dirty() && !confirm("Open another file and discard unsaved changes?")) return;
-    if ((opening || ["save", "run", "prepare"].includes(op)) && !entry.trim()) {
-        showError("Enter a score path.");
-        return;
-    }
     busy = true;
-    if (["run", "prepare", "play", "seek"].includes(op)) frames = [];
     showError("");
     update();
     try {
+        // Prior commands may invalidate the preparation or finish a live revision.
+        await queue;
+        if (op === "play" && needsEvaluation()) op = "run";
+        const evaluating = op === "run" || op === "prepare";
+        const updating = evaluating && live && playing && entry === tracedPath;
+        if ((opening || ["save", "run", "prepare"].includes(op)) && !entry.trim()) throw Error("Enter a score path.");
+        if (["run", "prepare", "play", "seek"].includes(op)) frames = [];
         if (evaluating && !updating) controls.dispose();
         if (file?.size > 8 * 1024 * 1024) throw Error("Score too large (at most 8 MiB)");
         const source = file ? await file.text() : ["save", "run", "prepare"].includes(op) ? code.value : "";

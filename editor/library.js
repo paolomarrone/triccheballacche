@@ -128,7 +128,7 @@ export function library(request, open, fail) {
         status(value) { enabled = value; status(); },
         score(score) {
             used = new Map();
-            for (const node of score.nodes) if (node.bundle) {
+            for (const node of score?.nodes || []) if (node.bundle) {
                 const key = node.product?.id ? `${node.bundle}\n${node.product.id}` : node.bundle;
                 used.set(key, (used.get(key) || 0) + 1);
             }

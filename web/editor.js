@@ -11,7 +11,7 @@ const options = new URLSearchParams(location.search);
 const entry = options.get("score") || "examples/prog/polpo.janet";
 const assets = new Map();
 let library;
-let host, player, transport = 0, failure = "", midiFailed = false, log = [];
+let host, player, transport = 0, sampleRate = 48000, failure = "", midiFailed = false, log = [];
 // Device callbacks report errors; the command loop owns asynchronous player changes.
 const midi = midiDevices(() => player, error => { failure = String(error); midiFailed = true; });
 
@@ -83,7 +83,7 @@ async function run(path, source, state, live, playing) {
     log = [];
     let nextScore = 0, replacing = false;
     try {
-        nextScore = await prepareBackground(host, path, source, 48000);
+        nextScore = await prepareBackground(host, path, source, sampleRate);
         if (live) {
             player.update(nextScore);
             host._web_score_free(nextScore);
@@ -129,7 +129,7 @@ function checkedText(text) {
 export async function command(op, ...args) {
     if (op === "library") return library;
     if (op === "audio-info") return {
-        sampleRate: player?.context.sampleRate || 48000, output: "Browser default",
+        sampleRate: player?.context.sampleRate || sampleRate, output: "Browser default",
         latency: player ? player.context.baseLatency + (player.context.outputLatency || 0) : 0
     };
     if (op === "midi-devices") return midi.list();
@@ -141,7 +141,7 @@ export async function command(op, ...args) {
     }
     host._transport_collect(transport);
     const state = query();
-    let result = {}, error = "", path = ["range", "origin", "automation", "listen", "seek", "audio"].includes(op) ? "" : args[0] || entry;
+    let result = {}, error = "", path = ["range", "origin", "automation", "listen", "seek", "audio", "sample-rate"].includes(op) ? "" : args[0] || entry;
     try {
         if (op === "midi-connect") {
             const [version, id, node] = args;
@@ -197,7 +197,18 @@ export async function command(op, ...args) {
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         } else if (["run", "prepare", "update"].includes(op))
             result = await run(path, checkedText(args[1]), state, op === "update", op === "run" || state.playing);
-        else if (op === "audio") {
+        else if (op === "sample-rate") {
+            const rate = args[0];
+            if (state.audio) throw Error("Turn the engine off before changing sample rate");
+            if (!Number.isInteger(rate) || rate < 1 || rate > 384000) throw Error("Sample rate must be within 1..384000 Hz");
+            if (rate !== sampleRate) {
+                await midi.detach();
+                player = undefined;
+                await closePlayer(host);
+                sampleRate = rate;
+                failure = "";
+            }
+        } else if (op === "audio") {
             if (!player) throw Error("Prepare a score before enabling audio");
             if (args[0] === 0) await pause();
             else if (args[0] === 1) await start(state.playing);

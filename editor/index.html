@@ -68,7 +68,7 @@
         <nav aria-label="Settings categories"><button id="settings-audio-tab" aria-controls="settings-audio" aria-current="false">Audio</button><button id="settings-plugins-tab" aria-controls="settings-catalog" aria-current="page">Plugins</button><button id="settings-midi-tab" aria-controls="settings-midi" aria-current="false">MIDI</button></nav>
         <section id="settings-audio" aria-label="Audio" tabindex="-1" hidden>
             <label class="settings-switch"><input id="settings-audio-engine" type="checkbox">Engine</label>
-            <dl class="settings-info"><dt>Output</dt><dd id="audio-output">—</dd><dt>Sample rate</dt><dd id="audio-rate">—</dd><dt>Latency</dt><dd id="audio-latency">—</dd></dl>
+            <dl class="settings-info"><dt>Output</dt><dd id="audio-output">—</dd><dt><label for="audio-rate">Sample rate</label></dt><dd><select id="audio-rate" disabled></select></dd><dt>Latency</dt><dd id="audio-latency">—</dd></dl>
         </section>
         <section id="settings-catalog" aria-label="Plugins" tabindex="-1">
             <details id="plugin-sources" open>

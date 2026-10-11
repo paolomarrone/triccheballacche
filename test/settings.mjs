@@ -12,7 +12,7 @@ const config = resolve(directory, "config"), preferences = `${config}/tricchebal
 const folder = resolve(directory, "plugins"), missing = `${directory}/missing`;
 const initial = {perone: ["build/test/fixture.perone", folder], clap: [], lv2: [`${folder}/.lv2`], vst3: [`${folder}/.vst3`]};
 const env = {XDG_CONFIG_HOME: config, CLAP_PATH: `${folder}:${folder}`};
-const source = '(def p (daw/plugin "build/test/fixture.perone" {:gain 0.01})) (daw/output (daw/track p)) (daw/end 60)';
+const source = '(def p (daw/plugin "build/test/fixture.perone" {:gain 0.01})) (daw/output (daw/track p)) (daw/end (/ host/sample-rate 800))';
 await mkdir(`${config}/triccheballacche`, {recursive: true});
 await mkdir(folder);
 await mkdir(`${folder}/.lv2`);
@@ -53,12 +53,22 @@ try {
             await click("#settings");
             await click("#settings-audio-tab");
             assert(await evaluate('document.querySelector("#settings-audio-engine").disabled'));
-            await wait('document.querySelector("#audio-rate").textContent.includes("Hz")');
+            await wait('!document.querySelector("#audio-rate").disabled');
+            assert.equal(await evaluate('document.querySelector("#audio-rate").value'), "48000");
+            await set("#audio-rate", "44100");
+            await wait('!document.querySelector("#audio-rate").disabled');
+            assert.equal((await evaluate('backend.command("audio-info")')).sampleRate, 44100);
             await click('#settings-dialog [data-close]');
             await click("#play");
             await wait('Number(document.querySelector("#time").value) > 0');
             await click("#settings");
             assert(await evaluate('document.querySelector("#settings-audio-engine").checked'));
+            assert(await evaluate('document.querySelector("#audio-rate").disabled'));
+            assert.equal((await evaluate('backend.command("audio-info")')).sampleRate, 44100, "The player must use the selected rate");
+            assert.equal((await evaluate('backend.command("score")')).score.end, Math.round(55.125 * 44100) / 44100, "Janet must compile at the selected rate");
+            const rejected = await evaluate('backend.command("sample-rate", 96000)');
+            assert.match(rejected.error, /engine off/);
+            assert(rejected.audio && rejected.playing && rejected.prepared, "Rejected changes must preserve playback");
             if (mode === "native") {
                 await evaluate('window.holdCommand = "status"');
                 await wait('typeof window.releaseCommand === "function"');
@@ -75,6 +85,49 @@ try {
             await click("#settings-audio-engine");
             await wait('document.querySelector("#audio").checked');
             assert.equal(await evaluate('document.querySelector("#state").textContent'), "Stopped");
+            assert(await evaluate('document.querySelector("#audio-rate").disabled'), "Transport stop leaves the engine on");
+            await click("#settings-audio-engine");
+            await wait('!document.querySelector("#audio-rate").disabled');
+            if (mode === "native") {
+                await evaluate('window.holdCommand = "audio-info"');
+                await click("#settings-audio-tab");
+                await wait('typeof window.releaseCommand === "function"');
+                assert(await evaluate('document.querySelector("#audio-rate").disabled && document.querySelector("#settings-audio-engine").disabled'),
+                    "Audio controls must wait for the current state before accepting edits");
+                await evaluate('releaseCommand(); window.releaseCommand = null');
+                await wait('!document.querySelector("#audio-rate").disabled');
+            }
+            const unchanged = await evaluate('backend.command("sample-rate", 44100)');
+            assert(unchanged.prepared && !unchanged.audio, "An unchanged rate retains the graph");
+            for (const rate of [0, -1, 44100.5, 384001, "invalid"]) {
+                const invalid = await evaluate(`backend.command("sample-rate", ${JSON.stringify(rate)})`);
+                assert(invalid.error && invalid.prepared, "Invalid rates must leave the graph intact");
+            }
+            await set("#audio-rate", "96000");
+            await wait('!document.querySelector("#audio-rate").disabled');
+            assert.equal((await evaluate('backend.command("audio-info")')).sampleRate, 96000);
+            assert(await evaluate('document.querySelector("#settings-audio-engine").disabled'), "A rate change invalidates the prepared graph");
+            assert(!await evaluate('document.querySelector("#catalog-list").textContent.includes("in use")'));
+            await click('#settings-dialog [data-close]');
+            await click("#play");
+            await wait('document.querySelector("#audio").checked && !document.querySelector("#play").disabled');
+            assert.equal((await evaluate('backend.command("audio-info")')).sampleRate, 96000, "Changing rate must recreate the device");
+            assert.equal((await evaluate('backend.command("score")')).score.end, 120, "Play must recompile unchanged source at the new rate");
+            await click("#stop");
+            await click("#settings");
+            await click("#settings-audio-engine");
+            await wait('!document.querySelector("#audio-rate").disabled');
+            if (mode === "native") await evaluate('window.holdCommand = "sample-rate"');
+            await set("#audio-rate", "48000");
+            if (mode === "native") await wait('typeof window.releaseCommand === "function"');
+            await click('#settings-dialog [data-close]');
+            await click("#play");
+            if (mode === "native") await evaluate('releaseCommand(); window.releaseCommand = null');
+            await wait('document.querySelector("#audio").checked && !document.querySelector("#play").disabled');
+            assert.equal((await evaluate('backend.command("audio-info")')).sampleRate, 48000, "Play must wait for a pending rate change");
+            await click("#stop");
+            await click("#settings");
+            await writeFile(`build/test/settings-audio-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
             await click("#settings-plugins-tab");
             await wait('document.querySelectorAll(".catalog-item").length === 1');
             if (mode === "native") {
@@ -170,7 +223,7 @@ try {
         assert.deepEqual(JSON.parse(await readFile(preferences, "utf8"))["plugin-paths"].clap, [folder]);
         await call("Page.navigate", {url: "about:blank"});
     });
-    console.log("OK: shared settings, audio controls, native paths, scan, filtering, validation, persistence and CLI resolution");
+    console.log("OK: shared settings, audio/sample rate lifecycle, native paths, scan, filtering, validation, persistence and CLI resolution");
 } finally {
     await app?.close();
     server.closeAllConnections();

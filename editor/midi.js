@@ -38,7 +38,7 @@ export function midiSettings(request, fail) {
     return {
         show() { if (devices) query("midi-devices"); },
         score(value) {
-            if (score?.controlRevision !== value.controlRevision) {
+            if (score?.controlRevision !== value?.controlRevision) {
                 for (const port of devices || []) port.node = -1;
             }
             score = value;
