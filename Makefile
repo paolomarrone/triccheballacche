@@ -40,7 +40,11 @@ SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host build/tools/plugin-scan
 NATIVE_TESTS = $(addprefix build/test/,dsp daw player routing score_view plugins ui view_json sequence clap lv2 vst3 midi midi_devices)
-FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h host/*.c host/*.h posix/*.c posix/*.h x11/*.c x11/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c test/vst3/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
+FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h host/*.c host/*.h posix/*.c posix/*.h gtk/*.c x11/*.c x11/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c test/vst3/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
+GUI_LOOP = posix/gui_loop.o
+ifeq ($(TARGET_OS),Linux)
+GUI_LOOP = gtk/gui_loop.o
+endif
 
 .PHONY: all cli gui tools clean format format-check
 all: cli
@@ -146,8 +150,8 @@ build/obj/native/script.o: build/generated/perone.inc build/generated/plugin.inc
 build/obj/native/posix/files.o: build/generated/library.inc
 build/obj/native/score_janet.o: build/generated/daw.inc
 $(addprefix build/obj/native/,audio.o player.o posix/cli.o posix/export.o posix/gui.o tools/perone-host.o test/player.o): $(MINIAUDIO)
-$(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): override CPPFLAGS += -I$(WEBUI)/include
-$(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o): $(WEBUI)/include/webui.h
+$(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o test/webview.o): override CPPFLAGS += -I$(WEBUI)/include
+$(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o test/webview.o): $(WEBUI)/include/webui.h
 
 $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
 	mkdir -p $(dir $@)
@@ -155,6 +159,7 @@ $(NATIVE_PROGRAMS) $(NATIVE_TESTS):
 
 build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
 build/gui: $(PORTMIDI)/build/libportmidi.a
+build/gui: build/obj/native/$(GUI_LOOP)
 build/gui: $(addprefix build/obj/native/,posix/midi.o posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS) $(UI_OBJECTS)
 build/tools/perone-host: build/obj/native/tools/perone-host.o $(PLUGIN_OBJECTS) build/obj/native/audio.o
 build/gui build/test/ui build/test/clap build/test/lv2 build/test/vst3: private LDLIBS += -lX11
@@ -177,9 +182,17 @@ build/obj/native/vendor/civetweb.o: $(WEBUI)/include/webui.h Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -w -DNDEBUG -DNO_SSL -DNO_CACHING -DNO_CGI -DUSE_WEBSOCKET -I$(WEBUI)/src/civetweb -MMD -MP -c $(WEBUI)/src/civetweb/civetweb.c -o $@
 
+.PHONY: test-webview
+test-webview: build/test/webview
+	./build/test/webview
+
+build/test/webview: $(addprefix build/obj/native/,test/webview.o $(GUI_LOOP) vendor/webui.o vendor/civetweb.o) build/config/native.link
+	mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(LDLIBS) -o $@
+
 ifeq ($(TARGET_OS),Darwin)
-build/gui: build/obj/native/vendor/wkwebview.o
-build/gui: LDLIBS += -framework Cocoa -framework WebKit
+build/gui build/test/webview: build/obj/native/vendor/wkwebview.o
+build/gui build/test/webview: LDLIBS += -framework Cocoa -framework WebKit
 build/obj/native/vendor/wkwebview.o: $(WEBUI)/include/webui.h Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -w -MMD -MP -c $(WEBUI)/src/webview/wkwebview.m -o $@
@@ -496,7 +509,7 @@ $(CONFIG_FILES): FORCE
 	@cmp -s $@.tmp $@ || mv $@.tmp $@
 	@rm -f $@.tmp
 
-NATIVE_OBJECTS = $(addprefix build/obj/native/,$(patsubst %.c,%.o,$(wildcard *.c host/*.c posix/*.c x11/*.c tools/*.c test/*.c)) json.o janet.o vendor/webui.o vendor/civetweb.o vendor/wkwebview.o)
+NATIVE_OBJECTS = $(addprefix build/obj/native/,$(patsubst %.c,%.o,$(wildcard *.c host/*.c posix/*.c gtk/*.c x11/*.c tools/*.c test/*.c)) json.o janet.o vendor/webui.o vendor/civetweb.o vendor/wkwebview.o)
 $(NATIVE_OBJECTS) $(filter %$(PERONE_SUFFIX),$(NATIVE_FIXTURES)) $(MIXER_FIXTURE) build/test/fixture.clap build/test/fixture.lv2/fixture.so: build/config/native.compile
 $(NATIVE_PROGRAMS) $(NATIVE_TESTS): build/config/native.link
 $(WEB_OBJECTS): build/config/web-offline.compile

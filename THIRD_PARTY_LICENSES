@@ -108,6 +108,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+GLib (system runtime)
+---------------------
+https://gitlab.gnome.org/GNOME/glib
+
+The Linux GUI uses the system GLib main loop, licensed under LGPL-2.1-or-later.
+See the upstream COPYING and AUTHORS files for its license and contributors.
+
 CivetWeb (included by WebUI)
 ---------------------------
 https://github.com/civetweb/civetweb

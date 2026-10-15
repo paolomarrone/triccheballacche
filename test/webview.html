@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Native WebView test</title>
+<link rel="stylesheet" href="/editor/style.css">
+<script src="/webui.js"></script>
+<script type="module">
+try {
+    const page = new DOMParser().parseFromString(await (await fetch("/test/code.html")).text(), "text/html");
+    document.body.replaceChildren(page.querySelector("#sheet"), page.querySelector("#outside"));
+    const {codeEditor} = await import("/editor/code.js"), code = document.querySelector("#code");
+    const editor = codeEditor(code, {change() {}, select() {}, keydown() {}});
+    editor.readOnly(false);
+    while (!webui.isConnected()) await new Promise(resolve => setTimeout(resolve, 20));
+    editor.load(await (await fetch("/examples/sempiterno.janet")).text());
+    const medians = {};
+    for (const mode of ["idle", "scroll", "caret"]) {
+        editor.reveal(1);
+        const samples = [];
+        let previous;
+        for (let i = 0; i < 120; ++i) {
+            const now = await new Promise(requestAnimationFrame);
+            if (previous !== undefined) samples.push(now - previous);
+            previous = now;
+            if (mode === "scroll") code.scrollTop = (i * 53) % (code.scrollHeight - code.clientHeight);
+            if (mode === "caret") getSelection().modify("move", "forward", "character");
+        }
+        samples.sort((a, b) => a - b);
+        medians[mode] = samples[Math.floor(samples.length / 2)];
+    }
+    // Compare to the display cadence, not a fixed refresh rate or machine speed.
+    const passed = medians.scroll < medians.idle * 1.5 && medians.caret < medians.idle * 1.5;
+    await webui.call("report", passed, `${passed ? "OK" : "FAIL"}: native WebView frame intervals (ms): ${JSON.stringify(medians)}`);
+} catch (error) {
+    await webui.call("report", false, String(error));
+}
+</script>
+</html>

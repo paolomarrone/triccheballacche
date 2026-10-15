@@ -10,13 +10,13 @@
 #include "midi.h"
 #include "discovery.h"
 #include "webui.h"
+#include "gui_loop.h"
 #include <locale.h>
 #include <limits.h>
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
-#include <time.h>
 #include <unistd.h>
 
 // WebUI callbacks borrow their event until the main thread has answered it.
@@ -491,6 +491,10 @@ int main(int argc, char **argv) {
 	if (!serve && !shown) {
 		fputs("Cannot open the native editor. Install the WebView runtime or use --serve.\n", stderr);
 		stopped = 1;
+	} else if (!serve && gui_loop_init()) {
+		fputs("Cannot initialize the native event loop.\n", stderr);
+		shown = 0;
+		stopped = 1;
 	}
 	printf("Editor: http://localhost:%zu/native.html\n", webui_get_port(window));
 	fflush(stdout);
@@ -511,7 +515,7 @@ int main(int argc, char **argv) {
 			pthread_mutex_unlock(&mutex);
 		}
 		poll_player(&editor);
-		nanosleep(&(struct timespec){.tv_nsec = 16000000}, NULL);
+		gui_loop_wait();
 	}
 	pthread_mutex_lock(&mutex);
 	closing = 1;
@@ -523,6 +527,7 @@ int main(int argc, char **argv) {
 	modules_free(&editor.modules);
 	transport_free(&editor.transport);
 	free(editor.error);
+	gui_loop_free();
 	webui_exit();
 	webui_clean();
 	return !serve && !shown;
