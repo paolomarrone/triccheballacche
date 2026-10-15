@@ -65,15 +65,17 @@ function request(op, ...args) {
         const response = await backend.command(op, ...args);
         // Any command may observe a live revision. A successful Run replaces the
         // whole session; its score must not inherit the old session's queued source.
-        if (pending && (!["run", "prepare"].includes(op) || response.error) && Number.isInteger(response.revision) && response.revision !== revision) {
+        if ((pending || revision) && response.prepared !== false &&
+            (!["run", "prepare"].includes(op) || response.error) &&
+            Number.isInteger(response.revision) && response.revision !== revision) {
             const result = response.score ? response : await backend.command("score");
             if (result.error) throw Error(result.error);
             revision = result.score.revision;
             projection.revise(result.score);
             controls.revise(result.score);
             preferences.score(result.score);
-            tracedSource = pending.source;
-            tracedPath = pending.path;
+            tracedSource = pending?.source;
+            tracedPath = pending?.path;
             pending = undefined;
         }
         if (response.queued === false) pending = undefined;
@@ -123,7 +125,7 @@ async function action(op, entry = path.value, file) {
         } else if (evaluating) {
             pending = undefined;
             revision = result.score.revision;
-            projection.score(result.score);
+            projection.score(result.score, result.listening);
             tracedSource = source;
             tracedPath = result.path;
             controls.score(result.score, result.nativeAvailable);
@@ -224,6 +226,7 @@ async function poll() {
 
 export async function startEditor(adapter) {
     backend = adapter;
+    busy = true;
     controls = plugins(request, adapter, showError, layout.plugins);
     byId("save").setAttribute("aria-label", backend.saveLabel);
     byId("save").title = backend.saveTitle;
@@ -235,10 +238,20 @@ export async function startEditor(adapter) {
         path.value = savedPath = result.path;
         code.load(result.text);
         saved = result.text;
+        // A served native engine can outlive this page. Its source buffer belongs
+        // to the previous page, so restore the view without claiming source tracking.
+        if (prepared) {
+            const current = await request("score");
+            revision = current.score.revision;
+            projection.score(current.score, current.listening);
+            controls.score(current.score, current.nativeAvailable);
+            preferences.score(current.score);
+        }
         await preferences.load();
     } catch (error) {
         showError(error);
     }
+    busy = false;
     update();
     poll();
 }

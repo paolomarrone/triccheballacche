@@ -419,11 +419,11 @@ export function timeline(request, select, inspect, seek, error) {
             enabled = value;
             buttons();
         },
-        score(value) {
+        score(value, flags = []) {
             score = value; data = selected = undefined; from = 0; latency = 0; roll.scrollTop = 0;
             map.score(score);
             envelopes.score(score);
-            listening = score.tracks.map(() => 0);
+            listening = score.tracks.map((_, i) => flags[i] || 0);
             outputs = score.nodes.map(() => []);
             score.nodes.forEach((node, id) => node.inputs.forEach(input => outputs[input].push(id)));
             changing.clear();

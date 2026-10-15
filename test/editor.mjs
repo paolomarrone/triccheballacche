@@ -33,6 +33,10 @@ try {
     await withBrowser(async ({call, evaluate, wait, click, set, selectText, key, diagnostics}) => {
         await call("Page.navigate", {url});
         await wait('document.querySelector("#play")?.disabled === false');
+        await evaluate('window.beforeReload = true');
+        await call("Page.reload");
+        await wait('!window.beforeReload && document.querySelector("#code")?.textContent === ' + JSON.stringify(source));
+        await wait('document.querySelector("#play")?.disabled === false');
         await call("Emulation.setDeviceMetricsOverride", {width: 900, height: 520, deviceScaleFactor: 1, mobile: false});
         await evaluate(`(() => {
             const call = webui.call.bind(webui);
@@ -279,30 +283,45 @@ try {
             "Wheel over track names scrolls vertically without changing time zoom or Follow");
         await call("Input.dispatchMouseEvent", {type: "mouseWheel", ...trackPoint, deltaX: 0, deltaY: -100});
         await wait('document.querySelector("#roll").scrollTop === 0 && ranges.at(-1).first === 0');
-        const rpc = async args => {
-            for (let i = 0; i < 30; ++i) {
-                const result = await evaluate(`webui.call("command", ...${JSON.stringify(args)}).then(JSON.parse)`);
-                if (!result.error?.includes("busy")) return result;
-                await new Promise(resolve => setTimeout(resolve, 20));
-            }
-            throw Error("RPC remained busy");
-        };
+        const rpc = args => evaluate(`webui.call("command", ...${JSON.stringify(args)}).then(JSON.parse)`);
         const stale = await rpc(["range", report.revision, "0", "1", 0, 1, 100]);
         assert(stale.stale && !stale.lanes);
         const invalid = await rpc(["range", denseReport.revision, "0", "1", 0, 1000, 100]);
         assert(invalid.error && !invalid.lanes);
         await evaluate("window.openEnd = false");
-        await set("#code", changed);
+        await set("#code", changed.replace("(daw/end helper/duration)", "(daw/end 30)"));
         await click("#play");
         await wait('!document.querySelector("#stop").disabled');
         assert.deepEqual(diagnostics, []);
-        // Closing the frontend while playing must stop and release the native session.
+        await click('.track-listen [data-listen="1"]');
+        await wait(`document.querySelector('.track-listen [data-listen="1"]').getAttribute('aria-pressed') === 'true'`);
+        const revision = String((await rpc(["score"])).score.revision);
+        // --serve owns the engine independently of the browser connection.
+        await evaluate('window.onbeforeunload = null; window.beforeReload = true');
+        await call("Page.reload");
+        await wait(`!window.beforeReload && document.querySelector('#timeline')?.dataset.revision === ${JSON.stringify(revision)}`);
+        await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
+        assert.equal(await evaluate(`document.querySelector('.track-listen [data-listen="1"]').getAttribute('aria-pressed')`), "true",
+            "Reload restores mute/solo along with the running score");
+        await click("#stop");
+        await wait('document.querySelector("#stop").disabled');
+        await click("#views");
+        await wait('document.querySelector(".plugin-body > div")?.shadowRoot.querySelector("input")');
+        // Leaving the page entirely also leaves the server available for a new connection.
         await call("Page.navigate", {url: "about:blank"});
+        await new Promise(resolve => setTimeout(resolve, 300));
+        await call("Page.navigate", {url});
+        await wait('document.querySelector("#play")?.disabled === false');
+        await click("#play");
+        await wait('!document.querySelector("#stop").disabled');
+        assert.deepEqual(diagnostics, []);
+        await evaluate('window.dispatchEvent(new Event("close-request"))');
+        await app.exited;
     }, {graphics: true});
     const [code, signal] = await app.exited;
     assert.equal(signal, null, app.log);
     assert.equal(code, 0, app.log);
-    console.log("OK: dense WebUI editor, bounded timeline/density, follow, stale requests, source selection, native tracking, producers/imports, edits, scroll, Unicode files, unsaved playback, atomic save, diagnostics, recovery and close during audio");
+    console.log("OK: dense WebUI editor, bounded timeline/density, follow, stale requests, source selection, native tracking, producers/imports, edits, scroll, Unicode files, unsaved playback, atomic save, diagnostics, recovery, reload and close during audio");
 } finally {
     try { await app.close(); }
     finally {

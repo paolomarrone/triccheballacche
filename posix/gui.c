@@ -55,8 +55,11 @@ static bool close_window(size_t window) {
 
 static void request(webui_event_t *event) {
 	pthread_mutex_lock(&mutex);
-	if (closing || pending) {
-		webui_return_string(event, "{\"error\":\"Editor busy or closing\"}");
+	// A reloaded page can connect while its predecessor's last command is finishing.
+	while (pending && !closing)
+		pthread_cond_wait(&answered, &mutex);
+	if (closing) {
+		webui_return_string(event, "{\"error\":\"Editor closing\"}");
 	} else {
 		pending = event;
 		while (pending == event)
@@ -180,6 +183,10 @@ static void reply(
 			json_print(&json, "%s%d", count++ ? "," : "", i);
 	json_print(&json, "]");
 	if (score) {
+		json_print(&json, ",\"listening\":[");
+		for (int i = 0; i < editor->session.ntracks; ++i)
+			json_print(&json, "%s%d", i ? "," : "", atomic_load(&editor->session.tracks[i].listen));
+		json_print(&json, "]");
 		json_print(&json, ",\"nativeAvailable\":[");
 		for (int i = 0, count = 0; i < editor->session.nnodes; ++i)
 			if (ui_available(active->nodes + i))
@@ -488,20 +495,24 @@ int main(int argc, char **argv) {
 	int shown = serve ? *webui_start_server(window, "native.html") != 0 : webui_show_wv(window, "native.html");
 	// The WebView toolkit may initialize the locale; score numbers and JSON use decimal points.
 	setlocale(LC_NUMERIC, "C");
-	if (!serve && !shown) {
-		fputs("Cannot open the native editor. Install the WebView runtime or use --serve.\n", stderr);
+	if (!shown) {
+		fputs(serve ? "Cannot start the editor server.\n"
+		            : "Cannot open the native editor. Install the WebView runtime or use --serve.\n",
+		    stderr);
 		stopped = 1;
 	} else if (!serve && gui_loop_init()) {
 		fputs("Cannot initialize the native event loop.\n", stderr);
 		shown = 0;
 		stopped = 1;
 	}
-	printf("Editor: http://localhost:%zu/native.html\n", webui_get_port(window));
-	fflush(stdout);
+	if (shown) {
+		printf("Editor: http://localhost:%zu/native.html\n", webui_get_port(window));
+		fflush(stdout);
+	}
 	int connected = 0;
 	while (!stopped && webui_wait_async()) {
 		int visible = webui_is_shown(window);
-		if (connected && !visible)
+		if (!serve && connected && !visible)
 			break;
 		connected |= visible;
 		pthread_mutex_lock(&mutex);
@@ -530,5 +541,5 @@ int main(int argc, char **argv) {
 	gui_loop_free();
 	webui_exit();
 	webui_clean();
-	return !serve && !shown;
+	return !shown;
 }

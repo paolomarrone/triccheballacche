@@ -164,6 +164,26 @@ try {
             await wait('document.querySelectorAll("#track-list .track").length === 2');
             assert(!await evaluate('document.querySelector("#state").textContent.includes("queued")'));
             await click("#stop");
+            if (mode === "native") {
+                await open(entry);
+                const slow = source.replace("(daw/tempo 120)", "(daw/tempo 60)");
+                await set("#code", slow);
+                await click("#play");
+                await wait('!document.querySelector("#play").disabled');
+                const before = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
+                await set("#code", slow.replace('[60 64 67 nil]', '[48 55 60 67]'));
+                await click("#play");
+                await wait('document.querySelector("#state").textContent.includes("queued")');
+                await evaluate('window.onbeforeunload = null; window.beforeReload = true');
+                await call("Page.reload");
+                await wait('!window.beforeReload && document.querySelector("#play")?.disabled === false');
+                await wait(`Number(document.querySelector('#timeline').dataset.revision) > ${before}`);
+                await wait(`Number(document.querySelector('#score-canvas').dataset.revision) > ${before}`);
+                assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0,
+                    "A reconnected page must not attribute the old draft to the file read from disk");
+                assert(await evaluate('document.querySelector("#errors").hidden'));
+                await click("#stop");
+            }
             assert.deepEqual(diagnostics, []);
             console.log(`OK: ${mode} conditional Play, live-to-finite file switches, pending revisions, seek, UI continuity, errors and timeout`);
         }, {graphics: true});

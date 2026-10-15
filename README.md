@@ -46,6 +46,10 @@ make gui
 ./build/gui --serve examples/patterns.janet  # Use a browser instead of a WebView.
 ```
 
+`--serve` keeps the engine running across page reloads and tab closure; stop it
+with Ctrl+C. Reopening the page restores the running score and controls, but
+loads the startup file from disk; unsaved text belongs to the previous page.
+
 For browser playback, install Emscripten **6.0.12** and Node.js.
 
 ```sh
