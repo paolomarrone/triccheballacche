@@ -54,20 +54,14 @@ try {
     else renameSync(saved, missing);
 }
 
-// Exercise the same library discovery used by the native editor and an actual
-// score using a polyphonic synth, compressor, stereo pan and reverb.
+// Render an actual score using a polyphonic synth, compressor, stereo pan and reverb.
+// The editor's settings-backed catalog is exercised by test/library.mjs.
 const env = {...process.env};
 if (root === "build/library/brickworks") delete env.BRICKWORKS_PERONE;
 else env.BRICKWORKS_PERONE = root;
-writeFileSync("build/test/library-score.janet",
-    '(spit "build/test/library-native.json" (eval-string (slurp "lib/library.janet")))\n' +
-    '(dofile "examples/patterns.janet")\n');
-execFileSync("./build/cli", ["build/test/library-score.janet", "build/test/library-smoke.wav", "48000"],
+execFileSync("./build/cli", ["examples/patterns.janet", "build/test/library-smoke.wav", "48000"],
     {stdio: "inherit", env});
-const catalog = JSON.parse(readFileSync("build/test/library-native.json", "utf8"));
-const found = new Set(catalog.files.map(file => file.path));
-for (const bundle of bundles) assert(found.has(join(bundle, "product.json")), `Catalog missing ${bundle}`);
 const wav = readFileSync("build/test/library-smoke.wav");
 assert.equal(wav.toString("ascii", 0, 4), "RIFF");
 assert(wav.length > 48000 * 4, "The score must produce a complete stereo render");
-console.log(`OK: ${names.length} C bundles, DSP loading, offline cache, failure propagation, repair, native catalog and example render`);
+console.log(`OK: ${names.length} C bundles, DSP loading, offline cache, failure propagation, repair and example render`);

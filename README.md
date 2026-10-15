@@ -46,8 +46,7 @@ make gui
 ./build/gui --serve examples/patterns.janet  # Use a browser instead of a WebView.
 ```
 
-For browser playback, install Emscripten **5.0.6** and Node.js. Version 6.0.9 has a
-known repeated-playback memory issue with our pthread/worklet setup.
+For browser playback, install Emscripten **6.0.12** and Node.js.
 
 ```sh
 make -j4 library PERONE_PLATFORM=wasm32
@@ -438,7 +437,7 @@ Original code, documentation and original contributions to the examples are
 licensed under **GPL-3.0-only**; see [LICENSE](LICENSE). Third-party code and
 musical material retain their own terms. See [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)
 for attributions and dependency notices, including the optional piano samples.
-Three.js 0.180.0 is vendored from [r180](https://github.com/mrdoob/three.js/tree/r180)
+Three.js 0.186.1 is vendored from the [npm package](https://www.npmjs.com/package/three/v/0.186.1)
 (`build/` modules and `examples/jsm/controls/OrbitControls.js`) under its
 [MIT license](editor/vendor/three/LICENSE).
 CodeJar 4.3.0 supplies the text editor; its unmodified `dist/codejar.js` comes from

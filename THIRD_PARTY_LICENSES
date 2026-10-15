@@ -58,7 +58,7 @@ SOFTWARE.
 
 Spork JSON module
 ----------------
-https://github.com/janet-lang/spork
+https://github.com/janet-lang/spork/tree/8a87c5ae1cbbf3a0037eeac7f172bd45da4d9910
 
 Copyright (c) 2022 Calvin Rose
 
@@ -82,7 +82,7 @@ IN THE SOFTWARE.
 
 WebUI
 -----
-https://github.com/webui-dev/webui
+https://github.com/webui-dev/webui/tree/efac0e24dd4e6199dd7308c485906c90fb8816a2
 
 src/webui.c also carries Copyright (c) 2020-2026 Hassan Draga.
 
@@ -192,11 +192,37 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Three.js 0.180.0
----------------
-https://github.com/mrdoob/three.js/tree/r180
+Emscripten 6.0.12 runtime
+------------------------
+https://github.com/emscripten-core/emscripten/tree/6.0.12
 
-Copyright © 2010-2025 three.js authors.
+The generated browser runtime uses the MIT option of Emscripten's dual license.
+
+Copyright (c) 2010-2014 Emscripten authors, see AUTHORS file.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+Three.js 0.186.1
+---------------
+https://registry.npmjs.org/three/-/three-0.186.1.tgz
+
+Copyright © 2010-2026 three.js authors.
 The vendored modules are unmodified. The full MIT notice is preserved in
 editor/vendor/three/LICENSE and must accompany copies of those modules.
 
@@ -275,11 +301,11 @@ LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
-Lilv 0.24.26
+Lilv 0.28.0
 ------------
 https://drobilla.net/software/lilv.html
 
-Copyright 2011-2022 David Robillard <d@drobilla.net>
+Copyright 2011-2026 David Robillard <d@drobilla.net>
 
 Permission to use, copy, modify, and/or distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
@@ -293,11 +319,11 @@ LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
-Sratom 0.6.20
+Sratom 0.6.22
 -------------
 https://drobilla.net/software/sratom.html
 
-Copyright 2012-2025 David Robillard <d@drobilla.net>
+Copyright 2012-2026 David Robillard <d@drobilla.net>
 
 Permission to use, copy, modify, and/or distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
@@ -311,11 +337,11 @@ LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
-Sord 0.16.20
+Sord 0.16.22
 ------------
 https://drobilla.net/software/sord.html
 
-Copyright 2011-2025 David Robillard <d@drobilla.net>
+Copyright 2011-2026 David Robillard <d@drobilla.net>
 
 Permission to use, copy, modify, and/or distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
@@ -329,7 +355,7 @@ LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
-Serd 0.32.8
+Serd 0.32.10
 -----------
 https://drobilla.net/software/serd.html
 
@@ -347,7 +373,7 @@ LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 
-Zix 0.6.2
+Zix 0.8.2
 ---------
 https://drobilla.net/software/zix.html
 

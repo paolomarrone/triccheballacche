@@ -18,9 +18,9 @@ build() {
     meson install -C "$source/build"
 }
 build lv2 1.18.10 https://lv2plug.in/spec -Dplugins=disabled
-build zix 0.6.2 https://download.drobilla.net -Dbenchmarks=disabled
-build serd 0.32.8 https://download.drobilla.net -Dtools=disabled
-build sord 0.16.20 https://download.drobilla.net -Dtools=disabled
-build sratom 0.6.20 https://download.drobilla.net
-build lilv 0.24.26 https://download.drobilla.net -Dtools=disabled -Dbindings_py=disabled -Dbindings_cpp=disabled
+build zix 0.8.2 https://download.drobilla.net -Dbenchmarks=disabled
+build serd 0.32.10 https://download.drobilla.net -Dtools=disabled
+build sord 0.16.22 https://download.drobilla.net -Dtools=disabled
+build sratom 0.6.22 https://download.drobilla.net
+build lilv 0.28.0 https://download.drobilla.net -Dtools=disabled -Dbindings_py=disabled -Dbindings_cpp=disabled
 touch "$prefix/.ready"

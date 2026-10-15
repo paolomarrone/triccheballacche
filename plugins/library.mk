@@ -1,7 +1,7 @@
 # Canonical Brickworks C library. Run from the repository root.
 # Tibia's Perone templates live on its perone branch, not main.
-BRICKWORKS_REV ?= d3695e8a4837db2c22e1a75458f43c048a90912f
-TIBIA_REV ?= 76760dd7b9cc3e595a3453673de60cfe6684a657
+BRICKWORKS_REV ?= f412e503a08c3ee2656561890eef64365b5a76b7
+TIBIA_REV ?= 884c7d4d7cf8ad9b60eb00402941c2be46271ec4
 BRICKWORKS_URL ?= https://github.com/Orastron/brickworks.git
 TIBIA_URL ?= https://github.com/paolomarrone/tibia.git
 LIBRARY_DEPS ?= .deps/library
