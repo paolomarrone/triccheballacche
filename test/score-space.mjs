@@ -118,7 +118,7 @@ try {
             for (const type of ["mousePressed", "mouseReleased"])
                 await call("Input.dispatchMouseEvent", {type, ...selectedNote, button: "left", clickCount: 1});
             await wait('document.querySelector("#note-info").title.length > 0');
-            assert.match(await evaluate('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd)'), /\[:note/);
+            assert.match(await evaluate('getSelection().toString()'), /\[:note/);
             const curve = await evaluate(`(() => {
                 const c = document.querySelector('#score-canvas'), r = c.getBoundingClientRect(), d = c.dataset;
                 const lane = document.querySelector('#track-list .track').getBoundingClientRect();
@@ -129,7 +129,7 @@ try {
             assert.match(await evaluate('document.querySelector("#score-canvas").title'), /Intensity .*0[.,]002/);
             for (const type of ["mousePressed", "mouseReleased"])
                 await call("Input.dispatchMouseEvent", {type, ...curve, button: "left", clickCount: 1});
-            await wait('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd).includes("[:param")');
+            await wait('getSelection().toString().includes("[:param")');
             await writeFile(`build/test/score-flat-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
             const rulerPoint = {...curve, y: await evaluate('document.querySelector("#score-canvas").getBoundingClientRect().top + 10')};
             for (const type of ["mousePressed", "mouseReleased"])
@@ -171,7 +171,7 @@ try {
             await click("#follow");
             for (const type of ["mousePressed", "mouseReleased"])
                 await call("Input.dispatchMouseEvent", {type, ...point, button: "left", clickCount: 1});
-            await wait('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd).includes("[:note")');
+            await wait('getSelection().toString().includes("[:note")');
             await click('#track-list [data-listen="1"]');
             await wait('document.querySelector("#track-list .track-listen button").getAttribute("aria-pressed") === "true"');
             await click("#show-automation");

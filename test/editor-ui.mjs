@@ -46,7 +46,7 @@ try {
             app = nativeEditor(entry);
             url = await app.url;
         }
-        await withBrowser(async ({call, evaluate, wait, click, key, diagnostics}) => {
+        await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {
             const openEffect = async () => evaluate(`document.querySelector('.plugin[data-node="1"]').open = true`);
             const toggleParameters = async () => evaluate(`document.querySelector('.plugin[data-node="1"] button[aria-label="Toggle parameter controls"]').click()`);
             const root = `document.querySelector('.plugin[data-node="1"] .plugin-body > div')?.shadowRoot`;
@@ -165,6 +165,7 @@ try {
             assert.equal(await evaluate("fixtureFreed"), 1);
             await wait('!document.querySelector("#play").disabled');
             await key("Enter", "Enter", 2);
+            await wait(`document.querySelector("#timeline").dataset.revision !== ${JSON.stringify(revision)} && !document.querySelector("#prepare").disabled`);
             await wait(`${synthRoot}?.querySelector(".parameter-controls")`);
             assert.equal(await evaluate('document.querySelectorAll("#track-list [data-listen][aria-pressed=true]").length'), 0,
                 "A newly prepared score clears mute/solo");
@@ -262,7 +263,7 @@ try {
 (def group (daw/track (daw/mix [a b]) {:name "Group"}))
 (def wet (daw/track (daw/through group (daw/plugin "${directory}/effect.perone")) {:name "Wet"}))
 (daw/output (daw/mix [group wet]))`);
-            await evaluate(`(() => { const code = document.querySelector('#code'); code.value = ${JSON.stringify(graph)}; code.dispatchEvent(new Event('input')); })()`);
+            await set("#code", graph);
             await click("#play");
             await wait('document.querySelectorAll("#track-list [data-listen]").length === 8');
             assert.match(await evaluate('document.querySelector("#track-list .track:nth-child(3)").textContent'), /Group/);
@@ -282,7 +283,7 @@ try {
             await wait('document.querySelector("#stop").disabled');
             assert.deepEqual(diagnostics, []);
             // Restore the saved text before leaving, so the draft confirmation is not part of this test.
-            await evaluate(`(() => { const code = document.querySelector('#code'); code.value = ${JSON.stringify(saved)}; code.dispatchEvent(new Event('input')); })()`);
+            await set("#code", saved);
             await call("Page.navigate", {url: "about:blank"});
             console.log(`OK: ${mode} DSP, shared custom/generic UI, relative JS/CSS/UI Wasm, automation, edits, messages, selection, stop and restart`);
         }, {graphics: true});

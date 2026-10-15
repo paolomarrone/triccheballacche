@@ -193,6 +193,15 @@ Copyright © 2010-2025 three.js authors.
 The vendored modules are unmodified. The full MIT notice is preserved in
 editor/vendor/three/LICENSE and must accompany copies of those modules.
 
+CodeJar 4.3.0
+-------------
+https://github.com/antonmedv/codejar
+https://registry.npmjs.org/codejar/-/codejar-4.3.0.tgz
+
+Copyright (c) 2020 Anton Medvedev.
+editor/vendor/codejar/codejar.js is the unmodified dist/codejar.js from the
+npm package. Its full MIT notice is in editor/vendor/codejar/LICENSE.
+
 Florestan piano samples (optional download)
 ------------------------------------------
 https://dev.nando.audio/pages/soundfonts.html

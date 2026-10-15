@@ -72,16 +72,16 @@ try {
             await set("#examples", "examples/gui.janet");
             assert.equal(await evaluate('confirmations.length'), 1);
             assert.equal(await evaluate('document.querySelector("#path").value'), entry);
-            assert.equal(await evaluate('document.querySelector("#code").value'), draft);
+            assert.equal(await evaluate('document.querySelector("#code").textContent'), draft);
             assert.equal(await evaluate('document.querySelector("#examples").value'), "");
             await evaluate('globalThis.confirm = () => true');
             await set("#examples", "examples/gui.janet");
             await wait('document.querySelector("#path").value === "examples/gui.janet" && !document.querySelector("#play").disabled');
             const guiSource = await readFile("examples/gui.janet", "utf8");
-            assert.equal(await evaluate('document.querySelector("#code").value'), guiSource);
+            assert.equal(await evaluate('document.querySelector("#code").textContent'), guiSource);
             await click("#open");
             await wait(fileButton("sources"));
-            assert.equal(await evaluate('document.querySelector("#code").value'), guiSource, "Opening the picker does not load anything");
+            assert.equal(await evaluate('document.querySelector("#code").textContent'), guiSource, "Opening the picker does not load anything");
             await click('#file-list [data-name="sources"]');
             await wait(fileButton("oculus-non-vidit.janet"));
             await click("#file-up");
@@ -89,7 +89,7 @@ try {
             await screenshot("files");
             await click('#file-list [data-name="polpo.janet"]');
             await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#play").disabled');
-            assert.equal(await evaluate('document.querySelector("#code").value'), original);
+            assert.equal(await evaluate('document.querySelector("#code").textContent'), original);
             assert.match(await evaluate('document.querySelector("#path").value'), /\/examples\/polpo\.janet$/);
             await screenshot("toolbar");
             await click("#open");
@@ -109,14 +109,14 @@ try {
                 await wait(fileButton("score \"音\".janet"));
                 await evaluate(`${fileButton('score "音".janet')}.click()`);
                 await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#play").disabled');
-                assert.equal(await evaluate('document.querySelector("#code").value'), pickedSource);
+                assert.equal(await evaluate('document.querySelector("#code").textContent'), pickedSource);
                 assert.equal(await evaluate('document.querySelector("#path").value'), picked);
             } else {
                 const {root} = await call("DOM.getDocument");
                 const {nodeId} = await call("DOM.querySelector", {nodeId: root.nodeId, selector: "#file-input"});
                 await call("DOM.setFileInputFiles", {nodeId, files: [upload]});
                 await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#play").disabled');
-                assert.equal(await evaluate('document.querySelector("#code").value'), uploadedSource);
+                assert.equal(await evaluate('document.querySelector("#code").textContent'), uploadedSource);
                 assert.equal(await evaluate('document.querySelector("#path").value'), "/examples/upload 音.janet");
             }
             await click("#play");
@@ -128,7 +128,7 @@ try {
             await evaluate('document.querySelector("#file-location").requestSubmit()');
             await wait('!document.querySelector("#file-error").hidden');
             await key("Escape", "Escape");
-            assert.equal(await evaluate('document.querySelector("#code").value'), original);
+            assert.equal(await evaluate('document.querySelector("#code").textContent'), original);
             assert.equal(await readFile(entry, "utf8"), original, "Opening and browsing must never save files");
             await click("#stop");
             await wait('!document.querySelector("#play").disabled');

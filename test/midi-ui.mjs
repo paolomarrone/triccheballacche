@@ -92,7 +92,7 @@ Object.defineProperty(navigator, "requestMIDIAccess", {value: async () => ({
             // A bare graph prepares and exposes plugins without a fake duration, on both backends.
             const graph = '(def keys (daw/midi :keys)) (def synth (daw/plugin :synth "build/test/fixture.perone" {:gain 0.01})) (daw/midi-through keys synth) (daw/midi-output keys) (daw/output (daw/track synth))';
             if (!await evaluate('document.querySelector("#stop").disabled')) await click("#stop");
-            await evaluate(`(() => { const code = document.querySelector('#code'); code.value = ${JSON.stringify(graph)}; code.dispatchEvent(new Event('input')); })()`);
+            await set("#code", graph);
             await click("#prepare");
             await wait('!document.querySelector("#prepare").disabled && document.querySelector("#audio").checked');
             assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
@@ -120,7 +120,11 @@ Object.defineProperty(navigator, "requestMIDIAccess", {value: async () => ({
             await click('#settings-dialog [data-close]');
             await click("#prepare");
             await wait('!document.querySelector("#prepare").disabled && document.querySelector("#audio").checked');
-            assert.equal((await evaluate('midiBackend.command("audio-info")')).sampleRate, 44100);
+            await click("#settings");
+            await click("#settings-audio-tab");
+            await wait('document.querySelector("#audio-rate").value === "44100" && !document.querySelector("#settings-audio-engine").disabled');
+            assert(await evaluate('document.querySelector("#settings-error").hidden'));
+            await click('#settings-dialog [data-close]');
             assert.deepEqual(diagnostics, []);
             // Avoid the draft confirmation on test teardown.
             await evaluate('window.onbeforeunload = null');

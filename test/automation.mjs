@@ -78,7 +78,7 @@ try {
             for (const type of ["mousePressed", "mouseReleased"])
                 await call("Input.dispatchMouseEvent", {type, ...point, button: "left", clickCount: 1});
             await wait('document.querySelector("#note-info").title.length > 0');
-            assert.match(await evaluate(`(() => { const c = document.querySelector('#code'); return c.value.slice(c.selectionStart, c.selectionEnd); })()`),
+            assert.match(await evaluate(`getSelection().toString()`),
                 /param f :gain 0.1/, "A curve selects the code that generated its change");
             await evaluate(`(() => {
                 const c = document.querySelector('#score-canvas'), r = c.getBoundingClientRect();

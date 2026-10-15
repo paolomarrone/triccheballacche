@@ -1,6 +1,6 @@
 :root { color-scheme: light dark; font-family: system-ui, sans-serif; font-size: 13px; -webkit-user-select: none; user-select: none; --muted: light-dark(#666, #aaa); --border: light-dark(#ccc, #444); --active: light-dark(#fff0ba, #493d20); --accent: light-dark(#946000, #edc56c); }
 * { box-sizing: border-box; }
-input, textarea, [contenteditable=true], #errors, #file-error { -webkit-user-select: text; user-select: text; }
+input, textarea, [contenteditable], #errors, #file-error { -webkit-user-select: text; user-select: text; }
 body { margin: 0; padding: 6px; height: 100dvh; display: flex; flex-direction: column; gap: 5px; }
 nav, footer { display: flex; align-items: center; gap: 5px; }
 body > nav { flex-wrap: wrap; }
@@ -19,7 +19,13 @@ main { display: flex; gap: 5px; flex: 1; min-height: 0; }
 #input { position: relative; flex: 1; min-width: 0; overflow: hidden; }
 #marks { position: absolute; top: var(--inset); width: 100%; pointer-events: none; }
 #marks div { position: absolute; width: 100%; height: var(--row); background: var(--active); border-left: 2px solid var(--accent); }
-#code { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: var(--inset) .6em; border: 0; resize: none; font: inherit; tab-size: 2; color: inherit; background: transparent; }
+#code { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: var(--inset) .6em; border: 0; font: inherit; tab-size: 2; color: inherit; background: transparent; overflow: auto; white-space: pre; }
+.syntax-comment { color: var(--muted); }
+.syntax-string { color: light-dark(#526c20, #b0c88a); }
+.syntax-number, .syntax-literal { color: light-dark(#8a5316, #d9b47c); }
+.syntax-keyword { color: light-dark(#794a8e, #c5a0d8); }
+.syntax-form { color: light-dark(#23677f, #8bbdd2); }
+.syntax-punctuation { color: light-dark(#666, #aaa); }
 #errors { margin: 0; padding: .5rem; max-height: 12rem; overflow: auto; white-space: pre-wrap; border: 1px solid #c65c4b; }
 footer { color: var(--muted); font-size: 12px; }
 #time { margin-left: auto; width: 10ch; text-align: right; font-variant-numeric: tabular-nums; appearance: textfield; }

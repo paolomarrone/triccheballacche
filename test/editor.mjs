@@ -30,7 +30,7 @@ await chmod(path, 0o640);
 const app = nativeEditor(path);
 try {
     const url = await app.url;
-    await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {
+    await withBrowser(async ({call, evaluate, wait, click, set, selectText, key, diagnostics}) => {
         await call("Page.navigate", {url});
         await wait('document.querySelector("#play")?.disabled === false');
         await call("Emulation.setDeviceMetricsOverride", {width: 900, height: 520, deviceScaleFactor: 1, mobile: false});
@@ -55,7 +55,7 @@ try {
                 return JSON.stringify({...result, view: null});
             };
         })()`);
-        assert.equal(await evaluate('document.querySelector("#code").value'), source);
+        assert.equal(await evaluate('document.querySelector("#code").textContent'), source);
         assert.equal(await evaluate('document.querySelector("#path").value'), path);
         assert(await evaluate('document.querySelector("#numbers").childElementCount < 30'), "Draw only visible row numbers");
         assert(await evaluate(`(() => {
@@ -94,10 +94,10 @@ try {
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         await set("#path", path);
         await wait(`document.querySelector('#marks [data-line="${producer}"]')`);
-        // Gutter and marks follow the textarea's scroll without changing its text or selection.
+        // Gutter and marks follow the editor scroll without changing its text or selection.
+        await selectText("#code", 4, 8);
         await evaluate(`(() => {
             const code = document.querySelector("#code");
-            code.focus(); code.setSelectionRange(4, 8);
             code.scrollTop = 60; code.scrollLeft = 100;
             code.dispatchEvent(new Event("scroll"));
         })()`);
@@ -108,7 +108,7 @@ try {
                 code.getBoundingClientRect().top + parseFloat(style.paddingTop) + ${producer - 1} * parseFloat(style.lineHeight) - code.scrollTop];
         })()`);
         assert(Math.max(...geometry) - Math.min(...geometry) < 1, "Highlights must stay aligned when scrolling");
-        assert.deepEqual(await evaluate('[document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd]'), [4, 8]);
+        assert.equal(await evaluate('getSelection().toString()'), changed.slice(4, 8));
         await evaluate('document.querySelector("#code").scrollTop = document.querySelector("#code").scrollLeft = 0');
         assert.equal(await readFile(path, "utf8"), source, "Play must not save the draft");
         await click("#views");
@@ -133,12 +133,12 @@ try {
         await clickNote();
         await wait('document.querySelector("#note-info").title.length > 0');
         assert((await evaluate('document.querySelector("#note-info").textContent')).includes("MIDI 64"));
-        assert((await evaluate('document.querySelector("#code").value.slice(document.querySelector("#code").selectionStart, document.querySelector("#code").selectionEnd)')).includes("array/push"));
+        assert((await evaluate('getSelection().toString()')).includes("array/push"));
         await set("#code", "# different draft\n" + changed);
-        await evaluate('document.querySelector("#code").setSelectionRange(0, 0)');
+        await selectText("#code", 0);
         await clickNote();
         await new Promise(resolve => setTimeout(resolve, 100));
-        assert.equal(await evaluate('document.querySelector("#code").selectionEnd'), 0, "Old origins must not select code in a changed draft");
+        assert.equal(await evaluate('getSelection().toString()'), "", "Old origins must not select code in a changed draft");
         await set("#code", changed);
         await click("#save");
         await wait('!document.querySelector("#modified").textContent');
@@ -148,7 +148,7 @@ try {
         await click("#save");
         await wait('!document.querySelector("#errors").hidden');
         assert.equal(await readFile(path, "utf8"), changed);
-        assert.equal(await evaluate('document.querySelector("#code").value'), changed);
+        assert.equal(await evaluate('document.querySelector("#code").textContent'), changed);
         await set("#path", path);
         await set("#code", "# draft\nunknown-binding");
         await click("#play");
@@ -183,7 +183,7 @@ try {
         await set("#path", `${directory}/absent.janet`);
         await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
         await wait('!document.querySelector("#errors").hidden');
-        assert.equal(await evaluate('document.querySelector("#code").value'), changed);
+        assert.equal(await evaluate('document.querySelector("#code").textContent'), changed);
         await set("#path", path);
         await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
         await wait('document.querySelector("#errors").hidden && !document.querySelector("#play").disabled');

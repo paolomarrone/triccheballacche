@@ -301,7 +301,7 @@ test-plugins: check-plugins build/test/plugins
 test-ui: build/test/ui
 	./build/test/ui
 
-test-editor: gui test
+test-editor: gui test test-code
 	node test/editor.mjs
 
 polpo: check-plugins cli
@@ -460,6 +460,10 @@ test-editor-ui: gui test-web test-parameter-ui
 test-parameter-ui:
 	node test/parameters.mjs
 	node test/parameter-ui.mjs
+
+.PHONY: test-code
+test-code:
+	node test/code.mjs
 
 .PHONY: test-score-space test-graph
 test-score-space: gui build/web/player.mjs $(NATIVE_FIXTURES) $(WEB_FIXTURES) | build/test

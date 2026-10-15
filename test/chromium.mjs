@@ -70,18 +70,38 @@ export async function withBrowser(run, {graphics = false} = {}) {
             for (const type of ["mousePressed", "mouseReleased"])
                 await call("Input.dispatchMouseEvent", {type, x, y, button: "left", clickCount: 1});
         };
-        const set = (selector, value) => evaluate(`(() => {
-            const node = document.querySelector(${JSON.stringify(selector)}); node.value = ${JSON.stringify(value)};
-            for (const type of ["input", "change"]) node.dispatchEvent(new Event(type, {bubbles: true}));
+        const set = async (selector, value) => {
+            const target = `document.querySelector(${JSON.stringify(selector)})`;
+            await wait(`${target} && !${target}.disabled && !${target}.readOnly &&
+                (!${target}.hasAttribute("contenteditable") || ${target}.isContentEditable)`);
+            return evaluate(`(() => {
+                const node = ${target};
+                if (node.isContentEditable) node.textContent = ${JSON.stringify(value)};
+                else node.value = ${JSON.stringify(value)};
+                for (const type of ["input", "change"]) node.dispatchEvent(new Event(type, {bubbles: true}));
+            })()`);
+        };
+        const selectText = (selector, start, end = start) => evaluate(`(() => {
+            const node = document.querySelector(${JSON.stringify(selector)}), walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+            const range = document.createRange(); range.selectNodeContents(node);
+            let offset = 0, from = false;
+            while (walker.nextNode()) {
+                const text = walker.currentNode, length = text.length;
+                if (!from && offset + length >= ${start}) { range.setStart(text, ${start} - offset); from = true; }
+                if (offset + length >= ${end}) { range.setEnd(text, ${end} - offset); break; }
+                offset += length;
+            }
+            node.focus(); getSelection().removeAllRanges(); getSelection().addRange(range);
         })()`);
         const key = async (key, code = key, modifiers = 0) => {
             const windowsVirtualKeyCode = {Enter: 13, Escape: 27, " ": 32}[key] || 0;
             for (const type of ["keyDown", "keyUp"])
-                await call("Input.dispatchKeyEvent", {type, key, code, windowsVirtualKeyCode, modifiers});
+                await call("Input.dispatchKeyEvent", {type, key, code, windowsVirtualKeyCode, modifiers,
+                    ...(type === "keyDown" && key === "Enter" && !(modifiers & 7) ? {text: "\r"} : {})});
         };
         await call("Runtime.enable");
         await call("Page.enable");
-        return await run({call, evaluate, wait, click, set, key, diagnostics});
+        return await run({call, evaluate, wait, click, set, selectText, key, diagnostics});
     } finally {
         clearTimeout(deadline);
         socket?.close();

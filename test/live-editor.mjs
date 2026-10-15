@@ -130,7 +130,7 @@ try {
             await wait('!document.querySelector("#play").disabled');
             assert.equal(await evaluate('document.querySelector("#errors").textContent'), "", "A new file starts a session instead of attempting a live update");
             await wait('document.querySelectorAll("#track-list .track").length === 2');
-            assert.equal(await evaluate('document.querySelector("#code").value'), finiteSource);
+            assert.equal(await evaluate('document.querySelector("#code").textContent'), finiteSource);
             assert(!await evaluate('window.savedUI === document.querySelector(".plugin-body > div")'), "A new score creates its own plugin UI");
             await wait('!document.querySelector("#stop").disabled');
             await click("#stop");

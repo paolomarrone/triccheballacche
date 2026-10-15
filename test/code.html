@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<link rel="stylesheet" href="../editor/style.css">
+<title>Code editor test</title>
+<div id="sheet" style="flex: none; height: 240px">
+    <div id="gutter"><pre id="numbers"></pre></div>
+    <div id="input"><div id="marks"></div><div id="code" role="textbox" aria-multiline="true" tabindex="0"></div></div>
+</div>
+<input id="outside" aria-label="Outside the editor">
+<script type="module">
+import {codeEditor} from "../editor/code.js";
+globalThis.changes = 0;
+globalThis.commands = 0;
+globalThis.editor = codeEditor(document.querySelector("#code"), {
+    change() { ++changes; },
+    select() {},
+    keydown(event) {
+        if (event.ctrlKey && event.key === "Enter") { event.preventDefault(); ++commands; }
+    }
+});
+editor.readOnly(false);
+</script>
+</html>

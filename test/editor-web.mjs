@@ -19,7 +19,7 @@ try {
         assert.equal(await evaluate('document.querySelector("#save").getAttribute("aria-label")'), "Download");
         assert(await evaluate('document.querySelector("#views").getBoundingClientRect().width > 0'));
         assert.equal(await evaluate('getComputedStyle(document.querySelector("#sheet")).display'), "flex");
-        const source = await evaluate('document.querySelector("#code").value');
+        const source = await evaluate('document.querySelector("#code").textContent');
         await click("#play");
         await wait('!document.querySelector("#stop").disabled');
         await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
@@ -76,11 +76,11 @@ try {
         assert.equal(await readFile(entry, "utf8"), source, "Download must not modify server files");
         await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
         await wait('!document.querySelector("#play").disabled');
-        assert.equal(await evaluate('document.querySelector("#code").value'), downloaded, "Downloads also update the session filesystem");
+        assert.equal(await evaluate('document.querySelector("#code").textContent'), downloaded, "Downloads also update the session filesystem");
         await set("#path", "examples/absent.janet");
         await evaluate('document.querySelector("#path").dispatchEvent(new KeyboardEvent("keydown", {key: "Enter", bubbles: true, cancelable: true}))');
         await wait('document.querySelector("#errors").textContent.includes("missing")');
-        assert.equal(await evaluate('document.querySelector("#code").value'), downloaded);
+        assert.equal(await evaluate('document.querySelector("#code").textContent'), downloaded);
         assert.deepEqual(diagnostics, []);
         await call("Page.navigate", {url: "about:blank"});
         console.log(`OK: shared editor in pure Wasm, ${entry}, bounded timeline, source tracking, drafts, stop, diagnostics, recovery and downloads`);

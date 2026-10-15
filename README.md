@@ -172,6 +172,10 @@ and updates the session's files. Reloading the page restores the published files
   4 beats). Give plugins stable keyword identities. Routing, identities, tempo,
   duration and plugin configurations must match; stop before changing them.
   Errors leave the current music running. Stop or seek cancels queued revisions.
+- **Code editor:** Janet highlighting, two-space tabs, basic auto-indentation,
+  paired brackets and Ctrl/Command+Z / Shift+Z undo/redo. CodeJar is experimental:
+  replacing all text by paste can append a newline, and delayed highlighting can
+  reclaim focus immediately after typing.
 - **Score view:** drag or Shift+wheel to pan time, wheel to zoom time,
   Ctrl/Command+wheel to resize tracks. Wheel over names scrolls tracks vertically.
   The left column shows compact routing blocks aligned with the score lanes;
@@ -408,7 +412,7 @@ Formatting is in `.editorconfig` and
 | `make test-library-build` | Node.js/npm; builds and checks the canonical library. |
 | `make test-web` / `make test-browser` | Emscripten/Node.js; Chromium for browser. |
 | `make test-editor` | Native GUI build, Node.js, Chromium and an audio device. |
-| `make test-parameter-ui` | Node.js and Chromium; no audio build. |
+| `make test-code` / `make test-parameter-ui` | Node.js and Chromium; no audio build. |
 | `make test-live test-editor-ui test-score-space test-graph` | Native and browser prerequisites. |
 | `make test-library` | Native and Wasm production bundles, plus editor prerequisites. |
 | `make -C plugins/piano test` | Downloaded bank and Tibia; `test-web` also needs Emscripten/Node.js. |
@@ -436,6 +440,9 @@ for attributions and dependency notices, including the optional piano samples.
 Three.js 0.180.0 is vendored from [r180](https://github.com/mrdoob/three.js/tree/r180)
 (`build/` modules and `examples/jsm/controls/OrbitControls.js`) under its
 [MIT license](editor/vendor/three/LICENSE).
+CodeJar 4.3.0 supplies the text editor; its unmodified `dist/codejar.js` comes from
+the [npm package](https://www.npmjs.com/package/codejar/v/4.3.0), with its
+[MIT license](editor/vendor/codejar/LICENSE). Janet highlighting is local.
 
 When distributing native or browser builds, include the license notices and
 provide the corresponding source, dependency versions and local patches under
