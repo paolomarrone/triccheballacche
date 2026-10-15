@@ -55,7 +55,7 @@ try {
                 }
                 return {};
             };
-            const host = plugins(request, {}, error => { if (error) throw error; });
+            const host = plugins(request, {}, error => { if (error) throw error; }, visible => { document.querySelector('#plugins').hidden = !visible; });
             host.status(true, false);
             host.score({revision: 1, nodes: [{name: 'Synth', inputs: [], product}, {inputs: [0]}], tracks: [[0, 1]]});
             host.show(true);

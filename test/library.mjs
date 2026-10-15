@@ -46,7 +46,7 @@ try {
             await wait('document.querySelector("#examples")?.disabled === false');
             assert(await evaluate('["open", "save", "settings"].every(id => !document.getElementById(id).textContent.trim())'));
             assert(await evaluate('["open", "save"].every(id => document.getElementById(id).parentElement.id === "file-bar")'));
-            assert.equal(await evaluate('document.querySelector("body > nav").lastElementChild.id'), "settings");
+            assert.equal(await evaluate('document.querySelector("#file-tools").lastElementChild.id'), "settings");
             await click("#play");
             await wait('Number(document.querySelector("#time").value) > 0');
             await click("#settings");

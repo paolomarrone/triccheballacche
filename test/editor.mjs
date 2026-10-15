@@ -225,7 +225,7 @@ try {
         };
         await changeStart(0);
         await wait('ranges.at(-1).from === 0 && Number(document.querySelector("#score-canvas").dataset.notes) > 0');
-        assert.deepEqual(await evaluate('Array.from(document.querySelector("#timeline-tools").querySelectorAll("button,input")).filter(c => c.getBoundingClientRect().width > 0).map(c => c.id)'), ["follow", "show-automation", "score-3d"]);
+        assert.deepEqual(await evaluate('Array.from(document.querySelector("#timeline-tools").querySelectorAll("button,input")).filter(c => c.getBoundingClientRect().width > 0).map(c => c.id)'), ["show-routing", "follow", "show-automation", "score-3d"]);
         const beforeZoom = await evaluate('[Number(document.querySelector("#score-canvas").dataset.scale), document.querySelector("#track-list .track").clientHeight]');
         await evaluate(`(() => {
             const c = document.querySelector("#score-canvas"), r = c.getBoundingClientRect();

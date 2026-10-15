@@ -177,12 +177,15 @@ and updates the session's files. Reloading the page restores the published files
   reclaim focus immediately after typing.
 - **Score view:** drag or Shift+wheel to pan time, wheel to zoom time,
   Ctrl/Command+wheel to resize tracks. Wheel over names scrolls tracks vertically.
+  On touch screens, drag to pan and pinch to zoom time in 2D.
   The left column shows compact routing blocks aligned with the score lanes;
   click a block to inspect its signal path. Drag the divider to resize the map:
   more width spreads nodes along the signal flow and shortens connections.
   Follow keeps the playhead in view. The 3D toggle changes the projection;
   drag then orbits, right-drag pans and Alt+wheel zooms time. Reset view restores
   the camera and zoom around the current playback position.
+- **Small screens:** Code/Score switches views without interrupting playback.
+  Plugins open in an overlay; Show routing hides the map to give notes more room.
 - **Automation** toggles visibility only. Each track's checklist selects curves.
   Source highlights and note/curve picking connect the view to the code.
 - **Routing blocks** show plugins and explicit mixes, folding track/master gain
@@ -413,6 +416,7 @@ Formatting is in `.editorconfig` and
 | `make test-editor` | Native GUI build, Node.js, Chromium and an audio device. |
 | `make test-code` / `make test-parameter-ui` | Node.js and Chromium; no audio build. |
 | `make test-webview` | Native display and WebView runtime; checks editor frame pacing in an actual window. |
+| `make test-mobile` | Native/browser editors and Chromium touch emulation; no physical device required. |
 | `make test-live test-editor-ui test-score-space test-graph` | Native and browser prerequisites. |
 | `make test-library` | Native and Wasm production bundles, plus editor prerequisites. |
 | `make -C plugins/piano test` | Downloaded bank and Tibia; `test-web` also needs Emscripten/Node.js. |

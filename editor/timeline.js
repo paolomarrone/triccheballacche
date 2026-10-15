@@ -8,6 +8,8 @@ export function timeline(request, select, inspect, seek, error) {
     const headers = get("track-headers"), tracks = get("track-list"), follow = get("follow"), detail = get("note-info");
     const space = get("score-view"), canvas = get("score-canvas"), message = get("score-message");
     const ruler = 24, defaultScale = 0.02, defaultRow = 60;
+    const pointers = new Map();
+    const zoomScale = value => Math.max(0.002, Math.min(3600, value));
     let score, data, from = 0, scale = defaultScale, time = 0, playing = false;
     let width = 0, height = 0, row = defaultRow, label = 220, version = 0, pending = false, scheduled = false;
     let loaded, latency = 0, position = 0, stamp = 0, animation = 0;
@@ -33,7 +35,12 @@ export function timeline(request, select, inspect, seek, error) {
         get("score-reset").hidden = flat;
         get("automation-parameters").hidePopover();
         drag = undefined;
+        pointers.clear();
         changed();
+    };
+    get("show-routing").onchange = () => {
+        headers.hidden = get("routing-split").hidden = !get("show-routing").checked;
+        resize();
     };
     get("score-reset").onclick = () => {
         scale = defaultScale; row = defaultRow;
@@ -193,6 +200,7 @@ export function timeline(request, select, inspect, seek, error) {
     }
 
     function draw() {
+        if (!width || !height) return;
         get("track-map").style.transform = `translateY(${-roll.scrollTop}px)`;
         const view = viewport(), dark = matchMedia("(prefers-color-scheme: dark)").matches;
         renderer?.update({score, data, view, curves: envelopes.curves(view),
@@ -201,10 +209,11 @@ export function timeline(request, select, inspect, seek, error) {
     }
 
     function resize() {
-        if (!roll.clientWidth || !roll.clientHeight) return;
         width = roll.clientWidth;
         height = roll.clientHeight;
-        label = Math.min(labelWidth, Math.max(140, width - 180));
+        if (!width || !height) { cancelAnimationFrame(animation); animation = 0; return; }
+        row = Math.max(row, Number(getComputedStyle(panel).getPropertyValue("--min-row")));
+        label = headers.hidden ? 0 : Math.min(labelWidth, Math.max(140, width - 180));
         panel.style.setProperty("--track-label", `${label}px`);
         space.style.right = `${roll.offsetWidth - width}px`;
         headers.style.width = `${label}px`;
@@ -214,6 +223,7 @@ export function timeline(request, select, inspect, seek, error) {
         map.resize(label, row);
         get("lanes-space").style.height = `${Math.max(height, ruler + (score?.tracks.length || 0) * row)}px`;
         changed();
+        if (playing && !animation) animate(performance.now());
     }
 
     function move(value, nextScale = scale) {
@@ -225,13 +235,14 @@ export function timeline(request, select, inspect, seek, error) {
     }
 
     function zoom(factor, x = (width - label) / 2) {
-        const next = Math.max(0.002, Math.min(3600, scale * factor));
+        const next = zoomScale(scale * factor);
         const anchor = from + x * scale;
         move(anchor - x * next, next);
     }
 
     function animate(now) {
         animation = 0;
+        if (!width || !height) return;
         // Interpolate between transport reports, but stop extrapolating if the
         // backend stalls. Audio remains the authority for musical time.
         time = playing ? Math.max(time, position + Math.min(.1, Math.max(0, now - stamp) / 1000)) : position;
@@ -265,21 +276,36 @@ export function timeline(request, select, inspect, seek, error) {
     const point = event => { const rect = roll.getBoundingClientRect(); return [event.clientX - rect.left, event.clientY - rect.top]; };
     const curveAt = (x, y) => x >= label && x <= width && y >= ruler && y < height ?
         envelopes.hit(viewport(), {row, ruler, scroll: roll.scrollTop}, y, from + (x - label) * scale) : null;
+    function gesture() {
+        const [a, b = a] = pointers.values();
+        return {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, distance: Math.hypot(a.x - b.x, a.y - b.y)};
+    }
+    function beginGesture(moved = false) {
+        drag = pointers.size ? {...gesture(), from, scale, scroll: roll.scrollTop, moved} : undefined;
+    }
     canvas.onpointerdown = event => {
         if (event.button || point(event)[0] < label) return;
-        drag = {x: event.clientX, y: event.clientY, from, scroll: roll.scrollTop, moved: false};
+        pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+        beginGesture(pointers.size > 1 || drag?.moved);
         if (flat) event.currentTarget.setPointerCapture(event.pointerId);
     };
     canvas.onpointermove = event => {
         const [x, y] = point(event);
-        if (drag && (drag.moved || Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 3)) {
-            drag.moved = true;
-            if (flat) {
-                follow.checked = false;
-                roll.scrollTop = drag.scroll + drag.y - event.clientY;
-                move(drag.from + (drag.x - event.clientX) * scale);
+        if (pointers.has(event.pointerId)) {
+            pointers.set(event.pointerId, {x: event.clientX, y: event.clientY});
+            const current = gesture();
+            if (drag.moved || Math.hypot(current.x - drag.x, current.y - drag.y) > (event.pointerType === "touch" ? 8 : 3)) {
+                drag.moved = true;
+                if (flat) {
+                    follow.checked = false;
+                    const next = drag.distance > 0 ? zoomScale(drag.scale * drag.distance / Math.max(1, current.distance)) : drag.scale;
+                    const left = canvas.getBoundingClientRect().left;
+                    roll.scrollTop = drag.scroll + drag.y - current.y;
+                    move(drag.from + (drag.x - left) * drag.scale - (current.x - left) * next, next);
+                }
             }
         }
+        if (event.pointerType === "touch") return;
         const found = renderer?.hit(event), lane = Math.floor((y - ruler + roll.scrollTop) / row);
         const curve = flat && curveAt(x, y);
         event.currentTarget.title = flat && y < ruler && x >= label ? "Click to seek" : curve ? curve.text :
@@ -321,9 +347,9 @@ export function timeline(request, select, inspect, seek, error) {
     }
 
     canvas.onpointerup = event => {
-        if (!drag) return;
+        if (!pointers.delete(event.pointerId)) return;
         const moved = drag.moved;
-        drag = undefined;
+        beginGesture(true);
         if (moved) return;
         const [x, y] = point(event);
         if (flat && enabled && y >= 0 && y < ruler && x >= label) {
@@ -338,7 +364,9 @@ export function timeline(request, select, inspect, seek, error) {
             else { follow.checked = false; zoom(.5, ((found.a + found.b) / 2 - from) / scale); }
         }
     };
-    canvas.onpointercancel = () => { drag = undefined; };
+    canvas.onpointercancel = canvas.onlostpointercapture = event => {
+        if (pointers.delete(event.pointerId)) beginGesture(true);
+    };
     canvas.ondblclick = event => {
         if (flat && point(event)[0] >= label && point(event)[1] >= ruler) { follow.checked = false; zoom(0.5, point(event)[0] - label); }
     };
@@ -351,7 +379,7 @@ export function timeline(request, select, inspect, seek, error) {
         }
     };
     const split = get("split"), main = panel.parentElement;
-    const size = value => { panel.style.flexBasis = `${Math.max(110, Math.min(main.clientHeight - 100, value))}px`; };
+    const size = value => { panel.style.setProperty("--timeline-height", `${Math.max(110, Math.min(main.clientHeight - 100, value))}px`); };
     split.onpointerdown = event => { split.setPointerCapture(event.pointerId); };
     split.onpointermove = event => { if (split.hasPointerCapture(event.pointerId)) size(panel.getBoundingClientRect().bottom - event.clientY); };
     split.onkeydown = event => {

@@ -40,7 +40,7 @@ export function create(element, callbacks) {
                     option.setAttribute("aria-selected", Number(option.value) === next);
             }
             control.style.setProperty("--fill", `${ratio * 100}%`);
-            value.textContent = text;
+            value.textContent = value.title = text;
             if (!output && !choices && !toggle) control.setAttribute("aria-valuetext", value.textContent);
         }
         if (!output) {

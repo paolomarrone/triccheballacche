@@ -3,6 +3,7 @@ import {plugins} from "./plugins.js";
 import {settings} from "./settings.js";
 import {files} from "./files.js";
 import {codeEditor} from "./code.js";
+import {workspace} from "./workspace.js";
 
 const byId = id => document.getElementById(id);
 const path = byId("path"), views = byId("views"), errors = byId("errors");
@@ -10,6 +11,7 @@ const code = codeEditor(byId("code"), {change: update, select: cursor, keydown: 
 let backend, controls, ready = false, busy = false, playing = false, prepared = false, saved = "", savedPath = "", queue = Promise.resolve();
 let live = false, audio = false, pending;
 let revision = 0, frames = [], partial = false, tracedSource, tracedPath, seconds = 0;
+const layout = workspace(() => controls?.show(false));
 
 function tracking() {
     return revision && code.value === tracedSource && path.value === tracedPath;
@@ -127,7 +129,7 @@ async function action(op, entry = path.value, file) {
             controls.score(result.score, result.nativeAvailable);
             preferences.score(result.score);
         }
-        if (opening) code.load(result.text);
+        if (opening) { layout.view("code"); code.load(result.text); }
         if (opening || op === "save") {
             path.value = savedPath = result.path;
             saved = code.value;
@@ -148,11 +150,12 @@ const projection = timeline(request, origins => {
     if (!tracking()) return;
     const frame = origins.find(([file]) => file === tracedPath);
     if (!frame) return;
+    layout.view("code");
     code.reveal(frame[1]);
     update();
 }, {
-    track(index) { views.checked = true; controls?.track(index); },
-    node(id, path) { views.checked = true; controls?.node(id, path); }
+    track(index) { controls?.track(index); },
+    node(id, path) { controls?.node(id, path); }
 }, time => action("seek", time), showError);
 
 for (const op of ["save", "prepare", "play", "stop"]) byId(op).addEventListener("click", () => action(op));
@@ -187,7 +190,7 @@ path.addEventListener("keydown", event => {
     }
 });
 function shortcut(event) {
-    if (event.defaultPrevented || document.querySelector("dialog[open], :popover-open")) return;
+    if (event.defaultPrevented || document.querySelector("dialog:modal, :popover-open")) return;
     let op;
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") op = "prepare";
     if ((event.ctrlKey || event.metaKey) && event.code === "Space") op = "play";
@@ -221,7 +224,7 @@ async function poll() {
 
 export async function startEditor(adapter) {
     backend = adapter;
-    controls = plugins(request, adapter, showError);
+    controls = plugins(request, adapter, showError, layout.plugins);
     byId("save").setAttribute("aria-label", backend.saveLabel);
     byId("save").title = backend.saveTitle;
     try {

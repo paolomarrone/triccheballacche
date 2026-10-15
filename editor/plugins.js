@@ -4,8 +4,8 @@ import {readPreset, writePreset, presetLimit} from "./preset.js";
 import {trackNodes} from "./graph.js";
 
 // Views belong to the prepared project and survive transport stop/restart.
-export function plugins(request, adapter, fail) {
-    const panel = document.getElementById("plugins"), list = document.getElementById("plugin-list");
+export function plugins(request, adapter, fail, showPanel) {
+    const list = document.getElementById("plugin-list");
     const entries = new Map();
     let score, availableProject = false, busy = false, visible = false, track = 0, node;
     let chain = [];
@@ -27,7 +27,7 @@ export function plugins(request, adapter, fail) {
     }
 
     function show(value) {
-        visible = value; panel.hidden = !visible;
+        visible = value; showPanel(visible);
         if (!visible) dispose();
         else for (const entry of entries.values()) if (!entry.token) mount(entry).catch(fail);
     }
@@ -90,7 +90,7 @@ export function plugins(request, adapter, fail) {
     }
 
     function render() {
-        panel.hidden = !visible;
+        showPanel(visible);
         if (!score) return;
         for (const [id, entry] of entries) if (!chain.includes(id)) {
             detach(entry); entry.details.remove(); entries.delete(id);

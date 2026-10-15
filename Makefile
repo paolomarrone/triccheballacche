@@ -478,12 +478,15 @@ test-parameter-ui:
 test-code:
 	node test/code.mjs
 
-.PHONY: test-score-space test-graph
+.PHONY: test-score-space test-graph test-mobile
 test-score-space: gui build/web/player.mjs $(NATIVE_FIXTURES) $(WEB_FIXTURES) | build/test
 	node test/score-space.mjs
 
 test-graph: gui build/web/player.mjs $(NATIVE_FIXTURES) $(WEB_FIXTURES) | build/test
 	node test/graph.mjs
+
+test-mobile: gui build/web/player.mjs $(NATIVE_FIXTURES) $(WEB_FIXTURES) | build/test
+	node test/mobile.mjs
 
 clean:
 	rm -rf build
