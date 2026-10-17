@@ -2,7 +2,7 @@ import {create as generic} from "./parameter-ui.js";
 import {pluginControls} from "./plugin-controls.js";
 import {readPreset, writePreset, presetLimit} from "./preset.js";
 import {trackNodes} from "./graph.js";
-import {floating} from "./plugin-layout.js";
+import {fit, floating} from "./plugin-layout.js";
 
 // Views belong to the prepared project and survive transport stop/restart.
 export function plugins(request, adapter, fail, showPanel) {
@@ -17,6 +17,7 @@ export function plugins(request, adapter, fail, showPanel) {
         if (!old) return;
         entry.token = undefined; // Ignore callbacks from free() and factories that finish after disposal.
         old.controls.close();
+        old.fit?.();
         try { old.ui?.free(); }
         catch (error) { fail(error); }
         entry.body.replaceChildren();
@@ -209,16 +210,18 @@ export function plugins(request, adapter, fail, showPanel) {
             style.textContent = `:host { display: block; font: inherit; -webkit-user-select: none; user-select: none; }
                 input, textarea, [contenteditable=true] { -webkit-user-select: text; user-select: text; }
                 button, input, select { font: inherit; }`;
-            const element = document.createElement("div");
-            shadow.append(style, element);
+            const surface = document.createElement("div"), element = document.createElement("div");
+            surface.append(element); shadow.append(style, surface);
             entry.body.append(host);
-            const create = !entry.generic && node.product.ui?.web ?
+            const custom = !entry.generic && node.product.ui?.web;
+            const create = custom ?
                 (await import(adapter.uiUrl(node, token.revision, id))).create : generic;
             if (entry.token !== token) return;
             const ui = await create(element, token.controls.callbacks);
             if (!ui || typeof ui.free !== "function") throw Error("Perone UI must return free()");
             if (entry.token !== token) { ui.free(); return; }
             token.ui = ui;
+            if (custom) token.fit = fit(host, surface);
             // No DSP stream until the factory is ready to receive it. Creation-time gestures stay queued.
             await request("watch", token.revision, id, "web");
             if (entry.token !== token) return;

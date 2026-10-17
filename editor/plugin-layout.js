@@ -2,6 +2,26 @@ import {compact} from "./workspace.js";
 
 let front = 0;
 
+// Let responsive UIs lay out normally; fit fixed-size content without altering it.
+export function fit(host, content) {
+    content.style.cssText = "display:flow-root;width:fit-content;min-width:100%;transform-origin:top left";
+    let frame = 0;
+    function resize() {
+        if (!host.clientWidth || !content.offsetWidth) return;
+        const scale = Math.min(1, host.clientWidth / content.offsetWidth);
+        content.style.transform = scale < 1 ? `scale(${scale})` : "";
+        host.style.height = scale < 1 ? `${content.offsetHeight * scale}px` : "";
+        host.style.overflow = scale < 1 ? "clip" : "";
+    }
+    // Fitting changes the host's height; apply it outside observer delivery.
+    const observer = new ResizeObserver(() => {
+        if (!frame) frame = requestAnimationFrame(() => { frame = 0; resize(); });
+    });
+    observer.observe(host); observer.observe(content);
+    resize();
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+}
+
 // Own only the frame. The caller owns the mounted UI and its lifetime.
 export function floating(title, content, close) {
     const element = document.createElement("dialog"), header = document.createElement("header");

@@ -130,11 +130,20 @@ try {
             await wait(`Math.abs(Number(${fixture}.dataset.gain) - .2) < .0001`);
             assert.equal(await evaluate(`getComputedStyle(${fixture}).display`), "grid");
             await evaluate(`${fixture}.style.setProperty('width', '720px')`);
+            await wait(`(() => { const body = document.querySelector('.plugin[data-node="1"] .plugin-body');
+                return ${fixture}.getBoundingClientRect().width < body.clientWidth && body.scrollWidth <= body.clientWidth; })()`);
             assert.equal(await evaluate('document.querySelector("#plugins").getBoundingClientRect().width'), 360,
-                "A wide custom UI scrolls inside the fixed sidebar");
-            assert(await evaluate(`(() => { const body = document.querySelector('.plugin[data-node="1"] .plugin-body'); return body.scrollWidth > body.clientWidth; })()`));
+                "A wide custom UI fits inside the fixed sidebar without horizontal scrolling");
+            const scaledButton = await evaluate(`${fixture}.querySelector('button').getBoundingClientRect().toJSON()`);
+            for (const type of ["mousePressed", "mouseReleased"])
+                await call("Input.dispatchMouseEvent", {type, x: scaledButton.right - 8, y: scaledButton.y + scaledButton.height / 2, button: "left", clickCount: 1});
+            await wait(`Math.abs(Number(${fixture}.dataset.gain) - .3) < .0001`);
             assert.equal(await evaluate(`getComputedStyle(${fixture}.querySelector('button')).userSelect`), "none");
             await evaluate(`${fixture}.style.removeProperty('width')`);
+            await wait(`${root}.querySelector('style').nextElementSibling.style.transform === ''`);
+            assert(await evaluate(`${fixture} === detachedUI`), "Resizing retains the UI instance");
+            await evaluate('fixtureCallbacks.at(-1).set_parameter(1, .2)');
+            await wait(`Math.abs(Number(${fixture}.dataset.gain) - .2) < .0001`);
             assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 2, "Expanded plugins stay attached together");
             await evaluate(`globalThis.selectedChainUI = ${fixture}`);
             await click('.routing-node[data-node="1"]');
