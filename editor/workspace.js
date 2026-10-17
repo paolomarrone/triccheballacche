@@ -1,7 +1,8 @@
+export const compact = matchMedia("(max-width: 760px), (pointer: coarse) and (max-height: 500px)");
+
 // Rearrange the existing views without replacing their contents or session.
 export function workspace(closePlugins) {
     const get = id => document.getElementById(id);
-    const compact = matchMedia("(max-width: 760px), (pointer: coarse) and (max-height: 500px)");
     const panel = get("plugins"), viewport = window.visualViewport;
     let active = "code", visible = false;
 

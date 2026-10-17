@@ -198,8 +198,10 @@ and updates the session's files. Reloading the page restores the published files
   selected node opens. Click the background or press Escape to clear the highlight.
   Routing is read-only.
 - **Track names** open the plugin panel. Mute/solo affects audition, including
-  routed groups. Plugin sections collapse; the window icon toggles a native UI
-  where available. Manual parameter edits are temporary, not written to Janet.
+  routed groups. Plugin sections collapse; the window icon detaches a web UI or
+  parameter panel into a draggable window, fullscreen on small screens. Closing
+  it returns the controls to the panel. Plugins with only a native GUI open their
+  original window. Manual parameter edits are temporary, not written to Janet.
   ↓/↑ import/export a plugin preset (`.tbpreset.json`, up to 16 MiB of state).
   Both pause playback. Native export asks for a destination path; web export
   downloads a file. Presets change the prepared instance, not the score or its

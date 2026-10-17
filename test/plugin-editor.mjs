@@ -48,7 +48,7 @@ try {
         await evaluate(`(() => { const s = ${slider}; s.value = .6; s.dispatchEvent(new Event('input')); s.dispatchEvent(new Event('change')); })()`);
         await wait(`${value}.textContent === '0.6'`);
         await presets({evaluate, wait, click}, true, directory);
-        const window = '.plugin[data-node="0"] button[aria-label="Toggle native UI"]';
+        const window = '.plugin[data-node="0"] button[aria-label="Toggle plugin window"]';
         await click(window);
         await wait(`document.querySelector('${window}').getAttribute('aria-pressed') === 'true'`);
         await click(window);

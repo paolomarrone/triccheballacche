@@ -2,6 +2,7 @@ import {create as generic} from "./parameter-ui.js";
 import {pluginControls} from "./plugin-controls.js";
 import {readPreset, writePreset, presetLimit} from "./preset.js";
 import {trackNodes} from "./graph.js";
+import {floating} from "./plugin-layout.js";
 
 // Views belong to the prepared project and survive transport stop/restart.
 export function plugins(request, adapter, fail, showPanel) {
@@ -11,7 +12,7 @@ export function plugins(request, adapter, fail, showPanel) {
     let chain = [];
     let available = new Set(), native = new Set();
 
-    function detach(entry) {
+    function unmount(entry) {
         const old = entry.token;
         if (!old) return;
         entry.token = undefined; // Ignore callbacks from free() and factories that finish after disposal.
@@ -23,35 +24,72 @@ export function plugins(request, adapter, fail, showPanel) {
     }
 
     function dispose() {
-        for (const entry of entries.values()) detach(entry);
+        for (const entry of entries.values()) {
+            unmount(entry);
+            entry.floating?.remove(); entry.floating = undefined;
+            entry.details.append(entry.body);
+            buttons(entry);
+        }
+    }
+
+    function shown(entry) {
+        return entry.floating || (visible && chain.includes(entry.id) && entry.details.open);
+    }
+
+    function sync(entry) {
+        if (!shown(entry)) unmount(entry);
+        else if (!entry.token) mount(entry).catch(fail);
     }
 
     function show(value) {
         visible = value; showPanel(visible);
-        if (!visible) dispose();
-        else for (const entry of entries.values()) if (!entry.token) mount(entry).catch(fail);
+        for (const entry of entries.values()) sync(entry);
     }
 
     function failed(entry, token, error) {
         if (entry.token !== token) return;
-        detach(entry);
+        unmount(entry);
         fail(error);
     }
 
     function buttons(entry) {
         for (const button of entry.details.querySelectorAll("summary button")) button.disabled = !availableProject || busy || entry.pending;
-        entry.window?.setAttribute("aria-pressed", native.has(entry.id));
-        if (entry.window) entry.window.title = native.has(entry.id) ? "Close native UI" : "Open native UI";
+        if (entry.window) {
+            const open = !!entry.floating || native.has(entry.id);
+            const original = available.has(entry.id) && !score.nodes[entry.id].product.ui?.web;
+            entry.window.setAttribute("aria-pressed", open);
+            // Replacing the label during a press cancels the click in WebKit.
+            const icon = open ? "↙" : "↗";
+            if (entry.window.textContent !== icon) entry.window.textContent = icon;
+            entry.window.title = original ? (open ? "Close native UI" : "Open native UI") : (open ? "Attach plugin" : "Detach plugin");
+        }
         entry.parameters?.setAttribute("aria-pressed", entry.generic);
         if (entry.parameters) entry.parameters.title = entry.generic ? "Show plugin UI" : "Show parameters";
     }
 
+    function dock(entry) {
+        entry.floating.remove(); entry.floating = undefined;
+        entry.details.append(entry.body);
+        entry.details.open = true;
+        if (!chain.includes(entry.id)) {
+            unmount(entry); entry.details.remove(); entries.delete(entry.id);
+        } else { buttons(entry); sync(entry); }
+    }
+
     async function windowView(entry) {
         if (!availableProject || busy || entry.pending) return;
+        if (entry.floating) { dock(entry); return; }
+        if (score.nodes[entry.id].product.ui?.web || !available.has(entry.id)) {
+            entry.floating = floating(score.nodes[entry.id].name, entry.body, () => dock(entry));
+            entry.floating.element.dataset.node = entry.id;
+            entry.details.open = false;
+            buttons(entry); sync(entry);
+            return;
+        }
         entry.pending = true;
         const opening = !native.has(entry.id), revision = score.controlRevision ?? score.revision;
         entry.details.open = false;
-        detach(entry);
+        unmount(entry);
         buttons(entry);
         try {
             await request("watch", revision, entry.id, opening ? "native" : "off");
@@ -76,7 +114,7 @@ export function plugins(request, adapter, fail, showPanel) {
             }
             if ((score.controlRevision ?? score.revision) !== revision || entries.get(entry.id) !== entry)
                 throw Error("Stale plugin view");
-            if (file) { detach(entry); detached = true; }
+            if (file) { unmount(entry); detached = true; }
             const result = await request(file ? "state-load" : "state-save", revision, entry.id, ...(file ? [data] : []));
             if (!file) {
                 const name = (product.bundleName || product.name || "plugin").replace(/[^a-zA-Z0-9._-]/g, "_") + ".tbpreset.json";
@@ -93,7 +131,8 @@ export function plugins(request, adapter, fail, showPanel) {
         showPanel(visible);
         if (!score) return;
         for (const [id, entry] of entries) if (!chain.includes(id)) {
-            detach(entry); entry.details.remove(); entries.delete(id);
+            entry.details.remove();
+            if (!entry.floating) { unmount(entry); entries.delete(id); }
         }
         for (const id of chain) {
             if (entries.has(id)) continue;
@@ -119,7 +158,7 @@ export function plugins(request, adapter, fail, showPanel) {
             };
             if (score.nodes[id].product.ui?.web) entry.parameters = button("≡", "Toggle parameter controls", () => {
                 entry.generic = !entry.generic;
-                detach(entry); entry.details.open = true;
+                unmount(entry); entry.details.open = !entry.floating;
                 mount(entry).catch(fail); buttons(entry);
             });
             const input = document.createElement("input");
@@ -128,19 +167,20 @@ export function plugins(request, adapter, fail, showPanel) {
             details.append(input);
             button("↓", "Import preset", () => input.click()).title = "Import preset · pauses playback";
             button("↑", "Export preset", () => preset(entry).catch(fail)).title = "Export preset · pauses playback";
-            if (available.has(id)) entry.window = button("↗", "Toggle native UI", () => windowView(entry));
+            entry.window = button("↗", "Toggle plugin window", () => windowView(entry));
             details.ontoggle = () => {
-                if (!details.open) detach(entry);
-                else if (!entry.token) mount(entry).catch(fail);
+                if (entry.floating && details.open) {
+                    details.open = false; entry.floating.focus();
+                }
+                sync(entry);
             };
             buttons(entry);
         }
         chain.forEach((id, index) => {
             const entry = entries.get(id);
             if (list.children[index] !== entry.details) list.insertBefore(entry.details, list.children[index] || null);
-            entry.details.open = id === (node ?? chain[0]) && (node !== undefined || !native.has(id));
-            if (!entry.details.open) detach(entry);
-            else if (!entry.token) mount(entry).catch(fail);
+            entry.details.open = !entry.floating && id === (node ?? chain[0]) && (node !== undefined || !native.has(id));
+            sync(entry);
         });
     }
 
@@ -150,8 +190,8 @@ export function plugins(request, adapter, fail, showPanel) {
     }
 
     async function mount(entry) {
-        if (entries.get(entry.id) !== entry || !score.nodes[entry.id].product || !availableProject || busy || !visible || !entry.details.open || entry.pending) return;
-        detach(entry);
+        if (entries.get(entry.id) !== entry || !score.nodes[entry.id].product || !availableProject || busy || !shown(entry) || entry.pending) return;
+        unmount(entry);
         const id = entry.id, node = score.nodes[id];
         const token = entry.token = {revision: score.controlRevision ?? score.revision};
         token.controls = pluginControls(node.product, (op, ...args) => request(op, token.revision, id, ...args),
@@ -218,6 +258,7 @@ export function plugins(request, adapter, fail, showPanel) {
             render();
             show(true);
             entries.get(id).details.scrollIntoView({block: "nearest", inline: "nearest"});
+            entries.get(id).floating?.focus();
         },
         show,
         windows(ids) {

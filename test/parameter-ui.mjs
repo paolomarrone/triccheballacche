@@ -126,6 +126,12 @@ try {
         assert.equal(result.resumed, .25, "Fresh DSP feedback resumes after the gesture");
         assert.equal(result.completed, .7, "A completed edit still invalidates an older poll");
         console.log("OK: parameter gestures, delayed feedback, acknowledgements, coalescing and independent controls");
+        assert(await evaluate(`(() => {
+            const button = document.querySelector('button[aria-label="Toggle plugin window"]'), label = button.firstChild;
+            controlsTest.host.windows([]);
+            controlsTest.host.windows([]);
+            return button.firstChild === label;
+        })()`), "Unchanged window status preserves the label so WebKit can complete a mouse click");
         await wait('controlsTest.root.querySelector("link").sheet !== null');
         await evaluate('controlsTest.root.querySelector(".parameter-choice").focus()');
         await key("ArrowDown");
