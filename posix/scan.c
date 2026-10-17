@@ -1,20 +1,17 @@
-#include "discovery.h"
+#include "host/platform.h"
 #include "util.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
-#include <pthread.h>
-#include <sys/stat.h>
 #include <signal.h>
 #include <spawn.h>
-#include <stdio.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
 extern char **environ;
 
-static char *scan(const char *path) {
+char *host_scan(const char *path) {
 	int descriptors[2];
 	if (pipe(descriptors))
 		return NULL;
@@ -109,90 +106,4 @@ static char *scan(const char *path) {
 	}
 	data[used] = 0;
 	return data;
-}
-
-// Preparation and catalog requests use independent Janet VMs. Cache scans outside
-// those VMs, keyed by the resolved file and its stamp; instances have a separate cache.
-typedef struct Scan {
-	struct Scan *next;
-	char *path, *json;
-	struct timespec modified;
-	off_t size;
-} Scan;
-static Scan *cache;
-static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_once_t cleanup_once = PTHREAD_ONCE_INIT;
-static void cleanup(void) {
-	while (cache) {
-		Scan *next = cache->next;
-		free(cache->path);
-		free(cache->json);
-		free(cache);
-		cache = next;
-	}
-}
-static void register_cleanup(void) {
-	atexit(cleanup);
-}
-void scan_plugins_clear(void) {
-	pthread_mutex_lock(&mutex);
-	cleanup();
-	pthread_mutex_unlock(&mutex);
-}
-
-char *plugin_settings_path(void) {
-	const char *root = getenv("XDG_CONFIG_HOME"), *suffix = "/triccheballacche/settings.json";
-	if (!root || root[0] != '/') {
-		root = getenv("HOME");
-		suffix = "/.config/triccheballacche/settings.json";
-	}
-	if (!root || !*root)
-		return NULL;
-	char *path = malloc(strlen(root) + strlen(suffix) + 1);
-	if (path)
-		sprintf(path, "%s%s", root, suffix);
-	return path;
-}
-
-char *scan_plugins(const char *path) {
-	struct stat info;
-	char *resolved = realpath(path, NULL);
-	if (!resolved || stat(resolved, &info) || (!S_ISREG(info.st_mode) && !S_ISDIR(info.st_mode))) {
-		free(resolved);
-		return NULL;
-	}
-	// Bundles contain multiple metadata/resources/binaries. Read their metadata afresh.
-	if (S_ISDIR(info.st_mode)) {
-		char *result = scan(resolved);
-		free(resolved);
-		return result;
-	}
-	pthread_once(&cleanup_once, register_cleanup);
-	pthread_mutex_lock(&mutex);
-	Scan *entry = cache;
-	for (; entry && strcmp(entry->path, resolved); entry = entry->next) {
-	}
-	if (!entry) {
-		entry = calloc(1, sizeof(*entry));
-		if (!entry) {
-			pthread_mutex_unlock(&mutex);
-			free(resolved);
-			return NULL;
-		}
-		entry->path = resolved;
-		resolved = NULL;
-		entry->next = cache;
-		cache = entry;
-	}
-	if (!entry->json || entry->size != info.st_size || entry->modified.tv_sec != info.st_mtim.tv_sec ||
-	    entry->modified.tv_nsec != info.st_mtim.tv_nsec) {
-		free(entry->json);
-		entry->json = scan(entry->path);
-		entry->modified = info.st_mtim;
-		entry->size = info.st_size;
-	}
-	char *result = entry->json ? copy_string(entry->json) : NULL;
-	pthread_mutex_unlock(&mutex);
-	free(resolved);
-	return result;
 }

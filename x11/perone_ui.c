@@ -13,6 +13,10 @@
 #include <string.h>
 #include <unistd.h>
 
+int perone_ui_available(const Node *node) {
+	return !access(node->info.ui, R_OK);
+}
+
 typedef struct {
 	Session *session;
 	int node;

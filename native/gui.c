@@ -14,14 +14,13 @@
 #include <locale.h>
 #include <limits.h>
 #include <math.h>
-#include <pthread.h>
+#include "native/thread.h"
 #include <signal.h>
 #include <stdio.h>
-#include <unistd.h>
 
 // WebUI callbacks borrow their event until the main thread has answered it.
-static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t answered = PTHREAD_COND_INITIALIZER;
+static Mutex mutex = MUTEX_INITIALIZER;
+static Condition answered = CONDITION_INITIALIZER;
 static webui_event_t *pending;
 static int closing;
 static int frontend_ready;
@@ -54,18 +53,18 @@ static bool close_window(size_t window) {
 }
 
 static void request(webui_event_t *event) {
-	pthread_mutex_lock(&mutex);
+	mutex_lock(&mutex);
 	// A reloaded page can connect while its predecessor's last command is finishing.
 	while (pending && !closing)
-		pthread_cond_wait(&answered, &mutex);
+		condition_wait(&answered, &mutex);
 	if (closing) {
 		webui_return_string(event, "{\"error\":\"Editor closing\"}");
 	} else {
 		pending = event;
 		while (pending == event)
-			pthread_cond_wait(&answered, &mutex);
+			condition_wait(&answered, &mutex);
 	}
-	pthread_mutex_unlock(&mutex);
+	mutex_unlock(&mutex);
 }
 
 static void accept_revision(Editor *editor) {
@@ -515,24 +514,24 @@ int main(int argc, char **argv) {
 		if (!serve && connected && !visible)
 			break;
 		connected |= visible;
-		pthread_mutex_lock(&mutex);
+		mutex_lock(&mutex);
 		webui_event_t *event = pending;
-		pthread_mutex_unlock(&mutex);
+		mutex_unlock(&mutex);
 		if (event) {
 			command(&editor, event);
-			pthread_mutex_lock(&mutex);
+			mutex_lock(&mutex);
 			pending = NULL;
-			pthread_cond_broadcast(&answered);
-			pthread_mutex_unlock(&mutex);
+			condition_broadcast(&answered);
+			mutex_unlock(&mutex);
 		}
 		poll_player(&editor);
 		gui_loop_wait();
 	}
-	pthread_mutex_lock(&mutex);
+	mutex_lock(&mutex);
 	closing = 1;
 	pending = NULL;
-	pthread_cond_broadcast(&answered);
-	pthread_mutex_unlock(&mutex);
+	condition_broadcast(&answered);
+	mutex_unlock(&mutex);
 	finish(&editor);
 	midi_devices_free(editor.midi);
 	modules_free(&editor.modules);

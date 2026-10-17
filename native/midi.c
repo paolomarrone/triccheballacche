@@ -1,7 +1,8 @@
 #include "midi.h"
 #include "json_write.h"
+#include "host/platform.h"
 #include <portmidi.h>
-#include <pthread.h>
+#include "native/thread.h"
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -13,8 +14,8 @@ typedef struct {
 	uint8_t sysex[MIDI_MESSAGE];
 } Port;
 struct MidiDevices {
-	pthread_t thread;
-	pthread_mutex_t lock;
+	Thread thread;
+	Mutex lock;
 	int closing, count;
 	Port *ports;
 	Player *player;
@@ -25,9 +26,7 @@ struct MidiDevices {
 };
 static PmTimestamp clock_ms(void *unused) {
 	(void)unused;
-	struct timespec t;
-	clock_gettime(CLOCK_MONOTONIC, &t);
-	return (uint32_t)((uint64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000);
+	return (uint32_t)host_clock();
 }
 static void close_port(Port *p) {
 	if (!p->stream)
@@ -75,9 +74,9 @@ static int receive(MidiDevices *d, Port *p, uint32_t word) {
 static void *poll_midi(void *data) {
 	MidiDevices *d = data;
 	for (;;) {
-		pthread_mutex_lock(&d->lock);
+		mutex_lock(&d->lock);
 		if (d->closing) {
-			pthread_mutex_unlock(&d->lock);
+			mutex_unlock(&d->lock);
 			return NULL;
 		}
 		if (d->player && !d->error) {
@@ -121,8 +120,8 @@ static void *poll_midi(void *data) {
 				}
 			}
 		}
-		pthread_mutex_unlock(&d->lock);
-		nanosleep(&(struct timespec){.tv_nsec = 1000000}, NULL);
+		mutex_unlock(&d->lock);
+		host_sleep(1);
 	}
 }
 MidiDevices *midi_devices_new(void) {
@@ -142,9 +141,9 @@ MidiDevices *midi_devices_new(void) {
 	}
 	for (int i = 0; i < d->count; ++i)
 		d->ports[i] = (Port){.node = -1, .input = Pm_GetDeviceInfo(i)->input};
-	pthread_mutex_init(&d->lock, NULL);
-	if (pthread_create(&d->thread, NULL, poll_midi, d)) {
-		pthread_mutex_destroy(&d->lock);
+	mutex_init(&d->lock);
+	if (thread_start(&d->thread, poll_midi, d)) {
+		mutex_destroy(&d->lock);
 		free(d->ports);
 		Pm_Terminate();
 		free(d);
@@ -155,13 +154,13 @@ MidiDevices *midi_devices_new(void) {
 void midi_devices_stop(MidiDevices *d) {
 	if (!d)
 		return;
-	pthread_mutex_lock(&d->lock);
+	mutex_lock(&d->lock);
 	d->player = NULL;
 	d->queued = 0;
 	d->error = NULL;
 	for (int i = 0; i < d->count; ++i)
 		close_port(d->ports + i);
-	pthread_mutex_unlock(&d->lock);
+	mutex_unlock(&d->lock);
 }
 void midi_devices_detach(MidiDevices *d) {
 	if (!d)
@@ -174,11 +173,11 @@ void midi_devices_free(MidiDevices *d) {
 	if (!d)
 		return;
 	midi_devices_stop(d);
-	pthread_mutex_lock(&d->lock);
+	mutex_lock(&d->lock);
 	d->closing = 1;
-	pthread_mutex_unlock(&d->lock);
-	pthread_join(d->thread, NULL);
-	pthread_mutex_destroy(&d->lock);
+	mutex_unlock(&d->lock);
+	thread_join(d->thread);
+	mutex_destroy(&d->lock);
 	free(d->ports);
 	Pm_Terminate();
 	free(d);
@@ -186,10 +185,10 @@ void midi_devices_free(MidiDevices *d) {
 const char *midi_devices_start(MidiDevices *d, Player *player) {
 	if (!d)
 		return NULL; // No device service was requested.
-	pthread_mutex_lock(&d->lock);
+	mutex_lock(&d->lock);
 	if (d->player == player) {
 		const char *error = d->error;
-		pthread_mutex_unlock(&d->lock);
+		mutex_unlock(&d->lock);
 		return error;
 	}
 	d->error = NULL;
@@ -213,7 +212,7 @@ const char *midi_devices_start(MidiDevices *d, Player *player) {
 	}
 	d->player = d->error ? NULL : player;
 	const char *error = d->error;
-	pthread_mutex_unlock(&d->lock);
+	mutex_unlock(&d->lock);
 	if (error)
 		midi_devices_stop(d);
 	return error;
@@ -229,15 +228,15 @@ const char *midi_devices_connect(MidiDevices *d, Session *s, int device, int nod
 const char *midi_devices_error(MidiDevices *d) {
 	if (!d)
 		return NULL;
-	pthread_mutex_lock(&d->lock);
+	mutex_lock(&d->lock);
 	const char *error = d->error;
-	pthread_mutex_unlock(&d->lock);
+	mutex_unlock(&d->lock);
 	return error;
 }
 char *midi_devices_json(MidiDevices *d) {
 	Json json = {0};
 	if (d)
-		pthread_mutex_lock(&d->lock);
+		mutex_lock(&d->lock);
 	json_print(&json, "{\"devices\":[");
 	for (int i = 0; d && i < d->count; ++i) {
 		const PmDeviceInfo *info = Pm_GetDeviceInfo(i);
@@ -247,7 +246,7 @@ char *midi_devices_json(MidiDevices *d) {
 	}
 	json_print(&json, "]}");
 	if (d)
-		pthread_mutex_unlock(&d->lock);
+		mutex_unlock(&d->lock);
 	if (json.failed) {
 		free(json.data);
 		return NULL;

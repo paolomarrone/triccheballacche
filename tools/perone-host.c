@@ -1,4 +1,5 @@
 #include "audio.h"
+#include "host/platform.h"
 #include "script.h"
 #include <signal.h>
 #include <stdio.h>
@@ -99,7 +100,7 @@ int main(int argc, char **argv) {
 	if (err == MA_SUCCESS) {
 		printf("Playing (%s); Ctrl-C to stop.\n", ma_get_backend_name(device.pContext->backend));
 		for (unsigned ticks = 0; !stopped && (capture || ticks < 80); ++ticks)
-			nanosleep(&(struct timespec){.tv_nsec = 100000000}, NULL);
+			host_sleep(100);
 		result = 0;
 	} else
 		fprintf(stderr, "Audio start: %s\n", ma_result_description(err));

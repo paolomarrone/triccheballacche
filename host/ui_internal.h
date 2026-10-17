@@ -8,4 +8,5 @@ typedef struct {
 	void (*close)(void *view);
 } UIOps;
 extern const UIOps perone_ui_ops, clap_ui_ops, lv2_ui_ops, vst3_ui_ops;
+int perone_ui_available(const Node *node);
 #endif

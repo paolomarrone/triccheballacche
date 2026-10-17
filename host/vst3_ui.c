@@ -12,11 +12,10 @@ typedef struct {
 } VstUI;
 static Steinberg_tresult SMTG_STDMETHODCALLTYPE query(void *s, const Steinberg_TUID iid, void **out) {
 	VstUI *ui = s;
-	if (!memcmp(iid, Steinberg_Linux_IRunLoop_iid, 16)) {
-		*out = vst_query(vst_host_context(vst_host(ui->vst->module)), iid);
-		return *out ? Steinberg_kResultOk : Steinberg_kNoInterface;
-	}
-	return vst_match(s, iid, Steinberg_IPlugFrame_iid, out);
+	if (vst_match(s, iid, Steinberg_IPlugFrame_iid, out) == Steinberg_kResultOk)
+		return Steinberg_kResultOk;
+	*out = vst_host_loop_query(vst_host(ui->vst->module), iid);
+	return *out ? Steinberg_kResultOk : Steinberg_kNoInterface;
 }
 static int dimensions(const struct Steinberg_ViewRect *rect, unsigned *width, unsigned *height) {
 	int64_t w = (int64_t)rect->right - rect->left, h = (int64_t)rect->bottom - rect->top;
@@ -74,7 +73,7 @@ static int open_view(void **out, Session *session, int id) {
 	        p->lpVtbl->canResize(p) != Steinberg_kResultOk))
 		goto fail;
 	if (p->lpVtbl->setFrame(p, &ui->frame) != Steinberg_kResultOk ||
-	    p->lpVtbl->attached(p, (void *)(uintptr_t)ui->window.parent, vst_window_type) != Steinberg_kResultOk)
+	    p->lpVtbl->attached(p, window_parent(&ui->window), vst_window_type) != Steinberg_kResultOk)
 		goto fail;
 	ui->attached = 1;
 	*out = ui;

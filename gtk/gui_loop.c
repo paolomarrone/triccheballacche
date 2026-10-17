@@ -1,4 +1,4 @@
-#include "posix/gui_loop.h"
+#include "native/gui_loop.h"
 #include <dlfcn.h>
 #include <stddef.h>
 #include <time.h>

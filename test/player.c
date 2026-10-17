@@ -1,6 +1,8 @@
 #include "player.h"
 #include "host/dsp_internal.h"
 #include "transport.h"
+#include "platform.h"
+#include "host/platform.h"
 #include <assert.h>
 #include <math.h>
 #include <signal.h>
@@ -8,7 +10,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <unistd.h>
 
 // Replace only device I/O: use the real player, CLI, Janet, DSP, mixer and WAV exporter.
 static ma_result device_init(ma_context *, const ma_device_config *, ma_device *);
@@ -16,18 +17,18 @@ static ma_result device_start(ma_device *);
 static ma_result device_stop(ma_device *);
 static void device_free(ma_device *);
 static ma_bool32 device_started(const ma_device *);
-static int tick(const struct timespec *, struct timespec *);
+static void tick(unsigned milliseconds);
 #define ma_device_init device_init
 #define ma_device_start device_start
 #define ma_device_stop device_stop
 #define ma_device_uninit device_free
 #define ma_device_is_started device_started
-#define nanosleep tick
+#define host_sleep tick
 #include "../player.c"
 #define main cli_main
-#include "../posix/cli.c"
+#include "../native/cli.c"
 #undef main
-#undef nanosleep
+#undef host_sleep
 #undef ma_device_is_started
 #undef ma_device_uninit
 #undef ma_device_start
@@ -109,16 +110,14 @@ static ma_bool32 device_started(const ma_device *p) {
 	return started;
 }
 
-static int tick(const struct timespec *delay, struct timespec *remaining) {
-	(void)delay;
-	(void)remaining;
+static void tick(unsigned milliseconds) {
+	(void)milliseconds;
 	if (mode == INTERRUPT)
 		raise(SIGINT);
 	else if (mode == DISCONNECT)
 		started = 0;
 	else
 		pump(128);
-	return 0;
 }
 
 static void reference(const char *path, unsigned rate) {

@@ -7,7 +7,7 @@
 void vst_id(char out[33], const Steinberg_TUID id) {
 	static const char hex[] = "0123456789ABCDEF";
 	for (int i = 0; i < 16; ++i) {
-		unsigned byte = (unsigned char)id[i];
+		unsigned byte = (unsigned char)id[vst_id_order[i]];
 		out[2 * i] = hex[byte >> 4];
 		out[2 * i + 1] = hex[byte & 15];
 	}

@@ -62,18 +62,9 @@ static void show(void *view, int visible) {
 	window_show(&ui->window, visible);
 }
 static void initial_size(Lv2UI *ui) {
-	// The UI uses a separate X connection; its child may reach the server after instantiate().
-	Window root, parent, *children = NULL;
-	unsigned count = 0;
-	if (!ui->sized && XQueryTree(ui->window.display, ui->window.parent, &root, &parent, &children, &count)) {
-		for (unsigned i = 0; i < count; ++i)
-			if (children[i] == (Window)(uintptr_t)ui->widget) {
-				XWindowAttributes attr;
-				if (XGetWindowAttributes(ui->window.display, children[i], &attr))
-					resize(ui, attr.width, attr.height);
-			}
-		XFree(children);
-	}
+	unsigned width, height;
+	if (!ui->sized && !window_child_size(&ui->window, ui->widget, &width, &height))
+		resize(ui, width, height);
 }
 static void close_view(void *view) {
 	Lv2UI *ui = view;
@@ -130,7 +121,7 @@ static int open_view(void **out, Session *session, int id) {
 	ui->host_resize = (LV2UI_Resize){ui, resize};
 	ui->port_map = (LV2UI_Port_Map){ui, port_index};
 	ui->access.data_access = lilv_instance_get_descriptor(l->instance)->extension_data;
-	ui->features[0] = (LV2_Feature){LV2_UI__parent, (void *)(uintptr_t)ui->window.parent};
+	ui->features[0] = (LV2_Feature){LV2_UI__parent, window_parent(&ui->window)};
 	ui->features[1] = (LV2_Feature){LV2_UI__resize, &ui->host_resize};
 	ui->features[2] = (LV2_Feature){LV2_UI__idleInterface, NULL};
 	ui->features[3] = (LV2_Feature){LV2_INSTANCE_ACCESS_URI, lilv_instance_get_handle(l->instance)};

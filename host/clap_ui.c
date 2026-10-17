@@ -58,7 +58,8 @@ static int open_view(void **out, Session *session, int id) {
 	if (!g->get_size(c->plugin, &width, &height) ||
 	    window_open(&ui->window, session_score(session)->nodes[id].info.name, width, height, !g->can_resize(c->plugin)))
 		goto fail;
-	clap_window_t window = {.api = clap_window_api, .x11 = ui->window.parent};
+	clap_window_t window;
+	window_clap_parent(&ui->window, &window);
 	if (!g->set_parent(c->plugin, &window))
 		goto fail;
 	c->window = ui;

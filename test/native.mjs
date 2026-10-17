@@ -2,7 +2,7 @@ import {spawn} from "node:child_process";
 
 // Register exit and output handlers before waiting for readiness; cleanup also works after startup failure.
 export function nativeEditor(entry, env = {}) {
-    const child = spawn("./build/gui", ["--serve", entry], {env: {...process.env, ...env}});
+    const child = spawn(process.platform === "win32" ? "./build/gui.exe" : "./build/gui", ["--serve", entry], {env: {...process.env, ...env}});
     let output = "";
     const exited = new Promise(resolve => child.once("close", (code, signal) => resolve([code, signal])));
     const timeout = setTimeout(() => child.kill("SIGKILL"), 60000);

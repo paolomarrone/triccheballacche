@@ -1,7 +1,7 @@
 # Embedded sampled piano. Run python3 plugins/piano/fetch.py once for the bank.
 PYTHON ?= python3
 SOUNDFONT ?= ../../.deps/florestan-piano/000_Florestan_Piano.sf2
-override CPPFLAGS += -I$(abspath build)
+override CPPFLAGS += -Ibuild
 # The 7.5 MiB PCM bank is part of the standalone Wasm module.
 WASM_INITIAL_MEMORY = 16777216
 include ../plugin.mk

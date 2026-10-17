@@ -254,8 +254,7 @@ VstHost *vst_host_new(void) {
 	if (h) {
 		h->api.lpVtbl = &table;
 		h->refs = 1;
-		h->loop = vst_loop_new();
-		if (!h->loop) {
+		if (vst_loop_new(&h->loop)) {
 			free(h);
 			return NULL;
 		}
@@ -268,6 +267,9 @@ Steinberg_FUnknown *vst_host_context(VstHost *h) {
 }
 void vst_host_poll(VstHost *h) {
 	vst_loop_poll(h->loop);
+}
+void *vst_host_loop_query(VstHost *h, const Steinberg_TUID iid) {
+	return vst_query(h->loop, iid);
 }
 
 // State calls run with rendering stopped. Streams grow here, never in process().

@@ -1,6 +1,7 @@
 #ifndef TEST_SUPPORT_H
 #define TEST_SUPPORT_H
 #include "score_janet.h"
+#include "platform.h"
 
 static inline int prepare_session(
     Session *s, Output *output, const char *path, const char *source, char **diagnostics, ScoreView *view) {

@@ -1,24 +1,22 @@
 #include "host/lv2.h"
 #include "util.h"
-#include <errno.h>
-#include <pthread.h>
-#include <semaphore.h>
+#include "native/thread.h"
 #include <string.h>
 #include <stdlib.h>
 
 typedef struct {
 	const LV2_Worker_Interface *api;
 	Messages requests, responses;
-	pthread_t thread;
-	pthread_mutex_t mutex;
-	pthread_cond_t done;
-	sem_t ready;
+	Thread thread;
+	Mutex mutex;
+	Condition done;
+	Semaphore ready;
 	atomic_int stop, pending;
 	int started, synchronous;
 } Lv2Worker;
 struct Lv2Runtime {
 	Lv2Worker worker;
-	pthread_mutex_t uris_mutex;
+	Mutex uris_mutex;
 	char **uris;
 	uint32_t nuri;
 };
@@ -27,7 +25,7 @@ int lv2_runtime_open(Lv2 *l) {
 	Lv2Runtime *r = calloc(1, sizeof(*r));
 	if (!r)
 		return -1;
-	if (pthread_mutex_init(&r->uris_mutex, NULL)) {
+	if (mutex_init(&r->uris_mutex)) {
 		free(r);
 		return -1;
 	}
@@ -39,12 +37,12 @@ void lv2_runtime_close(Lv2 *l) {
 	for (uint32_t i = 0; i < r->nuri; ++i)
 		free(r->uris[i]);
 	free(r->uris);
-	pthread_mutex_destroy(&r->uris_mutex);
+	mutex_destroy(&r->uris_mutex);
 	free(r);
 }
 LV2_URID lv2_map_uri(void *handle, const char *uri) {
 	Lv2Runtime *l = ((Lv2 *)handle)->runtime;
-	pthread_mutex_lock(&l->uris_mutex);
+	mutex_lock(&l->uris_mutex);
 	uint32_t i = 0;
 	for (; i < l->nuri && strcmp(l->uris[i], uri); ++i) {
 	}
@@ -53,20 +51,20 @@ LV2_URID lv2_map_uri(void *handle, const char *uri) {
 		char **next = copy ? realloc(l->uris, (i + 1) * sizeof(*next)) : NULL;
 		if (!next) {
 			free(copy);
-			pthread_mutex_unlock(&l->uris_mutex);
+			mutex_unlock(&l->uris_mutex);
 			return 0;
 		}
 		l->uris = next;
 		l->uris[l->nuri++] = copy;
 	}
-	pthread_mutex_unlock(&l->uris_mutex);
+	mutex_unlock(&l->uris_mutex);
 	return i + 1;
 }
 const char *lv2_unmap_uri(void *handle, LV2_URID id) {
 	Lv2Runtime *l = ((Lv2 *)handle)->runtime;
-	pthread_mutex_lock(&l->uris_mutex);
+	mutex_lock(&l->uris_mutex);
 	const char *uri = id && id <= l->nuri ? l->uris[id - 1] : NULL;
-	pthread_mutex_unlock(&l->uris_mutex);
+	mutex_unlock(&l->uris_mutex);
 	return uri;
 }
 static LV2_Worker_Status respond(void *handle, uint32_t size, const void *data) {
@@ -91,25 +89,24 @@ LV2_Worker_Status lv2_schedule(void *handle, uint32_t size, const void *data) {
 		atomic_fetch_sub(&w->pending, 1);
 		return LV2_WORKER_ERR_NO_SPACE;
 	}
-	sem_post(&w->ready);
+	semaphore_post(&w->ready);
 	return LV2_WORKER_SUCCESS;
 }
 static void *worker_thread(void *handle) {
 	Lv2 *l = handle;
 	Lv2Worker *w = &l->runtime->worker;
 	for (;;) {
-		while (sem_wait(&w->ready) && errno == EINTR) {
-		}
+		semaphore_wait(&w->ready);
 		if (atomic_load(&w->stop))
 			return NULL;
 		uint64_t data[MAX_MESSAGE / sizeof(uint64_t)];
 		size_t size;
 		while (message_pop(&w->requests, &size, data)) {
 			work(l, size, data);
-			pthread_mutex_lock(&w->mutex);
+			mutex_lock(&w->mutex);
 			atomic_fetch_sub(&w->pending, 1);
-			pthread_cond_signal(&w->done);
-			pthread_mutex_unlock(&w->mutex);
+			condition_signal(&w->done);
+			mutex_unlock(&w->mutex);
 		}
 	}
 }
@@ -132,21 +129,21 @@ int lv2_worker_start(Lv2 *l) {
 		if (!q->data)
 			return -1;
 	}
-	if (sem_init(&w->ready, 0, 0))
+	if (semaphore_init(&w->ready))
 		return -1;
-	if (pthread_mutex_init(&w->mutex, NULL)) {
-		sem_destroy(&w->ready);
-		return -1;
-	}
-	if (pthread_cond_init(&w->done, NULL)) {
-		pthread_mutex_destroy(&w->mutex);
-		sem_destroy(&w->ready);
+	if (mutex_init(&w->mutex)) {
+		semaphore_destroy(&w->ready);
 		return -1;
 	}
-	if (pthread_create(&w->thread, NULL, worker_thread, l)) {
-		pthread_cond_destroy(&w->done);
-		pthread_mutex_destroy(&w->mutex);
-		sem_destroy(&w->ready);
+	if (condition_init(&w->done)) {
+		mutex_destroy(&w->mutex);
+		semaphore_destroy(&w->ready);
+		return -1;
+	}
+	if (thread_start(&w->thread, worker_thread, l)) {
+		condition_destroy(&w->done);
+		mutex_destroy(&w->mutex);
+		semaphore_destroy(&w->ready);
 		return -1;
 	}
 	w->started = 1;
@@ -164,10 +161,10 @@ void lv2_worker_wait(Lv2 *l) {
 	Lv2Worker *w = &l->runtime->worker;
 	if (!w->started)
 		return;
-	pthread_mutex_lock(&w->mutex);
+	mutex_lock(&w->mutex);
 	while (atomic_load(&w->pending))
-		pthread_cond_wait(&w->done, &w->mutex);
-	pthread_mutex_unlock(&w->mutex);
+		condition_wait(&w->done, &w->mutex);
+	mutex_unlock(&w->mutex);
 	// Responses may schedule more work. Drain that work here, with no worker in flight.
 	int synchronous = w->synchronous;
 	w->synchronous = 1;
@@ -180,11 +177,11 @@ void lv2_worker_close(Lv2 *l) {
 	if (w->started) {
 		lv2_worker_wait(l);
 		atomic_store(&w->stop, 1);
-		sem_post(&w->ready);
-		pthread_join(w->thread, NULL);
-		pthread_cond_destroy(&w->done);
-		pthread_mutex_destroy(&w->mutex);
-		sem_destroy(&w->ready);
+		semaphore_post(&w->ready);
+		thread_join(w->thread);
+		condition_destroy(&w->done);
+		mutex_destroy(&w->mutex);
+		semaphore_destroy(&w->ready);
 	}
 	free(w->requests.data);
 	free(w->responses.data);

@@ -1,10 +1,10 @@
 #include "host/dsp_internal.h"
 #include "script.h"
+#include "platform.h"
 #include <assert.h>
 #include <math.h>
 #include <limits.h>
-#include <pthread.h>
-#include <sched.h>
+#include "native/thread.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,7 +13,7 @@ static void *produce(void *arg) {
 	Messages *q = arg;
 	for (unsigned i = 0; i < 100000; ++i)
 		while (message_push(q, sizeof(i), &i))
-			sched_yield();
+			thread_yield();
 	return NULL;
 }
 
@@ -37,14 +37,14 @@ static void test_messages(void) {
 	// Cross both the ring boundary and unsigned counter wrap with a concurrent producer.
 	atomic_store(&q.read, UINT_MAX - 20);
 	atomic_store(&q.write, UINT_MAX - 20);
-	pthread_t thread;
-	assert(!pthread_create(&thread, NULL, produce, &q));
+	Thread thread;
+	assert(!thread_start(&thread, produce, &q));
 	for (unsigned i = 0; i < 100000; ++i) {
 		while (!message_pop(&q, &size, &value))
-			sched_yield();
+			thread_yield();
 		assert(size == sizeof(value) && value == i);
 	}
-	assert(!pthread_join(thread, NULL));
+	thread_join(thread);
 	free(q.data);
 	puts("OK: message bounds, full/empty queues, zero-length messages, FIFO and concurrent counter wrap");
 }
@@ -62,7 +62,7 @@ static void control_parameter(DSP *dsp, size_t index, double value) {
 	if (c->gate) {
 		atomic_store(c->gate, 1);
 		while (atomic_load(c->gate) == 1)
-			sched_yield();
+			thread_yield();
 	}
 }
 
@@ -116,14 +116,14 @@ static void test_controls(void) {
 	atomic_store(&a.requested[0], UINT_MAX);
 	atomic_store(&a.applied[0], UINT_MAX);
 	edit_dsp(&a, 0, 4);
-	pthread_t thread;
-	assert(!pthread_create(&thread, NULL, apply_control, &a));
+	Thread thread;
+	assert(!thread_start(&thread, apply_control, &a));
 	while (!atomic_load(&gate))
-		sched_yield();
+		thread_yield();
 	assert(!read_dsp(&a, 0, &value));
 	edit_dsp(&a, 0, 5);
 	atomic_store(&gate, 2);
-	assert(!pthread_join(thread, NULL));
+	thread_join(thread);
 	assert(left.values[0] == 4 && !read_dsp(&a, 0, &value));
 	left.gate = NULL;
 	sync_dsp(&a, &b);

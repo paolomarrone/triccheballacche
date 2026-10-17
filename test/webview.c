@@ -1,4 +1,4 @@
-#include "posix/gui_loop.h"
+#include "native/gui_loop.h"
 #include "webui.h"
 #include <stdatomic.h>
 #include <stdio.h>

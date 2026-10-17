@@ -53,11 +53,17 @@
         (def variable (case format :clap "CLAP_PATH" :lv2 "LV2_PATH" :vst3 "VST3_PATH" (error "unsupported plugin format")))
         (def custom (os/getenv variable))
         (def suffix (string format))
-        (def defaults [(string (or (os/getenv "HOME") "") "/." suffix)
-                      (string "/usr/local/lib/" suffix) (string "/usr/lib/" suffix)])
+        (def windows (= (os/which) :windows))
+        (def separator (if windows ";" ":"))
+        (def defaults (if windows
+          [(if (= format :lv2) (string (or (os/getenv "APPDATA") "") "/LV2")
+             (string (or (os/getenv "LOCALAPPDATA") "") "/Programs/Common/" (string/ascii-upper suffix)))
+           (string (or (os/getenv "COMMONPROGRAMFILES") "C:/Program Files/Common Files") "/" (string/ascii-upper suffix))]
+          [(string (or (os/getenv "HOME") "") "/." suffix)
+           (string "/usr/local/lib/" suffix) (string "/usr/lib/" suffix)]))
         (filter |(> (length $) 0)
-          (if (and (= format :lv2) custom) (string/split ":" custom)
-            (array/concat @[] (string/split ":" (or custom "")) defaults)))))))
+          (if (and (= format :lv2) custom) (string/split separator custom)
+            (array/concat @[] (string/split separator (or custom "")) defaults)))))))
 
 # Preferences contain only discovery paths; explicit score references are unchanged.
 (defn plugin/check-paths [paths]
@@ -83,8 +89,11 @@
   (or (plugin/search-paths format) (plugin/default-paths format)))
 
 (defn plugin/expand-path [path]
-  (if (or (= path "~") (string/has-prefix? "~/" path))
-    (string (or (os/getenv "HOME") (error "HOME is not set")) (string/slice path 1)) path))
+  (def windows (= (os/which) :windows))
+  (def normalized (if windows (string/replace-all "\\" "/" path) path))
+  (if (or (= normalized "~") (string/has-prefix? "~/" normalized))
+    (string (or (when windows (os/getenv "USERPROFILE")) (os/getenv "HOME")
+                (error "Home directory is not set")) (string/slice normalized 1)) normalized))
 
 (defn plugin/files [format path &opt depth]
   (default depth 0)
@@ -96,7 +105,7 @@
   (cond
     (and (> (length name) (+ 1 (length (string format))))
          (string/has-suffix? (string "." format) name)
-         (if (= format :clap) (= kind :file) (= kind :directory)))
+         (case format :clap (= kind :file) :vst3 (or (= kind :file) (= kind :directory)) (= kind :directory)))
     (when (or (not= format :perone) (= :file (os/stat (string root "/product.json") :mode)))
       (array/push files root))
     (and (< depth 8) (= kind :directory))

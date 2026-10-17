@@ -1,4 +1,4 @@
-#include "posix/midi.h"
+#include "native/midi.h"
 #include "support.h"
 #include <portmidi.h>
 #include <assert.h>

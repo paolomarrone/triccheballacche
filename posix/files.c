@@ -1,146 +1,64 @@
-#include "files.h"
-#include "script.h"
-#include "util.h"
-#include "json_write.h"
-#include "discovery.h"
+#include "host/platform.h"
 #include <dirent.h>
 #include <errno.h>
-#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
-const char *file_read(const char *path, char **text) {
+int host_file_info(const char *path, HostFileInfo *out) {
 	struct stat info;
 	if (stat(path, &info))
-		return strerror(errno);
-	if (!S_ISREG(info.st_mode))
-		return "Path is not a regular file";
-	FILE *file = fopen(path, "rb");
-	if (!file)
-		return strerror(errno);
-	long size = -1;
-	if (!fseek(file, 0, SEEK_END))
-		size = ftell(file);
-	const char *error = "Cannot read file (at most 8 MiB of text)";
-	if (size >= 0 && size <= MAX_SOURCE && !fseek(file, 0, SEEK_SET)) {
-		*text = malloc((size_t)size + 1);
-		if (*text && fread(*text, 1, size, file) == (size_t)size && !ferror(file) && !memchr(*text, 0, size)) {
-			(*text)[size] = 0;
-			error = NULL;
-		}
+		return -1;
+	if (!S_ISREG(info.st_mode) && !S_ISDIR(info.st_mode)) {
+		errno = EINVAL;
+		return -1;
 	}
-	fclose(file);
-	if (error) {
-		free(*text);
-		*text = NULL;
-	}
-	return error;
+	*out = (HostFileInfo){
+	    info.st_size, (uint64_t)info.st_mtim.tv_sec * 1000000000 + info.st_mtim.tv_nsec, S_ISDIR(info.st_mode)};
+	return 0;
 }
-
-const char *file_save(const char *path, const char *text) {
-	// Follow an existing symlink and preserve permissions; publish only a complete write.
-	char *resolved = realpath(path, NULL);
-	const char *target = resolved ? resolved : path;
-	char *temporary = malloc(strlen(target) + sizeof(".XXXXXX"));
-	if (!temporary) {
-		free(resolved);
-		return "Out of memory";
-	}
-	sprintf(temporary, "%s.XXXXXX", target);
+FILE *host_fopen(const char *path, const char *mode) {
+	return fopen(path, mode);
+}
+FILE *host_tempfile(char *path, const char *preserve_mode_from) {
+	int fd = host_mkstemp(path);
+	if (fd < 0)
+		return NULL;
 	struct stat info;
-	int exists = !stat(target, &info), fd = mkstemp(temporary), result = -1;
-	if (fd >= 0) {
-		FILE *file = fdopen(fd, "wb");
-		if (file) {
-			result = (exists && fchmod(fd, info.st_mode & 0777)) || fputs(text, file) < 0;
-			result |= fclose(file) != 0;
-		} else {
-			close(fd);
-		}
-		if (!result)
-			result = rename(temporary, target);
-		if (result)
-			unlink(temporary);
+	int failed = preserve_mode_from && !stat(preserve_mode_from, &info) && fchmod(fd, info.st_mode & 0777);
+	FILE *file = failed ? NULL : fdopen(fd, "w+b");
+	if (!file) {
+		close(fd);
+		unlink(path);
 	}
-	free(temporary);
-	free(resolved);
-	return result ? "Cannot save file; the previous file is preserved" : NULL;
+	return file;
 }
-
-static const char library_source[] =
-#include "build/generated/library.inc"
-    ;
-
-static Janet save_settings(int32_t argc, Janet *argv) {
-	janet_fixarity(argc, 1);
-	const char *text = janet_getcstring(argv, 0);
-	char *path = plugin_settings_path();
-	if (!path)
-		janet_panic("No user configuration directory");
-	const char *error = NULL;
-	for (char *p = path + 1; *p; ++p) {
-		if (*p != '/')
-			continue;
-		*p = 0;
-		int result = mkdir(path, 0700);
-		*p = '/';
-		if (result && errno != EEXIST) {
-			error = strerror(errno);
-			break;
-		}
-	}
-	if (!error)
-		error = file_save(path, text);
-	free(path);
-	if (error)
-		janet_panic(error);
-	return janet_wrap_nil();
+int host_seek(FILE *file, int64_t offset, int origin) {
+	return fseeko(file, offset, origin);
 }
-
-char *library_json(const char *settings) {
-	JanetTable *env = script_env(DEFAULT_SAMPLE_RATE);
-	if (!env)
+int host_remove(const char *path) {
+	return unlink(path);
+}
+FILE *host_scan_output(void) {
+	int fd = dup(STDOUT_FILENO);
+	if (fd < 0)
 		return NULL;
-	Janet result;
-	char *json = NULL;
-	janet_def(env, "host/save-settings", janet_wrap_cfunction(save_settings), NULL);
-	janet_def(env, "host/settings-input", settings ? janet_cstringv(settings) : janet_wrap_nil(), NULL);
-	if (!janet_dostring(env, library_source, "lib/library.janet", &result) && janet_checktype(result, JANET_STRING))
-		json = copy_string((const char *)janet_unwrap_string(result));
-	janet_deinit();
-	return json;
+	FILE *file = dup2(STDERR_FILENO, STDOUT_FILENO) < 0 ? NULL : fdopen(fd, "w");
+	if (!file)
+		close(fd);
+	return file;
 }
-
-char *directory_json(const char *path) {
-	char *resolved = realpath(*path ? path : ".", NULL);
-	DIR *dir = resolved ? opendir(resolved) : NULL;
-	const char *error = dir ? NULL : strerror(errno);
-	Json json = {0};
-	json_print(&json, "{\"path\":");
-	json_string(&json, resolved);
-	json_print(&json, ",\"files\":[");
-	if (dir) {
-		struct dirent *entry;
-		int count = 0;
-		while ((entry = readdir(dir))) {
-			if (entry->d_name[0] == '.')
-				continue;
-			struct stat info;
-			if (fstatat(dirfd(dir), entry->d_name, &info, 0) || (!S_ISREG(info.st_mode) && !S_ISDIR(info.st_mode)))
-				continue;
-			json_print(&json, "%s{\"name\":", count++ ? "," : "");
-			json_string(&json, entry->d_name);
-			json_print(&json, ",\"directory\":%s}", S_ISDIR(info.st_mode) ? "true" : "false");
-		}
-		closedir(dir);
+int host_directory(const char *path, void (*visit)(void *, const char *, int), void *context) {
+	DIR *dir = opendir(path);
+	if (!dir)
+		return -1;
+	struct dirent *entry;
+	while ((entry = readdir(dir))) {
+		struct stat info;
+		if (!fstatat(dirfd(dir), entry->d_name, &info, 0) && (S_ISDIR(info.st_mode) || S_ISREG(info.st_mode)))
+			visit(context, entry->d_name, S_ISDIR(info.st_mode));
 	}
-	json_print(&json, "],\"error\":");
-	json_string(&json, error);
-	json_print(&json, "}");
-	free(resolved);
-	if (json.failed) {
-		free(json.data);
-		return NULL;
-	}
-	return json.data;
+	closedir(dir);
+	return 0;
 }

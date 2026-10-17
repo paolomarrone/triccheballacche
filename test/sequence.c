@@ -3,8 +3,7 @@
 #include "host/dsp_internal.h"
 #include <assert.h>
 #include <math.h>
-#include <pthread.h>
-#include <sched.h>
+#include "native/thread.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -521,22 +520,22 @@ static void test_concurrent_revisions(void) {
 	assert(!prepare_session(&session, &output, "test/concurrent.janet", code, NULL, NULL));
 	DSP *dsp = session.nodes[0].dsp[0].dsp;
 	AudioThread audio = {.session = &session};
-	pthread_t thread;
-	assert(!pthread_create(&thread, NULL, render_thread, &audio));
+	Thread thread;
+	assert(!thread_start(&thread, render_thread, &audio));
 	for (unsigned i = 1; i <= 100; ++i) {
 		Score next = {.sample_rate = 48000};
 		assert(!prepare_score(&next, &output, "test/concurrent.janet", code, NULL, NULL));
 		assert(!session_update(&session, &next, atomic_load(&audio.position) + 4096, i, NULL));
 		assert(!next.nnodes && !next.sequence.cues);
 		while (atomic_load(&session.revision) != i || atomic_load(&session.pending))
-			sched_yield();
+			thread_yield();
 		session_collect(&session);
 		const Score *active = session_score(&session);
 		assert(active->sequence.count == 1 && active->nodes[0].info.product);
 		assert(session.nodes[0].dsp[0].dsp == dsp);
 	}
 	atomic_store(&audio.stop, 1);
-	assert(!pthread_join(thread, NULL));
+	thread_join(thread);
 	session_free(&session);
 	puts("OK: concurrent revision publication, metadata ownership, cursor replacement and retirement");
 }

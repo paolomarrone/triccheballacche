@@ -118,7 +118,8 @@ static Steinberg_tresult SMTG_STDMETHODCALLTYPE unregister_timer(void *s, Steinb
 		}
 	return Steinberg_kResultFalse;
 }
-void *vst_loop_new(void) {
+const unsigned char vst_id_order[16] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+int vst_loop_new(void **loop) {
 	static Steinberg_Linux_IRunLoopVtbl table = {
 	    query, retain, release, register_event, unregister_event, register_timer, unregister_timer};
 	Loop *l = calloc(1, sizeof(*l));
@@ -126,7 +127,8 @@ void *vst_loop_new(void) {
 		l->api.lpVtbl = &table;
 		l->refs = 1;
 	}
-	return l;
+	*loop = l;
+	return l ? 0 : -1;
 }
 void vst_loop_poll(void *loop) {
 	Loop *l = loop;

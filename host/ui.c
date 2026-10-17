@@ -1,13 +1,12 @@
 #include "host/ui_internal.h"
 #include <stdlib.h>
-#include <unistd.h>
 
 struct UI {
 	const UIOps *ops;
 	void *view;
 };
 int ui_available(const Node *node) {
-	return node->info.ui && (node->config.format != PLUGIN_PERONE || !access(node->info.ui, R_OK));
+	return node->info.ui && (node->config.format != PLUGIN_PERONE || perone_ui_available(node));
 }
 int ui_open(UI **out, Session *session, int id) {
 	*out = NULL;

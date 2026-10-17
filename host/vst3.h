@@ -34,11 +34,13 @@ typedef struct VstHost VstHost;
 VstHost *vst_host_new(void);
 Steinberg_FUnknown *vst_host_context(VstHost *host);
 void vst_host_poll(VstHost *host);
+void *vst_host_loop_query(VstHost *host, const Steinberg_TUID iid);
 // The platform owns the native module entry/exit convention and its event loop.
 void *vst_library_open(const char *path);
 void vst_library_close(void *library);
-void *vst_loop_new(void);
+int vst_loop_new(void **loop);
 void vst_loop_poll(void *loop);
+extern const unsigned char vst_id_order[16];
 
 typedef struct {
 	Steinberg_IBStream api;

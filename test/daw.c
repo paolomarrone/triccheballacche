@@ -1,6 +1,7 @@
 #include "host/dsp_internal.h"
 #include "support.h"
 #include "script.h"
+#include "host/platform.h"
 #include <assert.h>
 #include <float.h>
 #include <math.h>
@@ -8,10 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/resource.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 static int script(Session *s, Output *cfg, const char *source) {
 	char path[] = "build/test/daw-test-XXXXXX";
@@ -540,23 +538,11 @@ static void failed_exports(size_t frames, int overflow) {
 
 static void test_atomic_export(void) {
 	failed_exports(BLOCK + 1, 1);
-	for (int late = 0; late < 2; ++late) {
-		pid_t child = fork();
-		assert(child >= 0);
-		if (!child) {
-			assert(signal(SIGXFSZ, SIG_IGN) != SIG_ERR);
-			rlim_t limit = late ? 48 : 128;
-			assert(!setrlimit(RLIMIT_FSIZE, &(struct rlimit){limit, limit}));
-			failed_exports(late ? 2 : BLOCK + 1, 0);
-			_exit(0);
-		}
-		int status;
-		assert(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
-	}
+	test_export_write_failure(failed_exports, BLOCK);
 	char directory[] = "build/test/export-test-XXXXXX", path[80];
 	assert(mkdtemp(directory));
 	snprintf(path, sizeof(path), "%s/score.wav", directory);
-	assert(!mkdir(path, 0700));
+	assert(!host_mkdir(path));
 	Session s = {0};
 	export_session(&s, 2, 0);
 	assert(write_score(&s, &(Output){0}, path) < 0 && s.error);

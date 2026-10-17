@@ -7,11 +7,11 @@
 
 void janet_json(JanetTable *env);
 static const char perone_source[] =
-#include "build/generated/perone.inc"
+#include "perone.inc"
     ;
 
 static const char plugin_source[] =
-#include "build/generated/plugin.inc"
+#include "plugin.inc"
     ;
 
 static Janet scan(int32_t argc, Janet *argv) {

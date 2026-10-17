@@ -1,0 +1,11 @@
+#ifndef WIN32_THREAD_PLATFORM_H
+#define WIN32_THREAD_PLATFORM_H
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+typedef HANDLE Thread;
+typedef SRWLOCK Mutex;
+typedef CONDITION_VARIABLE Condition;
+typedef HANDLE Semaphore;
+#define MUTEX_INITIALIZER SRWLOCK_INIT
+#define CONDITION_INITIALIZER CONDITION_VARIABLE_INIT
+#endif

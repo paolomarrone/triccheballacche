@@ -2,7 +2,8 @@
 #include "snapshot.h"
 #include "host/clap.h"
 #include "host/ui.h"
-#include <X11/Xlib.h>
+#include "platform.h"
+#include "host/platform.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -18,26 +19,8 @@ static void pump(Session *s, UI *ui) {
 			assert(!session_restart(s));
 		session_sync(s);
 		assert(!ui_poll(ui));
-		nanosleep(&(struct timespec){.tv_nsec = 10000000}, NULL);
+		test_ui_wait();
 	}
-}
-static Window named_window(Display *display, Window parent, const char *name) {
-	char *title = NULL;
-	if (XFetchName(display, parent, &title) && title) {
-		int matches = !strcmp(title, name);
-		XFree(title);
-		if (matches)
-			return parent;
-	}
-	Window root, up, *children;
-	unsigned count;
-	if (!XQueryTree(display, parent, &root, &up, &children, &count))
-		return 0;
-	Window result = 0;
-	for (unsigned i = 0; i < count && !result; ++i)
-		result = named_window(display, children[i], name);
-	XFree(children);
-	return result;
 }
 static void native_ui(Session *s, int id, int fixture) {
 	UI *ui = NULL;
@@ -46,24 +29,7 @@ static void native_ui(Session *s, int id, int fixture) {
 	ui_show(ui, 1);
 	pump(s, ui);
 	if (fixture) {
-		Display *d = XOpenDisplay(NULL);
-		assert(d);
-		Window parent = named_window(d, DefaultRootWindow(d), "CLAP test synth");
-		assert(parent);
-		Window root, up, *children;
-		unsigned count;
-		assert(XQueryTree(d, parent, &root, &up, &children, &count) && count);
-		XEvent event = {.xbutton = {.type = ButtonPress,
-		                    .display = d,
-		                    .window = children[0],
-		                    .button = Button1,
-		                    .same_screen = True,
-		                    .x = 30,
-		                    .y = 30}};
-		XSendEvent(d, children[0], False, ButtonPressMask, &event);
-		XFlush(d);
-		XFree(children);
-		XCloseDisplay(d);
+		test_clap_click();
 		pump(s, ui);
 		double value;
 		assert(read_dsp(s->nodes[id].dsp[0].dsp, 0, &value) && value == .75);
@@ -301,7 +267,7 @@ int main(int argc, char **argv) {
 	puts("OK: repeated seeks, parameter cookies after restart and coalesced controls requiring process()");
 	puts("OK: shared CLAP entry, canonical module paths and instances outliving their cache");
 	if (ui)
-		puts("OK: CLAP native X11 UI, timers, edits in both directions and repeated window lifetime");
+		puts("OK: CLAP native UI, timers, edits in both directions and repeated window lifetime");
 	latency_test();
 	render_mode_test();
 	parameter_test();

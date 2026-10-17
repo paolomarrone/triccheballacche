@@ -1,4 +1,5 @@
 #include "score_janet.h"
+#include "host/platform.h"
 #include "player.h"
 #include <signal.h>
 #include <stdio.h>
@@ -37,7 +38,7 @@ static int play_score(Session *s) {
 				result = -1;
 				break;
 			}
-			nanosleep(&(struct timespec){.tv_nsec = 10000000}, NULL);
+			host_sleep(10);
 		}
 		result = result || player_status(p) < 0;
 	}

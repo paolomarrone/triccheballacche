@@ -1,5 +1,5 @@
 import {readdir, readFile, stat, mkdir, copyFile, writeFile} from "node:fs/promises";
-import {dirname, basename, extname, join} from "node:path";
+import {dirname, basename, extname, join, sep} from "node:path";
 import {createHash} from "node:crypto";
 
 // Explicit project roots, no parsing/evaluation of scores and no dependency list per example.
@@ -7,6 +7,7 @@ const [output, ...roots] = process.argv.slice(2);
 if (!output || !roots.length) throw Error("Usage: node web/catalog.mjs output.json directory-or-file ...");
 const files = new Set();
 async function collect(path) {
+    path = path.split(sep).join("/"); // Manifest paths and bundle URLs are platform-independent.
     if ((await stat(path)).isDirectory()) {
         if (basename(path).endsWith(".perone")) {
             const {product} = JSON.parse(await readFile(join(path, "product.json"), "utf8"));

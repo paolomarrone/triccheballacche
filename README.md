@@ -4,13 +4,15 @@ A minimal scriptable DAW: Janet scores, C audio, Perone, CLAP, LV2 and VST3 plug
 The native and browser editors share the same interface, audio engine and 2D/3D score view.
 Music can be finite or repeat indefinitely, with quantized live updates.
 
-This is a development project. Linux and Chromium/Wasm are tested; macOS is
-unverified and Windows still needs native backends. Scripts and plugins must be
+This is a development project. Linux, Windows x64 and Chromium/Wasm are tested;
+macOS is unverified. Scripts and plugins must be
 trusted. Plugin crashes are not isolated, and APIs may change.
 
 ## Build and run
 
-Run commands from the repository root. You need a C compiler, GNU Make, git,
+Run commands from the repository root. Windows uses the same Make targets inside
+MSYS2 UCRT64; see the one-time setup below.
+On Linux you need a C compiler, GNU Make, git,
 curl and patch. The native build also needs Meson, Ninja and pkg-config for
 Lilv and its dependencies; the plugin library needs Node.js and npm.
 
@@ -36,7 +38,7 @@ their C++ duplicates. No sibling repositories are needed for the commands above.
 | `make web-offline` | `build/web/offline.{mjs,wasm}`: offline rendering runtime. |
 | `make tools` | `build/tools/perone-host` and `build/tools/plugin-scan`: plugin diagnostics. |
 
-The native editor needs X11 development libraries and, on Linux, GTK 3 and
+On Linux, the native editor needs X11 development libraries, GTK 3 and
 WebKitGTK 4.1 (or 4.0) runtime libraries. MIDI device support needs CMake and
 ALSA development headers on Linux. WebUI and PortMidi are fetched automatically.
 
@@ -45,6 +47,68 @@ make gui
 ./build/gui examples/patterns.janet
 ./build/gui --serve examples/patterns.janet  # Use a browser instead of a WebView.
 ```
+
+### Windows x64
+
+Requires Windows 10 version 1903 or newer. Executables embed a
+[UTF-8 process manifest](https://learn.microsoft.com/en-us/windows/apps/design/globalizing/use-utf8-code-page)
+so command-line arguments, environment variables and dependency file APIs use
+the same encoding as the host.
+
+Install [MSYS2](https://www.msys2.org/), open **MSYS2 UCRT64**, and update/install
+the development tools (restart the shell if the core update asks you to):
+
+```sh
+pacman -Syu
+pacman -S --needed make git patch diffutils unzip mingw-w64-ucrt-x86_64-{gcc,cmake,meson,pkgconf,nodejs}
+```
+
+From the repository root in that shell:
+
+```sh
+make -j4 cli gui tools library
+make test test-clap test-brickworks
+./build/gui.exe examples/patterns.janet
+```
+
+GNU Make and shell utilities run inside MSYS2; GCC produces native Windows
+binaries. Visual Studio Build Tools are not required. Meson/Ninja build only
+the LV2 dependencies, and CMake builds PortMidi, just as on Linux. Dependency
+sources stay pinned in `.deps/`; there is no separate Windows build system.
+The local plugins use the sibling checkouts documented below.
+
+Executables live in `build/`, `build/tools/` and `build/test/`, with an `.exe`
+suffix. They also run from PowerShell without MSYS2 in `PATH`: compiler runtimes
+are linked statically. Keep the matching DLLs, bundles, `editor/` and scores
+alongside the build; run from the repository root. Close programs before rebuilding.
+The repository path may contain spaces; use relative dependency overrides.
+
+The native editor needs the Microsoft Edge WebView2 Runtime; Make downloads
+and copies its pinned loader DLL. `gui.exe --serve examples/patterns.janet`
+uses a browser instead. Perone binaries use `x86_64-windows/<bundleName>.dll`.
+
+For Wasm, install `mingw-w64-ucrt-x86_64-emscripten` and reopen the UCRT64 shell.
+MSYS2 currently supplies Emscripten 6.0.12. The build defaults to
+`BINARYEN_CORES=1` on MSYS2 to avoid a Binaryen 133 worker-pool hang; `make -j`
+still builds independent targets concurrently.
+
+Verified on Windows: core native tests, all 40 Brickworks DSP bundles, WAV export,
+editor preparation/playback, WebView2, and CLAP audio/state/native-window fixtures.
+LV2/VST3 Windows adapters are compiled but still need validation with real plugins;
+their Linux-only fixture/UI tests have not been ported. MIDI device I/O also needs
+hardware testing. Native Perone windows are unavailable because UI ABI v1 only
+defines X11 and web; shared parameter controls and web UIs remain available.
+
+Plugin path environment variables use `;` on Windows. Discovery defaults to
+`%LOCALAPPDATA%/Programs/Common/{CLAP,VST3}`, `%APPDATA%/LV2` and
+`%COMMONPROGRAMFILES%/{CLAP,LV2,VST3}`; settings are stored in
+`%APPDATA%/triccheballacche/settings.json`. Prefer forward slashes in Janet paths.
+The core test suite omits Unix `fork`/`RLIMIT_FSIZE` fault injection on Windows;
+render failures and atomic destination replacement are still exercised.
+
+For the Windows editor smoke test, build the library and run
+`node test/windows.mjs` with `CHROMIUM` set to a Chromium/Edge executable.
+`make test-webview` and `make test-clap-ui` exercise the actual native windows.
 
 `--serve` keeps the engine running across page reloads and tab closure; stop it
 with Ctrl+C. Reopening the page restores the running score and controls, but
@@ -364,12 +428,14 @@ files only after success.
 The canonical library build is self-contained. Local plugin projects instead
 default to sibling `../tibia` and `../brickworks` checkouts. Tibia must provide
 the Perone templates and have its `dot` npm dependency installed. To use the
-pinned downloads instead, run `make library-deps` and pass their absolute paths:
+pinned downloads instead, run `make library-deps` and override their paths:
 
 ```sh
 make -C plugins TIBIA=/path/to/tibia BRICKWORKS=/path/to/brickworks
 make -C plugins TIBIA=/path/to/tibia BRICKWORKS=/path/to/brickworks PERONE_PLATFORM=wasm32
 ```
+
+On Windows, use relative paths without spaces, resolved from `plugins/<name>/`.
 
 This builds `synth_mono`, `fx_svf`, `tibia_test`, `drums`, `shape` and `echo` under
 `plugins/<name>/build/plugin.perone`. `drums` maps MIDI notes 0–6 to kick, snare,
@@ -395,8 +461,12 @@ keep them out of the examples dropdown.
 
 Root C files own scores, sequencing, sessions and projection. `dsp.h` is the
 engine's plugin contract. `host/` implements native DSP instances, module caching
-and Perone/CLAP/LV2/VST3 adapters; each format owns its module resources. `posix/`
-provides system services and native applications; `x11/` embeds plugin windows.
+and Perone/CLAP/LV2/VST3 adapters; each format owns its module resources. `native/`
+contains shared native applications, discovery, files, MIDI and worker logic.
+`posix/` and `win32/` implement system services and synchronization; `x11/` and
+`win32/` embed plugin windows. The build selects backend source files, not OS
+conditionals in the shared implementation. Platform-specific test fixtures are
+likewise separate under `test/posix/`, `test/x11/` and `test/win32/`.
 `web/` supplies the browser backend, `lib/` Janet composition, and `editor/` the
 shared editor. Keep system calls and platform headers out of core and `host/`.
 Prose and code comments use English; musical names keep their spelling.

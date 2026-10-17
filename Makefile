@@ -1,13 +1,10 @@
 CC = cc
 CFLAGS ?= -O2 -Wall -Wextra
+.DEFAULT_GOAL := all
+.DELETE_ON_ERROR:
 TARGET_OS ?= $(shell uname -s)
-LDLIBS = -lm -pthread
-ifneq ($(TARGET_OS),Darwin)
-LDLIBS += -ldl
-endif
-ifeq ($(shell uname -o 2>/dev/null),Android)
-LDLIBS += -landroid-spawn
-endif
+PLATFORM := $(if $(filter MINGW% MSYS% Windows,$(TARGET_OS)),win32,posix)
+override CPPFLAGS += -I$(PLATFORM) -Ibuild/generated
 MINIAUDIO ?= .deps/miniaudio.h
 JANET_VERSION = 1.42.1
 JANET ?= .deps/janet-$(JANET_VERSION)
@@ -25,32 +22,29 @@ LV2_DEPS ?= .deps/lv2
 LV2_INCLUDES = -I$(LV2_DEPS)/include -I$(LV2_DEPS)/include/lilv-0 -I$(LV2_DEPS)/include/sratom-0 -I$(LV2_DEPS)/include/serd-0 -I$(LV2_DEPS)/include/sord-0
 LV2_LIBS = $(addprefix $(LV2_DEPS)/lib/,liblilv-0.a libsratom-0.a libsord-0.a libserd-0.a libzix-0.a)
 WEBUI ?= .deps/webui-$(WEBUI_REV)
-PERONE_PLATFORM ?= $(shell uname -m)-$(shell echo $(TARGET_OS) | tr A-Z a-z)
+include $(PLATFORM)/build.mk
 PERONE_SUFFIX ?= .so
+include plugins/library.mk
 SCRIPT_FLAGS = $(JANET_INCLUDES) -DPERONE_SUFFIX='"$(PERONE_SUFFIX)"' -DPERONE_PLATFORM='"$(PERONE_PLATFORM)"'
 PLUGIN_SOURCES = midi.c plugin.c script.c trace.c state.c
 SCORE_SOURCES = score_janet.c score.c score_view.c score_automation.c session.c sequence.c $(PLUGIN_SOURCES)
 VIEW_SOURCES = score_view_json.c json_write.c transport.c
 HOST_SOURCES = host/dsp.c host/module.c host/scan.c host/perone.c host/clap.c host/clap_info.c host/lv2.c host/lv2_info.c host/lv2_state.c host/vst3.c host/vst3_info.c host/vst3_host.c
-HOST_PLATFORM_SOURCES = posix/host.c posix/clap.c posix/lv2.c posix/vst3.c x11/info.c
+HOST_PLATFORM_SOURCES = $(addprefix $(PLATFORM)/,host.c files.c thread.c settings.c scan.c clap.c vst3.c) native/lv2.c $(WINDOW_SYSTEM)/info.c
 HOST_OBJECTS = $(addprefix build/obj/native/,$(HOST_SOURCES:.c=.o) $(HOST_PLATFORM_SOURCES:.c=.o))
-UI_OBJECTS = $(addprefix build/obj/native/,x11/ui.o x11/perone_ui.o x11/clap_ui.o x11/lv2_ui.o x11/vst3_ui.o x11/window.o)
-PLUGIN_OBJECTS = $(HOST_OBJECTS) $(addprefix build/obj/native/,midi.o plugin.o state.o posix/discovery.o json_write.o script.o trace.o json.o janet.o)
+UI_OBJECTS = $(addprefix build/obj/native/,host/ui.o $(WINDOW_SYSTEM)/perone_ui.o host/clap_ui.o host/lv2_ui.o host/vst3_ui.o $(WINDOW_SYSTEM)/window.o)
+PLUGIN_OBJECTS = $(HOST_OBJECTS) $(addprefix build/obj/native/,midi.o plugin.o state.o native/discovery.o json_write.o script.o trace.o json.o janet.o)
 SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o score_automation.o session.o sequence.o) $(PLUGIN_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
-NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host build/tools/plugin-scan
-NATIVE_TESTS = $(addprefix build/test/,dsp daw player routing score_view plugins ui view_json sequence clap lv2 vst3 midi midi_devices)
-FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h host/*.c host/*.h posix/*.c posix/*.h gtk/*.c x11/*.c x11/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c test/vst3/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
-GUI_LOOP = posix/gui_loop.o
-ifeq ($(TARGET_OS),Linux)
-GUI_LOOP = gtk/gui_loop.o
-endif
+NATIVE_PROGRAMS = build/cli$(EXE) build/gui$(EXE) build/tools/perone-host$(EXE) build/tools/plugin-scan$(EXE)
+NATIVE_TESTS = $(addsuffix $(EXE),$(addprefix build/test/,platform dsp daw player routing score_view plugins ui view_json sequence clap lv2 vst3 midi midi_devices))
+FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h host/*.c host/*.h native/*.c native/*.h win32/*.c win32/*.h test/posix/*.c test/posix/*.h test/x11/*.c test/x11/*.h test/win32/*.c test/win32/*.h posix/*.c posix/*.h gtk/*.c x11/*.c x11/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c test/vst3/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
 
 .PHONY: all cli gui tools clean format format-check
 all: cli
-cli: build/cli
-gui: build/gui
-tools: build/tools/perone-host build/tools/plugin-scan
+cli: build/cli$(EXE)
+gui: build/gui$(EXE)
+tools: build/tools/perone-host$(EXE) build/tools/plugin-scan$(EXE)
 
 format:
 	clang-format -i $(FORMAT_SOURCES)
@@ -74,16 +68,12 @@ $(PORTMIDI)/CMakeLists.txt:
 	git clone --depth 1 --branch v$(PORTMIDI_VERSION) https://github.com/PortMidi/portmidi.git $(PORTMIDI)
 
 $(PORTMIDI)/build/libportmidi.a: $(PORTMIDI)/CMakeLists.txt
-	cmake -S $(PORTMIDI) -B $(PORTMIDI)/build -DCMAKE_C_COMPILER="$(CC)" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_PORTMIDI_TESTS=OFF -DBUILD_JAVA_NATIVE_INTERFACE=OFF
+	cmake -S $(PORTMIDI) -B $(PORTMIDI)/build -G Ninja -DCMAKE_C_COMPILER="$(CC)" -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_PORTMIDI_TESTS=OFF -DBUILD_JAVA_NATIVE_INTERFACE=OFF
 	cmake --build $(PORTMIDI)/build --target portmidi
 
-$(addprefix build/obj/native/,posix/midi.o test/midi_devices.o): override CPPFLAGS += -I$(PORTMIDI)/pm_common
-$(addprefix build/obj/native/,posix/midi.o test/midi_devices.o): $(PORTMIDI)/CMakeLists.txt $(MINIAUDIO)
-ifeq ($(TARGET_OS),Darwin)
-build/gui build/test/midi_devices: private LDLIBS += -framework CoreMIDI -framework CoreAudio -framework CoreFoundation
-else
-build/gui build/test/midi_devices: private LDLIBS += -lasound
-endif
+$(addprefix build/obj/native/,native/midi.o test/midi_devices.o): override CPPFLAGS += -I$(PORTMIDI)/pm_common
+$(addprefix build/obj/native/,native/midi.o test/midi_devices.o): $(PORTMIDI)/CMakeLists.txt $(MINIAUDIO)
+build/gui$(EXE) build/test/midi_devices$(EXE): private LDLIBS += $(MIDI_LIBS)
 
 
 $(JANET)/Makefile:
@@ -122,7 +112,7 @@ build/obj/native/janet.o: build/generated/janet.c Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(JANET_INCLUDES) -MMD -MP -c $< -o $@
 
-CLAP_OBJECTS = $(addprefix build/obj/native/,host/clap.o host/clap_info.o posix/clap.o x11/clap_ui.o x11/info.o tools/plugin-scan.o test/clap.o)
+CLAP_OBJECTS = $(addprefix build/obj/native/,host/clap.o host/clap_info.o $(PLATFORM)/clap.o host/clap_ui.o $(WINDOW_SYSTEM)/window.o $(WINDOW_SYSTEM)/info.o tools/plugin-scan.o test/clap.o)
 $(CLAP_OBJECTS): override CPPFLAGS += -I$(CLAP)/include
 $(CLAP_OBJECTS): $(CLAP)/include/clap/clap.h
 
@@ -131,41 +121,42 @@ $(VST3)/vst3_c_api.h $(VST3)/LICENSE.txt:
 	mkdir -p $(VST3)
 	curl -fL --retry 2 https://raw.githubusercontent.com/steinbergmedia/vst3_c_api/$(VST3_REV)/$(notdir $@) -o $@.tmp
 	mv $@.tmp $@
-VST3_OBJECTS = $(addprefix build/obj/native/,host/vst3.o host/vst3_info.o host/vst3_host.o posix/vst3.o x11/vst3_ui.o x11/info.o tools/plugin-scan.o test/vst3.o)
+VST3_OBJECTS = $(addprefix build/obj/native/,host/vst3.o host/vst3_info.o host/vst3_host.o $(PLATFORM)/vst3.o host/vst3_ui.o $(WINDOW_SYSTEM)/info.o tools/plugin-scan.o test/vst3.o)
 $(VST3_OBJECTS): override CPPFLAGS += -I$(VST3)
 $(VST3_OBJECTS): $(VST3)/vst3_c_api.h $(VST3)/LICENSE.txt
 
 $(LV2_DEPS)/.ready: tools/lv2-deps.sh
 	CC="$(CC)" sh tools/lv2-deps.sh "$(LV2_DEPS)"
 
-LV2_OBJECTS = $(addprefix build/obj/native/,host/lv2.o host/lv2_info.o host/lv2_state.o posix/lv2.o x11/lv2_ui.o x11/info.o tools/plugin-scan.o test/lv2.o)
-$(LV2_OBJECTS): override CPPFLAGS += $(LV2_INCLUDES)
+LV2_OBJECTS = $(addprefix build/obj/native/,host/lv2.o host/lv2_info.o host/lv2_state.o native/lv2.o host/lv2_ui.o $(WINDOW_SYSTEM)/info.o tools/plugin-scan.o test/lv2.o)
+$(LV2_OBJECTS): override CPPFLAGS += $(LV2_INCLUDES) -DLILV_STATIC -DSERD_STATIC -DSRATOM_STATIC
 $(LV2_OBJECTS): $(LV2_DEPS)/.ready
-$(filter-out build/test/score_view,$(NATIVE_PROGRAMS) $(NATIVE_TESTS)): $(LV2_DEPS)/.ready
-$(filter-out build/test/score_view,$(NATIVE_PROGRAMS) $(NATIVE_TESTS)): private LDLIBS += $(LV2_LIBS)
+$(filter-out build/test/score_view$(EXE),$(NATIVE_PROGRAMS) $(NATIVE_TESTS)): $(LV2_DEPS)/.ready
+$(filter-out build/test/score_view$(EXE),$(NATIVE_PROGRAMS) $(NATIVE_TESTS)): private LDLIBS += $(LV2_LIBS)
 
 build/obj/native/test/%.o: override CFLAGS += -UNDEBUG
-$(addprefix build/obj/native/,score_janet.o script.o trace.o posix/files.o posix/prepare.o tools/perone-host.o test/dsp.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
+$(addprefix build/obj/native/,score_janet.o script.o trace.o native/files.o native/prepare.o tools/perone-host.o test/dsp.o test/daw.o test/routing.o test/plugins.o test/ui.o): | $(JANET)/Makefile
 build/obj/native/script.o: build/generated/perone.inc build/generated/plugin.inc
-build/obj/native/posix/files.o: build/generated/library.inc
+build/obj/native/native/files.o: build/generated/library.inc
 build/obj/native/score_janet.o: build/generated/daw.inc
-$(addprefix build/obj/native/,audio.o player.o posix/cli.o posix/export.o posix/gui.o tools/perone-host.o test/player.o): $(MINIAUDIO)
-$(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o test/webview.o): override CPPFLAGS += -I$(WEBUI)/include
-$(addprefix build/obj/native/,posix/gui.o posix/controls.o posix/assets.o test/webview.o): $(WEBUI)/include/webui.h
+$(addprefix build/obj/native/,audio.o player.o native/cli.o native/export.o native/gui.o tools/perone-host.o test/player.o): $(MINIAUDIO)
+$(addprefix build/obj/native/,native/gui.o native/controls.o native/assets.o test/webview.o): override CPPFLAGS += -I$(WEBUI)/include
+$(addprefix build/obj/native/,native/gui.o native/controls.o native/assets.o test/webview.o): $(WEBUI)/include/webui.h
 
-$(NATIVE_PROGRAMS) $(NATIVE_TESTS):
+$(NATIVE_PROGRAMS) $(NATIVE_TESTS): $(NATIVE_RESOURCES)
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(filter %.a,$^) $(LDLIBS) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) $(NATIVE_LDFLAGS) $(filter %.o,$^) $(filter %.a,$^) $(LDLIBS) -o $@
 
-build/cli: build/obj/native/posix/cli.o build/obj/native/player.o build/obj/native/posix/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
-build/gui: $(PORTMIDI)/build/libportmidi.a
-build/gui: build/obj/native/$(GUI_LOOP)
-build/gui: $(addprefix build/obj/native/,posix/midi.o posix/gui.o posix/prepare.o posix/files.o posix/controls.o posix/assets.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS) $(UI_OBJECTS)
-build/tools/perone-host: build/obj/native/tools/perone-host.o $(PLUGIN_OBJECTS) build/obj/native/audio.o
-build/gui build/test/ui build/test/clap build/test/lv2 build/test/vst3: private LDLIBS += -lX11
+build/cli$(EXE): build/obj/native/native/cli.o build/obj/native/player.o build/obj/native/native/export.o $(SCORE_OBJECTS) build/obj/native/audio.o
+build/gui$(EXE): $(PORTMIDI)/build/libportmidi.a
+build/gui$(EXE): $(addprefix build/obj/native/,$(GUI_LOOP) $(WEBVIEW_OBJECTS)) $(GUI_RUNTIME)
+build/gui$(EXE): $(addprefix build/obj/native/,native/midi.o native/gui.o native/prepare.o native/files.o native/controls.o native/assets.o player.o audio.o vendor/webui.o vendor/civetweb.o) $(SCORE_OBJECTS) $(VIEW_OBJECTS) $(UI_OBJECTS)
+build/tools/perone-host$(EXE): build/obj/native/tools/perone-host.o $(PLUGIN_OBJECTS) build/obj/native/audio.o
+build/gui$(EXE) build/test/webview$(EXE): private LDLIBS += $(WEBVIEW_LIBS)
+build/gui$(EXE) build/test/ui$(EXE) build/test/clap$(EXE) build/test/lv2$(EXE) build/test/vst3$(EXE): private LDLIBS += $(WINDOW_LIBS)
 
-build/tools/plugin-scan: build/obj/native/tools/plugin-scan.o $(HOST_OBJECTS) $(addprefix build/obj/native/,midi.o plugin.o state.o json_write.o)
-$(filter-out build/tools/plugin-scan,$(NATIVE_PROGRAMS)) $(filter-out build/test/score_view,$(NATIVE_TESTS)): | build/tools/plugin-scan
+build/tools/plugin-scan$(EXE): build/obj/native/tools/plugin-scan.o $(HOST_OBJECTS) $(addprefix build/obj/native/,midi.o plugin.o state.o json_write.o)
+$(filter-out build/tools/plugin-scan$(EXE),$(NATIVE_PROGRAMS)) $(filter-out build/test/score_view$(EXE),$(NATIVE_TESTS)): | build/tools/plugin-scan$(EXE)
 
 
 # Only the GUI needs WebUI. Compile its two sources once, without an unused shared library.
@@ -183,32 +174,34 @@ build/obj/native/vendor/civetweb.o: $(WEBUI)/include/webui.h Makefile
 	$(CC) $(CPPFLAGS) $(CFLAGS) -w -DNDEBUG -DNO_SSL -DNO_CACHING -DNO_CGI -DUSE_WEBSOCKET -I$(WEBUI)/src/civetweb -MMD -MP -c $(WEBUI)/src/civetweb/civetweb.c -o $@
 
 .PHONY: test-webview
-test-webview: build/test/webview
-	./build/test/webview
+test-webview: build/test/webview$(EXE)
+	./build/test/webview$(EXE)
 
-build/test/webview: $(addprefix build/obj/native/,test/webview.o $(GUI_LOOP) vendor/webui.o vendor/civetweb.o) build/config/native.link
+build/test/webview$(EXE): $(addprefix build/obj/native/,test/webview.o $(GUI_LOOP) $(WEBVIEW_OBJECTS) vendor/webui.o vendor/civetweb.o) $(TEST_RUNTIME) $(NATIVE_RESOURCES) build/config/native.link
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(LDFLAGS) $(filter %.o,$^) $(LDLIBS) -o $@
+	$(CC) $(CFLAGS) $(LDFLAGS) $(NATIVE_LDFLAGS) $(filter %.o,$^) $(LDLIBS) -o $@
 
 ifeq ($(TARGET_OS),Darwin)
-build/gui build/test/webview: build/obj/native/vendor/wkwebview.o
-build/gui build/test/webview: LDLIBS += -framework Cocoa -framework WebKit
+build/gui$(EXE) build/test/webview$(EXE): build/obj/native/vendor/wkwebview.o
+build/gui$(EXE) build/test/webview$(EXE): LDLIBS += -framework Cocoa -framework WebKit
 build/obj/native/vendor/wkwebview.o: $(WEBUI)/include/webui.h Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -w -MMD -MP -c $(WEBUI)/src/webview/wkwebview.m -o $@
 endif
 
 # Tests link only the components they exercise. Fixtures are independent of Tibia.
-$(NATIVE_TESTS): build/test/%: build/obj/native/test/%.o
-build/test/dsp: $(PLUGIN_OBJECTS)
-build/test/ui: $(SCORE_OBJECTS)
-build/test/routing: build/obj/native/score.o build/obj/native/session.o build/obj/native/sequence.o $(PLUGIN_OBJECTS)
-build/test/daw build/test/player build/test/plugins build/test/view_json build/test/sequence: $(SCORE_OBJECTS)
-build/test/daw build/test/player: build/obj/native/posix/export.o build/obj/native/audio.o
-build/test/score_view: build/obj/native/score_view.o build/obj/native/score_automation.o
-build/test/view_json: $(VIEW_OBJECTS)
-build/test/player: $(VIEW_OBJECTS)
-build/test/sequence: build/obj/native/snapshot.o
+$(NATIVE_TESTS): build/test/%$(EXE): build/obj/native/test/%.o
+build/test/dsp$(EXE): $(PLUGIN_OBJECTS)
+build/test/platform$(EXE): $(PLUGIN_OBJECTS) build/obj/native/native/files.o
+build/test/ui$(EXE): $(SCORE_OBJECTS)
+build/test/routing$(EXE): build/obj/native/score.o build/obj/native/session.o build/obj/native/sequence.o $(PLUGIN_OBJECTS)
+build/test/daw$(EXE) build/test/player$(EXE) build/test/plugins$(EXE) build/test/view_json$(EXE) build/test/sequence$(EXE): $(SCORE_OBJECTS)
+build/test/daw$(EXE): build/obj/native/test/$(PLATFORM)/export.o
+build/test/daw$(EXE) build/test/player$(EXE): build/obj/native/native/export.o build/obj/native/audio.o
+build/test/score_view$(EXE): build/obj/native/score_view.o build/obj/native/score_automation.o
+build/test/view_json$(EXE): $(VIEW_OBJECTS)
+build/test/player$(EXE): $(VIEW_OBJECTS)
+build/test/sequence$(EXE): build/obj/native/snapshot.o
 
 TEST_BUNDLE = build/test/fixture.perone
 TEST_EFFECT = build/test/effect.perone
@@ -234,16 +227,16 @@ $(MIXER_FIXTURE): test/perone/mixer.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -I. -fPIC -fvisibility=hidden -shared $< -o $@
 
-build/test/fixture.clap: test/clap/plugin.c $(CLAP)/include/clap/clap.h Makefile
+build/test/fixture.clap: test/clap/plugin.c test/$(WINDOW_SYSTEM)/clap_gui.c test/clap/plugin.h test/$(WINDOW_SYSTEM)/clap_platform.h $(CLAP)/include/clap/clap.h Makefile
 	mkdir -p $(dir $@)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I$(CLAP)/include -fPIC -shared $< -lX11 -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(NATIVE_LDFLAGS) -UNDEBUG -I. -I$(CLAP)/include -fPIC -shared $(filter %.c,$^) $(WINDOW_LIBS) -o $@
 
 .PHONY: test-clap test-clap-ui
-test-clap: build/test/clap build/test/fixture.clap
-	./build/test/clap
-test-clap-ui: build/test/clap build/test/fixture.clap
-	./build/test/clap --ui
-build/test/clap: $(SCORE_OBJECTS) $(UI_OBJECTS)
+test-clap: build/test/clap$(EXE) build/test/fixture.clap
+	./build/test/clap$(EXE)
+test-clap-ui: build/test/clap$(EXE) build/test/fixture.clap
+	./build/test/clap$(EXE) --ui
+build/test/clap$(EXE): $(SCORE_OBJECTS) $(UI_OBJECTS) $(addprefix build/obj/native/,$(TEST_UI_OBJECTS))
 
 .PHONY: test-clap-editor
 test-clap-editor: gui build/test/fixture.clap
@@ -256,37 +249,37 @@ build/test/fixture.lv2/%.ttl: test/lv2/%.ttl
 	mkdir -p $(@D)
 	cp $< $@
 LV2_FIXTURE = build/test/fixture.lv2/fixture.so build/test/fixture.lv2/manifest.ttl build/test/fixture.lv2/plugin.ttl
-build/test/lv2: $(SCORE_OBJECTS) $(UI_OBJECTS)
+build/test/lv2$(EXE): $(SCORE_OBJECTS) $(UI_OBJECTS)
 .PHONY: test-lv2 test-lv2-ui test-lv2-editor
 test-lv2-editor: gui $(LV2_FIXTURE)
 	node test/plugin-editor.mjs lv2
-test-lv2: build/test/lv2 $(LV2_FIXTURE)
-	./build/test/lv2
-test-lv2-ui: build/test/lv2 $(LV2_FIXTURE)
-	./build/test/lv2 --ui
+test-lv2: build/test/lv2$(EXE) $(LV2_FIXTURE)
+	./build/test/lv2$(EXE)
+test-lv2-ui: build/test/lv2$(EXE) $(LV2_FIXTURE)
+	./build/test/lv2$(EXE) --ui
 
 VST3_FIXTURE = build/test/fixture.vst3/Contents/$(shell uname -m)-linux/fixture.so
 $(VST3_FIXTURE): test/vst3/plugin.c host/vst3_api.h $(VST3)/vst3_c_api.h Makefile build/config/native.compile
 	mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -I$(VST3) -fPIC -shared $< -lX11 -lm -o $@
-build/test/vst3: $(SCORE_OBJECTS) $(UI_OBJECTS)
+build/test/vst3$(EXE): $(SCORE_OBJECTS) $(UI_OBJECTS)
 .PHONY: test-vst3 test-vst3-ui test-vst3-editor
-test-vst3: build/test/vst3 $(VST3_FIXTURE)
-	./build/test/vst3
-test-vst3-ui: build/test/vst3 $(VST3_FIXTURE)
-	./build/test/vst3 --ui
+test-vst3: build/test/vst3$(EXE) $(VST3_FIXTURE)
+	./build/test/vst3$(EXE)
+test-vst3-ui: build/test/vst3$(EXE) $(VST3_FIXTURE)
+	./build/test/vst3$(EXE) --ui
 test-vst3-editor: gui $(VST3_FIXTURE)
 	node test/plugin-editor.mjs vst3
 
-build/test/midi: $(SCORE_OBJECTS) build/obj/native/snapshot.o
+build/test/midi$(EXE): $(SCORE_OBJECTS) build/obj/native/snapshot.o
 .PHONY: test-midi
-test-midi: build/test/midi $(NATIVE_FIXTURES) build/test/fixture.clap $(LV2_FIXTURE) $(VST3_FIXTURE)
-	./build/test/midi
+test-midi: build/test/midi$(EXE) $(NATIVE_FIXTURES) build/test/fixture.clap $(LV2_FIXTURE) $(VST3_FIXTURE)
+	./build/test/midi$(EXE)
 
-build/test/midi_devices: $(SCORE_OBJECTS) $(addprefix build/obj/native/,posix/midi.o player.o audio.o) $(PORTMIDI)/build/libportmidi.a
+build/test/midi_devices$(EXE): $(SCORE_OBJECTS) $(addprefix build/obj/native/,native/midi.o player.o audio.o) $(PORTMIDI)/build/libportmidi.a
 .PHONY: test-midi-devices
-test-midi-devices: build/test/midi_devices
-	./build/test/midi_devices
+test-midi-devices: build/test/midi_devices$(EXE)
+	./build/test/midi_devices$(EXE)
 
 .PHONY: test-midi-ui
 test-midi-ui: gui test-web
@@ -294,13 +287,14 @@ test-midi-ui: gui test-web
 	node test/midi-ui.mjs
 
 .PHONY: test test-plugins test-ui test-editor test-polpo test-brickworks check-plugins polpo
-test: $(addprefix build/test/,dsp daw player routing score_view sequence) $(NATIVE_FIXTURES) $(MIXER_FIXTURE)
-	./build/test/dsp
-	./build/test/daw
-	./build/test/routing
-	./build/test/player
-	./build/test/score_view
-	./build/test/sequence
+test: $(addsuffix $(EXE),$(addprefix build/test/,platform dsp daw player routing score_view sequence)) $(NATIVE_FIXTURES) $(MIXER_FIXTURE)
+	./build/test/platform$(EXE)
+	./build/test/dsp$(EXE)
+	./build/test/daw$(EXE)
+	./build/test/routing$(EXE)
+	./build/test/player$(EXE)
+	./build/test/score_view$(EXE)
+	./build/test/sequence$(EXE)
 
 TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
 check-plugins:
@@ -308,43 +302,40 @@ check-plugins:
 		test -f "$$plugin/product.json" || { echo "Missing $$plugin; build plugins separately: make -C plugins" >&2; exit 1; }; \
 	done
 
-test-plugins: check-plugins build/test/plugins
-	./build/test/plugins
+test-plugins: check-plugins build/test/plugins$(EXE)
+	./build/test/plugins$(EXE)
 
-test-ui: build/test/ui
-	./build/test/ui
+test-ui: build/test/ui$(EXE)
+	./build/test/ui$(EXE)
 
 test-editor: gui test test-code
 	node test/editor.mjs
 
 polpo: check-plugins cli
 	mkdir -p renders
-	./build/cli examples/polpo.janet renders/il_polpo_a_sette_gomiti.wav
+	./build/cli$(EXE) examples/polpo.janet renders/il_polpo_a_sette_gomiti.wav
 
 test-polpo: check-plugins cli | build/test
-	./build/cli examples/polpo.janet build/test/polpo.wav
-	./build/cli examples/polpo.janet build/test/polpo-repeat.wav
+	./build/cli$(EXE) examples/polpo.janet build/test/polpo.wav
+	./build/cli$(EXE) examples/polpo.janet build/test/polpo-repeat.wav
 	cmp build/test/polpo-repeat.wav build/test/polpo.wav
 
 build/test:
 	mkdir -p $@
 
-# Fetch/generate/compile the canonical plugin library independently of the host.
-include plugins/library.mk
-
 # The mixer shares the library's pinned headers; the host needs no Tibia/Node build.
 MIXER_OBJECTS = build/obj/native/session.o build/obj/web-offline/session.o build/obj/web-player/session.o
 $(MIXER_OBJECTS): override CPPFLAGS += -I$(BW_SOURCE)/include
-$(MIXER_OBJECTS): $(BW_SOURCE)/.ready plugins/library.mk
+$(MIXER_OBJECTS): $(BW_SOURCE)/.ready
 
 # Read-only audit of the bundles; no plugin compilation here.
 BW_BUNDLES = $(wildcard $(BRICKWORKS_PERONE)/*/build/*.perone)
-test-brickworks: build/test/dsp
+test-brickworks: build/test/dsp$(EXE)
 	@test -n "$(BW_BUNDLES)" || { echo "No Perone bundles in $(BRICKWORKS_PERONE)"; exit 1; }
-	./build/test/dsp $(BW_BUNDLES)
+	./build/test/dsp$(EXE) $(BW_BUNDLES)
 
 .PHONY: test-library-build
-test-library-build: library cli build/test/dsp | build/test
+test-library-build: library cli build/test/dsp$(EXE) | build/test
 	$(NODE) test/library-build.mjs "$(BW_SOURCE)" "$(BRICKWORKS_PERONE)" "$(PERONE_PLATFORM)" "$(MAKE)"
 
 # Wasm variants share sources, but keep separate objects for their memory models.
@@ -433,7 +424,7 @@ test-build: $(MINIAUDIO) | build/test
 test-build-web: $(MINIAUDIO) $(JANET)/Makefile | build/test
 	node test/build.mjs "$(MAKE)" "$(CC)" "$(MINIAUDIO)" "$(EMCC)"
 
-test-web: build/web/offline.mjs build/web/player.mjs cli build/test/view_json $(NATIVE_FIXTURES) $(WEB_FIXTURES)
+test-web: build/web/offline.mjs build/web/player.mjs cli build/test/view_json$(EXE) $(NATIVE_FIXTURES) $(WEB_FIXTURES)
 	node test/catalog.mjs
 	node test/request.mjs
 	node test/web.mjs
@@ -494,7 +485,7 @@ clean:
 # Recheck configuration on each invocation; unchanged files keep their timestamps.
 # Capture global flags here so per-target additions cannot leak through prerequisites.
 build/config/native.compile: private CONFIG := $(CC) | $(CPPFLAGS) | $(CFLAGS) | $(SCRIPT_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(WEBUI) | $(CLAP) | $(VST3) | $(LV2_DEPS) | $(PORTMIDI) | $(BW_SOURCE)
-build/config/native.link: private CONFIG := $(CC) | $(CFLAGS) | $(LDFLAGS) | $(LDLIBS) | $(TARGET_OS)
+build/config/native.link: private CONFIG := $(CC) | $(CFLAGS) | $(LDFLAGS) | $(NATIVE_LDFLAGS) | $(LDLIBS) | $(TARGET_OS)
 build/config/web-offline.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(SPORK) | $(BW_SOURCE)
 build/config/web-player.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFLAGS) | $(WEB_FLAGS) | $(PLAYER_FLAGS) | $(MINIAUDIO) | $(SPORK) | $(BW_SOURCE)
 build/config/web-offline.link: private CONFIG := $(EMCC) | $(CFLAGS) | $(LDFLAGS) | $(WEB_LINK) | $(WEB_EXPORTS) | $(WEB_METHODS)
@@ -512,7 +503,8 @@ $(CONFIG_FILES): FORCE
 	@cmp -s $@.tmp $@ || mv $@.tmp $@
 	@rm -f $@.tmp
 
-NATIVE_OBJECTS = $(addprefix build/obj/native/,$(patsubst %.c,%.o,$(wildcard *.c host/*.c posix/*.c gtk/*.c x11/*.c tools/*.c test/*.c)) json.o janet.o vendor/webui.o vendor/civetweb.o vendor/wkwebview.o)
+NATIVE_OBJECTS = $(addprefix build/obj/native/,$(patsubst %.c,%.o,$(wildcard *.c host/*.c native/*.c $(PLATFORM)/*.c gtk/*.c $(WINDOW_SYSTEM)/*.c tools/*.c test/*.c test/$(PLATFORM)/*.c test/$(WINDOW_SYSTEM)/*.c)) json.o janet.o vendor/webui.o vendor/civetweb.o vendor/wkwebview.o $(WEBVIEW_OBJECTS))
+$(NATIVE_OBJECTS): $(PLATFORM)/build.mk
 $(NATIVE_OBJECTS) $(filter %$(PERONE_SUFFIX),$(NATIVE_FIXTURES)) $(MIXER_FIXTURE) build/test/fixture.clap build/test/fixture.lv2/fixture.so: build/config/native.compile
 $(NATIVE_PROGRAMS) $(NATIVE_TESTS): build/config/native.link
 $(WEB_OBJECTS): build/config/web-offline.compile

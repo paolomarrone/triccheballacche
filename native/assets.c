@@ -1,23 +1,23 @@
 #include "assets.h"
 #include "webui.h"
-#include <pthread.h>
+#include "host/platform.h"
+#include "native/thread.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
-static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+static Mutex mutex = MUTEX_INITIALIZER;
 static char *bundles[MAX_NODES];
 static unsigned version;
 
 void assets_set(const ScoreView *view, unsigned revision) {
-	pthread_mutex_lock(&mutex);
+	mutex_lock(&mutex);
 	version = revision;
 	for (int i = 0; i < MAX_NODES; ++i) {
 		free(bundles[i]);
-		bundles[i] = view && i < view->nnodes && view->nodes[i].bundle ? realpath(view->nodes[i].bundle, NULL) : NULL;
+		bundles[i] = view && i < view->nnodes && view->nodes[i].bundle ? host_path(view->nodes[i].bundle) : NULL;
 	}
-	pthread_mutex_unlock(&mutex);
+	mutex_unlock(&mutex);
 }
 
 const void *assets_read(const char *url, int *length) {
@@ -27,7 +27,7 @@ const void *assets_read(const char *url, int *length) {
 		return NULL;
 	void *data = NULL;
 	char *path = NULL, *resolved = NULL;
-	pthread_mutex_lock(&mutex);
+	mutex_lock(&mutex);
 	const char *bundle = bundles[id];
 	if (!bundle || revision != version)
 		goto done;
@@ -49,24 +49,24 @@ const void *assets_read(const char *url, int *length) {
 			*out++ = *p;
 	}
 	*out = 0;
-	resolved = realpath(path, NULL);
+	resolved = host_path(path);
 	// Includes symlink resolution: a UI cannot fetch files outside its own bundle.
 	if (!resolved || strncmp(resolved, bundle, base) || resolved[base] != '/')
 		goto done;
-	struct stat info;
-	if (stat(resolved, &info) || !S_ISREG(info.st_mode) || info.st_size < 0 || info.st_size > 64 * 1024 * 1024)
+	HostFileInfo info;
+	if (host_file_info(resolved, &info) || info.directory || info.size > 64 * 1024 * 1024)
 		goto done;
-	FILE *file = fopen(resolved, "rb");
+	FILE *file = host_fopen(resolved, "rb");
 	if (file) {
 		char header[512];
 		int size = snprintf(header, sizeof(header),
 		    "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %lld\r\nCache-Control: no-store\r\n\r\n",
-		    webui_get_mime_type(resolved), (long long)info.st_size);
+		    webui_get_mime_type(resolved), (long long)info.size);
 		if (size > 0 && size < (int)sizeof(header))
-			data = webui_malloc(size + info.st_size + 1);
-		if (data && fread((char *)data + size, 1, info.st_size, file) == (size_t)info.st_size && !ferror(file)) {
+			data = webui_malloc(size + info.size + 1);
+		if (data && fread((char *)data + size, 1, info.size, file) == (size_t)info.size && !ferror(file)) {
 			memcpy(data, header, size);
-			*length = size + info.st_size;
+			*length = size + info.size;
 			((char *)data)[*length] = 0;
 		} else {
 			webui_free(data);
@@ -77,6 +77,6 @@ const void *assets_read(const char *url, int *length) {
 done:
 	free(path);
 	free(resolved);
-	pthread_mutex_unlock(&mutex);
+	mutex_unlock(&mutex);
 	return data;
 }

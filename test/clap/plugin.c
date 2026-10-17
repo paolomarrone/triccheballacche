@@ -1,5 +1,5 @@
 #include <clap/clap.h>
-#include <X11/Xlib.h>
+#include "plugin.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -8,35 +8,9 @@
 #include <string.h>
 
 // Deliberately sparse, out-of-order IDs and a parameter beyond the former 64-slot limit.
-enum { PARAMETERS = 130 };
 static unsigned entries, instances;
 static clap_id parameter_id(uint32_t i) {
 	return i == 0 ? 987654321 : 1000 + (PARAMETERS - i) * 7;
-}
-typedef struct {
-	clap_plugin_t plugin;
-	const clap_host_t *host;
-	const clap_host_thread_check_t *threads;
-	const clap_host_params_t *host_params;
-	const clap_host_timer_support_t *host_timer;
-	_Atomic double values[PARAMETERS];
-	atomic_int edited;
-	int effect, active, processing, held, offline;
-	unsigned limit, latency, position, generation;
-	float delay[2][7];
-	Display *display;
-	Window window;
-	clap_id timer;
-	double private_state;
-} Plugin;
-static Plugin *self(const clap_plugin_t *p) {
-	return p->plugin_data;
-}
-static void main_thread(Plugin *p) {
-	assert(p->threads->is_main_thread(p->host));
-}
-static void audio_thread(Plugin *p) {
-	assert(p->threads->is_audio_thread(p->host));
 }
 static bool init(const clap_plugin_t *plugin) {
 	Plugin *p = self(plugin);
@@ -293,78 +267,7 @@ static bool load(const clap_plugin_t *plugin, const clap_istream_t *in) {
 	p->host_params->rescan(p->host, CLAP_PARAM_RESCAN_VALUES);
 	return true;
 }
-static bool gui_supported(const clap_plugin_t *plugin, const char *api, bool floating) {
-	main_thread(self(plugin));
-	return !floating && api && !strcmp(api, CLAP_WINDOW_API_X11);
-}
-static bool gui_create(const clap_plugin_t *plugin, const char *api, bool floating) {
-	Plugin *p = self(plugin);
-	if (!gui_supported(plugin, api, floating) || p->display)
-		return false;
-	p->display = XOpenDisplay(NULL);
-	if (!p->display)
-		return false;
-	p->window = XCreateSimpleWindow(p->display, DefaultRootWindow(p->display), 0, 0, 240, 90, 0, 0, 0x202020);
-	XSelectInput(p->display, p->window, ExposureMask | ButtonPressMask);
-	assert(p->host_timer->register_timer(p->host, 10, &p->timer));
-	return true;
-}
-static void gui_destroy(const clap_plugin_t *plugin) {
-	Plugin *p = self(plugin);
-	main_thread(p);
-	assert(p->host_timer->unregister_timer(p->host, p->timer));
-	XDestroyWindow(p->display, p->window);
-	XCloseDisplay(p->display);
-	p->display = NULL;
-}
-static bool gui_size(const clap_plugin_t *plugin, uint32_t *w, uint32_t *h) {
-	main_thread(self(plugin));
-	*w = 240;
-	*h = 90;
-	return true;
-}
-static bool gui_resizable(const clap_plugin_t *plugin) {
-	main_thread(self(plugin));
-	return false;
-}
-static bool gui_parent(const clap_plugin_t *plugin, const clap_window_t *window) {
-	Plugin *p = self(plugin);
-	main_thread(p);
-	XReparentWindow(p->display, p->window, window->x11, 0, 0);
-	return true;
-}
-static bool gui_show(const clap_plugin_t *plugin) {
-	Plugin *p = self(plugin);
-	XMapWindow(p->display, p->window);
-	XFlush(p->display);
-	return true;
-}
-static bool gui_hide(const clap_plugin_t *plugin) {
-	Plugin *p = self(plugin);
-	XUnmapWindow(p->display, p->window);
-	return true;
-}
-static void timer(const clap_plugin_t *plugin, clap_id id) {
-	Plugin *p = self(plugin);
-	main_thread(p);
-	assert(id == p->timer);
-	while (XPending(p->display)) {
-		XEvent event;
-		XNextEvent(p->display, &event);
-		if (event.type == ButtonPress) {
-			p->values[0] = .75;
-			p->edited = 1;
-			p->host_params->request_flush(p->host);
-		}
-	}
-	char text[64];
-	snprintf(text, sizeof(text), "CLAP gain: %.2f (click to change)", p->values[0]);
-	GC gc = DefaultGC(p->display, DefaultScreen(p->display));
-	XSetForeground(p->display, gc, 0xffffff);
-	XClearWindow(p->display, p->window);
-	XDrawString(p->display, p->window, gc, 10, 45, text, strlen(text));
-	XFlush(p->display);
-}
+
 static uint32_t latency(const clap_plugin_t *plugin) {
 	main_thread(self(plugin));
 	assert(self(plugin)->active);

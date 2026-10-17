@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
-import {mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, symlinkSync, statSync, utimesSync, rmSync} from "node:fs";
-import {resolve, join} from "node:path";
+import {mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync, symlinkSync, lstatSync, unlinkSync, statSync, utimesSync, rmSync} from "node:fs";
+import {resolve, join, relative} from "node:path";
 
 // Exercise the actual Makefile in an isolated build tree, without touching working binaries.
 const [make = "make", cc = "cc", miniaudio = ".deps/miniaudio.h", emcc] = process.argv.slice(2);
@@ -11,7 +11,7 @@ const env = {...process.env};
 delete env.MAKEFLAGS;
 delete env.MFLAGS;
 delete env.MAKEOVERRIDES;
-const native = ["build/obj/native/score.o", "build/obj/native/test/score_view.o", "build/test/score_view"];
+const native = ["build/obj/native/score.o", "build/obj/native/test/score_view.o", "build/test/score_view" + (process.platform === "win32" ? ".exe" : "")];
 const web = emcc ? ["build/obj/web-offline/score.o", "build/obj/web-player/score.o"] : [];
 const targets = [...native, ...web];
 const flags = {CC: cc, CFLAGS: "-O2 -Wall -Wextra", CPPFLAGS: "", LDFLAGS: ""};
@@ -28,9 +28,12 @@ function build(targets, overrides = {}, success = true) {
 }
 try {
     writeFileSync("build/test/build.log", "");
-    for (const name of readdirSync(root))
-        if (/\.[ch]$/.test(name) || ["Makefile", "lib", "host", "posix", "x11", "web", "tools", "test", "plugins", "patches", ".deps"].includes(name))
-            symlinkSync(join(root, name), join(work, name));
+    for (const name of readdirSync(root)) {
+        if (/\.[ch]$/.test(name) || name === "Makefile")
+            copyFileSync(join(root, name), join(work, name));
+        else if (["lib", "host", "native", "posix", "win32", "x11", "web", "tools", "test", "plugins", "patches", ".deps"].includes(name))
+            symlinkSync(join(root, name), join(work, name), process.platform === "win32" ? "junction" : "dir");
+    }
     // An unrelated sibling header must never override the pinned default.
     writeFileSync(join(directory, "miniaudio.h"), "#error Wrong miniaudio header\n");
     build(targets);
@@ -51,7 +54,7 @@ try {
     flags.CPPFLAGS = "-DBUILD_CONFIGURATION_TEST=1";
     build(targets);
     assert(times(targets).every((time, i) => time > before[i]), "CPPFLAGS did not rebuild all variants");
-    build(["build/obj/native/posix/assets.o"]); // Required GUI include paths survive user CPPFLAGS.
+    build(["build/obj/native/native/assets.o"]); // Required GUI include paths survive user CPPFLAGS.
     before = times(targets);
     flags.LDFLAGS = "-g";
     build(targets);
@@ -83,11 +86,14 @@ try {
         mkdirSync(join(directory, name));
         writeFileSync(source, header + `\n/* ${name} explicit override */\n`);
         utimesSync(source, 1, 1);
-        build(["build/generated/web/miniaudio.h"], {MINIAUDIO: resolve(source)});
+        build(["build/generated/web/miniaudio.h"], {MINIAUDIO: relative(work, source).replaceAll("\\", "/")});
         assert(readFileSync(join(work, "build/generated/web/miniaudio.h"), "utf8").includes(`${name} explicit override`),
             "An older dependency at a new path did not regenerate its patched copy");
     }
     console.log(`OK: ${emcc ? "native/Wasm" : "native"} incremental builds, flag/compiler changes, link-only changes, assertion preservation, failure recovery and dependency overrides`);
 } finally {
-    rmSync(directory, {recursive: true, force: true});
+    // Unlink junctions explicitly before recursively removing the isolated tree.
+    for (const name of readdirSync(work))
+        if (lstatSync(join(work, name)).isSymbolicLink()) unlinkSync(join(work, name));
+    rmSync(directory, {recursive: true, force: true, maxRetries: 5, retryDelay: 100});
 }

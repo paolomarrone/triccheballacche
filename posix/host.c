@@ -4,6 +4,8 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <errno.h>
 
 char *host_path(const char *path) {
 	return realpath(path, NULL);
@@ -37,4 +39,18 @@ uint64_t host_clock(void) {
 	struct timespec t;
 	clock_gettime(CLOCK_MONOTONIC, &t);
 	return (uint64_t)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+int host_mkstemp(char *path) {
+	return mkstemp(path);
+}
+int host_replace(const char *source, const char *target) {
+	return rename(source, target);
+}
+int host_mkdir(const char *path) {
+	return mkdir(path, 0700);
+}
+void host_sleep(unsigned milliseconds) {
+	struct timespec delay = {milliseconds / 1000, (milliseconds % 1000) * 1000000L};
+	while (nanosleep(&delay, &delay) && errno == EINTR) {
+	}
 }

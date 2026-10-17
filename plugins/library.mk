@@ -1,7 +1,7 @@
 # Canonical Brickworks C library. Run from the repository root.
 # Tibia's Perone templates live on its perone branch, not main.
 BRICKWORKS_REV ?= f412e503a08c3ee2656561890eef64365b5a76b7
-TIBIA_REV ?= 884c7d4d7cf8ad9b60eb00402941c2be46271ec4
+TIBIA_REV ?= bde094cc61d2c4e510e9aeb48a30f84a783b1717
 BRICKWORKS_URL ?= https://github.com/Orastron/brickworks.git
 TIBIA_URL ?= https://github.com/paolomarrone/tibia.git
 LIBRARY_DEPS ?= .deps/library
@@ -10,12 +10,10 @@ GIT ?= git
 NODE ?= node
 NPM ?= npm
 DOT_VERSION := 1.1.3
-BW_SOURCE := $(abspath $(LIBRARY_DEPS)/brickworks-$(BRICKWORKS_REV))
-TIBIA_SOURCE := $(abspath $(LIBRARY_DEPS)/tibia-$(TIBIA_REV))
+BW_SOURCE := $(LIBRARY_DEPS)/brickworks-$(BRICKWORKS_REV)
+TIBIA_SOURCE := $(LIBRARY_DEPS)/tibia-$(TIBIA_REV)
 LIBRARY_DOT := $(TIBIA_SOURCE)/node_modules/dot/.triccheballacche-$(DOT_VERSION)
 LIBRARY_GEN := build/generated/library/$(BRICKWORKS_REV)-$(TIBIA_REV)
-LIBRARY_DEST := $(abspath $(BRICKWORKS_PERONE))
-PERONE_PLATFORM ?= $(shell uname -m)-$(shell uname -s | tr A-Z a-z)
 CFLAGS ?= -O2 -Wall -Wextra
 include plugins/wasm.mk
 
@@ -49,7 +47,7 @@ $(TIBIA_SOURCE)/.ready:
 $(LIBRARY_DOT): $(TIBIA_SOURCE)/.ready
 	$(NPM) install --prefix "$(TIBIA_SOURCE)" --no-save --package-lock=false \
 	    --ignore-scripts --no-audit --no-fund dot@$(DOT_VERSION)
-	$(NODE) -e 'require(process.argv[1])' "$(TIBIA_SOURCE)/node_modules/dot"
+	$(NODE) -e 'require(require("path").resolve(process.argv[1]))' "$(TIBIA_SOURCE)/node_modules/dot"
 	touch "$@"
 
 # These patterns deliberately exclude the duplicate fxpp_* and synthpp_* examples.
@@ -60,6 +58,8 @@ LIBRARY_TEMPLATES := $(wildcard $(TIBIA_SOURCE)/templates/api/* $(TIBIA_SOURCE)/
 	$(TIBIA_SOURCE)/templates/perone/* $(TIBIA_SOURCE)/templates/perone/src/* \
 	$(TIBIA_SOURCE)/templates/perone-make/* $(TIBIA_SOURCE)/templates/web/src/*)
 LIBRARY_JOBS := $(addprefix library-build-,$(BW_EXAMPLES))
+# Template headers such as "new" are inputs, not implicit C++ executable targets.
+$(LIBRARY_TEMPLATES): ;
 
 library-build: $(LIBRARY_JOBS)
 	@test -n "$(BW_EXAMPLES)" || { echo "No Brickworks C examples found; run make library first." >&2; exit 1; }
@@ -77,10 +77,11 @@ $(LIBRARY_GEN)/%/Makefile: $(BW_SOURCE)/examples/%/src/product.json $(BW_SOURCE)
 	    "$(TIBIA_SOURCE)/templates/perone" "$(@D)" 'product.version="$(BW_VERSION)"' 'product.buildVersion="1"'
 	$(NODE) "$(TIBIA_SOURCE)/tibia" "$(BW_SOURCE)/examples/common/src/company.json,$<" \
 	    "$(TIBIA_SOURCE)/templates/perone-make" "$(@D)" 'product.version="$(BW_VERSION)"' 'product.buildVersion="1"'
+	touch "$@"
 
 .PHONY: $(LIBRARY_JOBS)
 $(LIBRARY_JOBS): library-build-%: $(LIBRARY_GEN)/%/Makefile
-	$(MAKE) -C "$(<D)" OUTPUT="$(LIBRARY_DEST)/$*/build/bw_example_$*.perone" \
-	    API_DIR=src PLUGIN_DIR="$(BW_SOURCE)/examples/$*/src" \
+	$(MAKE) -f "$<" -I "$(<D)" OUTPUT="$(BRICKWORKS_PERONE)/$*/build/bw_example_$*.perone" \
+	    COMMON_DIR="$(<D)" DATA_DIR="$(<D)" API_DIR="$(<D)/src" PLUGIN_DIR="$(BW_SOURCE)/examples/$*/src" \
 	    CPPFLAGS="$(CPPFLAGS) -I$(BW_SOURCE)/include -I$(BW_SOURCE)/examples/common/src" \
 	    CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" PERONE_PLATFORM="$(PERONE_PLATFORM)" $(PERONE_BUILD)

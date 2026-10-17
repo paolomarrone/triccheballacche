@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {execFileSync, spawnSync} from "node:child_process";
 import {existsSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync} from "node:fs";
-import {join, resolve} from "node:path";
+import {join, dirname} from "node:path";
 
 // Integration with real upstream sources and binaries, after `make library`.
 // No network is permitted during the incremental/recovery checks.
@@ -11,7 +11,8 @@ const names = readdirSync(join(source, "examples")).filter(name => /^(fx_|synth_
 assert(names.length > 0);
 assert.deepEqual(readdirSync(root).filter(name => /^(fx|synth)/.test(name)).sort(), names);
 const bundles = names.map(name => join(root, name, "build", `bw_example_${name}.perone`));
-const binaries = bundles.map((path, i) => join(path, platform, `bw_example_${names[i]}.so`));
+const suffix = platform.endsWith("-windows") ? ".dll" : ".so";
+const binaries = bundles.map((path, i) => join(path, platform, `bw_example_${names[i]}${suffix}`));
 for (let i = 0; i < names.length; i++) {
     const {product} = JSON.parse(readFileSync(join(bundles[i], "product.json"), "utf8"));
     assert.equal(product.bundleName, `bw_example_${names[i]}`);
@@ -28,7 +29,7 @@ function rebuild(extra = [], success = true) {
     delete env.MAKEFLAGS;
     delete env.MFLAGS;
     const result = spawnSync(make, ["--no-print-directory", "-j2", "library", "GIT=false", "NPM=false",
-        `LIBRARY_DEPS=${resolve(source, "..")}`, `BRICKWORKS_PERONE=${root}`, `PERONE_PLATFORM=${platform}`, ...extra],
+        `LIBRARY_DEPS=${dirname(source).replaceAll("\\", "/")}`, `BRICKWORKS_PERONE=${root}`, `PERONE_PLATFORM=${platform}`, ...extra],
         {encoding: "utf8", env});
     writeFileSync(log, (result.stdout || "") + (result.stderr || ""), {flag: "a"});
     if (result.error) throw result.error;

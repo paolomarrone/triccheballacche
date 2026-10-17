@@ -1,10 +1,10 @@
 #include "score_janet.h"
 #include "audio.h"
+#include "host/platform.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 typedef struct {
 	FILE *file;
@@ -21,7 +21,7 @@ static ma_result wav_write(ma_encoder *encoder, const void *data, size_t size, s
 static ma_result wav_seek(ma_encoder *encoder, ma_int64 offset, ma_seek_origin origin) {
 	WavFile *wav = encoder->pUserData;
 	int whence = origin == ma_seek_origin_start ? SEEK_SET : origin == ma_seek_origin_end ? SEEK_END : SEEK_CUR;
-	wav->failed |= fseeko(wav->file, offset, whence) != 0;
+	wav->failed |= host_seek(wav->file, offset, whence) != 0;
 	return wav->failed ? MA_IO_ERROR : MA_SUCCESS;
 }
 
@@ -50,16 +50,13 @@ int write_score(Session *s, const Output *cfg, const char *path) {
 		return -1;
 	}
 	sprintf(temporary, "%s.XXXXXX", path);
-	int result = -1, fd = mkstemp(temporary);
+	int result = -1;
 	FILE *spool = NULL;
 	WavFile wav = {0};
-	if (fd < 0)
+	wav.file = host_tempfile(temporary, NULL);
+	int created = wav.file != NULL;
+	if (!wav.file)
 		goto done;
-	wav.file = fdopen(fd, "w+b");
-	if (!wav.file) {
-		close(fd);
-		goto done;
-	}
 	// Both passes stream to disk; the destination is replaced only after a successful close.
 	spool = cfg->normalize ? tmpfile() : NULL;
 	if (cfg->normalize && !spool)
@@ -113,11 +110,11 @@ done:
 		result = -1;
 	if (session_offline(s, offline))
 		result = -1;
-	if (!result && rename(temporary, path))
+	if (!result && host_replace(temporary, path))
 		result = -1;
 	if (result) {
-		if (fd >= 0)
-			unlink(temporary);
+		if (created)
+			host_remove(temporary);
 		if (!s->error)
 			s->error = "cannot write WAV";
 	}
