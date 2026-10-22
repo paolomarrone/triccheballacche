@@ -71,7 +71,7 @@ try {
         const changed = source.replace("0.01", "0.02");
         await set("#code", changed);
         await click("#play");
-        await wait('!document.querySelector("#stop").disabled');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Stop"');
         await wait('parseFloat(document.querySelector("#time").value) > 0.05');
         await wait(`document.querySelector('#marks [data-line="${producer}"]')`);
         assert(await evaluate(`!!document.querySelector('#marks [data-line="${caller}"]')`));
@@ -120,8 +120,8 @@ try {
         await wait('document.querySelector("#state").textContent === "Playing"');
         const screenshot = await call("Page.captureScreenshot", {format: "png"});
         await writeFile("build/test/editor.png", Buffer.from(screenshot.data, "base64"));
-        await click("#stop");
-        await wait('document.querySelector("#state").textContent === "Stopped"');
+        await click('#play[aria-label="Stop"]');
+        await wait('document.querySelector("#state").textContent === "Ready"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert.equal(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes)'), 2, "Stop retains the prepared projection");
         const notePoint = await evaluate(`(() => {
@@ -162,25 +162,25 @@ try {
         assert.equal(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes)'), 2);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert((await evaluate('document.querySelector("#errors").textContent')).includes(path));
-        assert.equal(await evaluate('document.querySelector("#stop").disabled'), true);
+        assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Play");
         await writeFile(`${directory}/helper.janet`, '(error "Play must not evaluate this import")');
         await set("#code", changed); // Restoring the prepared buffer resumes without evaluating imports.
         await click("#play");
-        await wait('!document.querySelector("#stop").disabled');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Stop"');
         assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), report.revision);
         assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
-        await click("#stop");
+        await click('#play[aria-label="Stop"]');
         await writeFile(`${directory}/helper.janet`, `(def duration 3)
 (defn notes [items node] (array/push items [0 2 [:note node 60 100]]))`);
         await set("#code", changed);
         await wait('!document.querySelector("#play").disabled');
         await key("Enter", "Enter", 2);
-        await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${report.revision} && !document.querySelector("#prepare").disabled`);
-        assert.equal(await evaluate('document.querySelector("#stop").disabled'), true);
+        await wait(`Number(document.querySelector("#timeline").dataset.revision) > ${report.revision} && !document.querySelector("#apply").disabled`);
+        assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Play");
         assert.equal(await evaluate('Number(document.querySelector("#time").value)'), 0);
         await click("#play");
-        await wait('!document.querySelector("#stop").disabled');
-        await wait('document.querySelector("#state").textContent === "Stopped"');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Stop"');
+        await wait('document.querySelector("#state").textContent === "Ready"');
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
         assert.equal(await evaluate('statusHasTrace'), false, "Never transfer the complete source report");
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
@@ -219,7 +219,7 @@ try {
         for (let i = 0; i < 3; ++i) await evaluate('document.querySelector("#score-canvas").dispatchEvent(new KeyboardEvent("keydown", {key: "+"}))');
         await wait('document.querySelector("#score-canvas").dataset.dense === "false" && Number(document.querySelector("#score-canvas").dataset.notes) > 0');
         await wait('Number(document.querySelector("#score-canvas").dataset.from) > 0');
-        await click("#stop");
+        await click('#play[aria-label="Stop"]');
         const changeStart = async value => {
             await evaluate(`(() => {
                 const canvas = document.querySelector("#score-canvas"), rect = canvas.getBoundingClientRect();
@@ -291,7 +291,7 @@ try {
         await evaluate("window.openEnd = false");
         await set("#code", changed.replace("(daw/end helper/duration)", "(daw/end 30)"));
         await click("#play");
-        await wait('!document.querySelector("#stop").disabled');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Stop"');
         assert.deepEqual(diagnostics, []);
         await click('.track-listen [data-listen="1"]');
         await wait(`document.querySelector('.track-listen [data-listen="1"]').getAttribute('aria-pressed') === 'true'`);
@@ -303,8 +303,8 @@ try {
         await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
         assert.equal(await evaluate(`document.querySelector('.track-listen [data-listen="1"]').getAttribute('aria-pressed')`), "true",
             "Reload restores mute/solo along with the running score");
-        await click("#stop");
-        await wait('document.querySelector("#stop").disabled');
+        await click('#play[aria-label="Stop"]');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Play"');
         await click("#views");
         await wait('document.querySelector(".plugin-body > div")?.shadowRoot.querySelector("input")');
         // Leaving the page entirely also leaves the server available for a new connection.
@@ -313,7 +313,7 @@ try {
         await call("Page.navigate", {url});
         await wait('document.querySelector("#play")?.disabled === false');
         await click("#play");
-        await wait('!document.querySelector("#stop").disabled');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Stop"');
         assert.deepEqual(diagnostics, []);
         await evaluate('window.dispatchEvent(new Event("close-request"))');
         await app.exited;

@@ -46,7 +46,7 @@ try {
             await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
             await wait('Number(document.querySelector("#score-canvas").dataset.automation) === 10');
             await wait('Number(document.querySelector("#score-canvas").dataset.active) > 0');
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             const projection = await evaluate('({...document.querySelector("#score-canvas").dataset})');
             assert(Number(projection.notes) > 10, "Include all source tracks, beyond a single eight-lane response");
             assert.equal(await evaluate('document.querySelector("#score-message").hidden'), true);
@@ -223,7 +223,7 @@ try {
                 }
                 requestAnimationFrame(sample);
             })`);
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             await evaluate('window.delayRange = false');
             assert(frames.every(([from, to, time, a, b, , notes, curves]) =>
                 a <= from && b >= to && notes > 0 && curves === 10 && Math.abs((time - from) / (to - from) - .15) < .001),
@@ -240,14 +240,14 @@ try {
                 }
             }
             assert(moving > 50 && reused > moving * .8, "Scrolling reuses GPU geometry between refills");
-            await wait('document.querySelector("#stop").disabled && !document.querySelector("#play").disabled');
+            await wait('document.querySelector("#play").getAttribute("aria-label") === "Play" && !document.querySelector("#play").disabled');
             await click("#follow");
             await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
             const parked = await evaluate('document.querySelector("#score-canvas").dataset.from');
             await click("#play");
             await wait(`Number(document.querySelector('#score-canvas').dataset.time) > ${frames.at(-1)[2] + .3}`);
             assert.equal(await evaluate('document.querySelector("#score-canvas").dataset.from'), parked, "Disabling Follow keeps the viewport stationary");
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             await click("#follow");
             for (let i = 0; i < 3; ++i)
                 await evaluate('document.querySelector("#score-canvas").dispatchEvent(new KeyboardEvent("keydown", {key: "-"}))');
@@ -255,14 +255,14 @@ try {
             await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0 && document.querySelector("#score-canvas").dataset.automation === "10"');
             await click("#play");
             await set("#code", source.replace("(+ 60 i)", "(+ 48 i)"));
-            await click("#play");
+            await click("#apply");
             await wait(`Number(document.querySelector('#score-canvas').dataset.revision) > ${projection.revision}`);
             assert.equal(await evaluate('document.querySelector("#track-list .track-listen button").getAttribute("aria-pressed")'), "true", "Live revisions retain audition state");
             const panelHeight = await evaluate('document.querySelector("#timeline").clientHeight');
             await click("#score-3d");
             await wait('document.querySelector("#score-canvas").dataset.projection === "3d"');
             assert.equal(await evaluate('document.querySelector("#timeline").clientHeight'), panelHeight, "Changing projection preserves panel height");
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             const revision = await evaluate('document.querySelector("#score-canvas").dataset.revision');
             await set("#code", '(error "invalid spatial draft")');
             await click("#play");
@@ -284,7 +284,7 @@ try {
             await click("#play");
             const lostTime = await evaluate('Number(document.querySelector("#time").value)');
             await wait(`Number(document.querySelector('#time').value) > ${lostTime + .2}`);
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             await evaluate('loseContext.restoreContext()');
             await wait('document.querySelector("#score-message").hidden');
             await click("#score-3d");
@@ -297,7 +297,7 @@ try {
 (daw/end 5)`);
             await click("#play");
             await wait('document.querySelector("#score-canvas").dataset.dense === "true" && document.querySelector("#score-canvas").dataset.automationDense === "true"');
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             assert.deepEqual(diagnostics, []);
             await evaluate("window.onbeforeunload = null");
             await call("Page.navigate", {url: "about:blank"});
@@ -321,7 +321,7 @@ try {
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
         await wait('document.querySelectorAll(".routing-node").length === 11');
         assert.equal(await evaluate('document.querySelectorAll(".routing-cable").length'), 10);
-        await click("#stop");
+        await click('#play[aria-label="Stop"]');
         assert.deepEqual(diagnostics, []);
         await call("Page.navigate", {url: "about:blank"});
         console.log("OK: editing, playback and routing remain usable without WebGL");

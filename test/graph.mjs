@@ -332,7 +332,7 @@ try {
             const revision = await evaluate('Number(document.querySelector("#track-routing").dataset.revision)');
             const width = await mapWidth();
             await set("#code", source.replace(":gain 0.001", ":gain 0.003"));
-            await click("#play");
+            await click("#apply");
             await wait(`Number(document.querySelector('#track-routing').dataset.revision) > ${revision}`);
             assert.equal(await evaluate('document.querySelector(".routing-node[aria-pressed=true]").dataset.node'), "0",
                 "Live revisions preserve the compact map selection");
@@ -340,17 +340,17 @@ try {
             const unified = await call("Page.captureScreenshot", {format: "png"});
             await writeFile(`build/test/routing-${mode}.png`, Buffer.from(unified.data, "base64"));
             await set("#code", '(error "keep the graph")');
-            await click("#play");
+            await click("#apply");
             await wait('!document.querySelector("#errors").hidden && !document.querySelector("#play").disabled');
             assert.deepEqual(await edges(), expected, "Failed preparation preserves the last graph");
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             await set("#code", source.replace("[dry wet dry]", "[dry wet]"));
             await click("#play");
             await wait('document.querySelectorAll(".routing-cable").length === 4');
             assert.equal(await evaluate('document.querySelectorAll(".routing-node[aria-pressed=true]").length'), 0);
             assert.equal(await evaluate('document.querySelectorAll(".routing-node").length'), 4);
             assert(await evaluate('document.querySelector("#errors").hidden'));
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             const masterSource = source.replace('(daw/master (daw/mix [dry wet dry] {:id :output}))',
                 `(daw/master (daw/mix [dry wet dry] {:id :output}) {:effects
                   [(daw/plugin :master1 "build/test/effect.perone")
@@ -365,7 +365,7 @@ try {
             assert.deepEqual(await openNodes(), [0]);
             assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".routing-node:not(.dim)"), p => Number(p.dataset.node)).sort((a,b) => a-b)'), [0, 1, 5, 6, 7],
                 "Graph highlighting and the sidebar describe the same path");
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             assert.deepEqual(diagnostics, []);
             console.log(`OK: ${mode} routing graph, shared branches, repeated inputs, navigation, live revisions and errors`);
         }, {graphics: true});

@@ -46,7 +46,7 @@ try {
             await wait('document.querySelector("#play")?.disabled === false');
             await click("#play");
             await wait('document.querySelector("#score-canvas").dataset.automation === "2"');
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             const control = ".track-automation";
             const open = async () => {
                 await click(control);
@@ -115,14 +115,14 @@ try {
             await click("#play");
             const revision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
             await set("#code", source.replace(":gain 0.03", ":gain 0.02"));
-            await click("#play");
+            await click("#apply");
             await wait(`Number(document.querySelector('#timeline').dataset.revision) > ${revision}`);
             await open();
             assert.deepEqual(await selected(), ["1:1", "2:1"], "Multiple selections survive live revisions");
             await key("Escape");
             await wait('!document.querySelector("#automation-parameters").matches(":popover-open")');
-            assert.equal(await evaluate('document.querySelector("#stop").disabled'), false, "Escape closes the checklist without stopping audio");
-            await click("#stop");
+            assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Stop", "Escape closes the checklist without stopping audio");
+            await click('#play[aria-label="Stop"]');
             const pan = async from => evaluate(`(() => {
                 const c = document.querySelector('#score-canvas'), r = c.getBoundingClientRect();
                 c.dispatchEvent(new WheelEvent('wheel', {bubbles: true, cancelable: true, shiftKey: true,

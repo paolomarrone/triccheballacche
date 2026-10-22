@@ -81,10 +81,10 @@ try {
                     "A stale status must not undo a pending audio toggle");
                 await evaluate('releaseCommand(); window.releaseCommand = null');
             }
-            await wait('!document.querySelector("#audio").checked && document.querySelector("#state").textContent === "Stopped"');
+            await wait('!document.querySelector("#settings-audio-engine").checked && document.querySelector("#state").textContent === "Audio off"');
             await click("#settings-audio-engine");
-            await wait('document.querySelector("#audio").checked');
-            assert.equal(await evaluate('document.querySelector("#state").textContent'), "Stopped");
+            await wait('document.querySelector("#settings-audio-engine").checked && !document.querySelector("#settings-audio-engine").disabled');
+            assert.equal(await evaluate('document.querySelector("#state").textContent'), "Ready");
             assert(await evaluate('document.querySelector("#audio-rate").disabled'), "Transport stop leaves the engine on");
             await click("#settings-audio-engine");
             await wait('!document.querySelector("#audio-rate").disabled');
@@ -110,10 +110,10 @@ try {
             assert(!await evaluate('document.querySelector("#catalog-list").textContent.includes("in use")'));
             await click('#settings-dialog [data-close]');
             await click("#play");
-            await wait('document.querySelector("#audio").checked && !document.querySelector("#play").disabled');
+            await wait('document.querySelector("#settings-audio-engine").checked && !document.querySelector("#play").disabled');
             assert.equal((await evaluate('backend.command("audio-info")')).sampleRate, 96000, "Changing rate must recreate the device");
             assert.equal((await evaluate('backend.command("score")')).score.end, 120, "Play must recompile unchanged source at the new rate");
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             await click("#settings");
             await click("#settings-audio-engine");
             await wait('!document.querySelector("#audio-rate").disabled');
@@ -123,9 +123,9 @@ try {
             await click('#settings-dialog [data-close]');
             await click("#play");
             if (mode === "native") await evaluate('releaseCommand(); window.releaseCommand = null');
-            await wait('document.querySelector("#audio").checked && !document.querySelector("#play").disabled');
+            await wait('document.querySelector("#settings-audio-engine").checked && !document.querySelector("#play").disabled');
             assert.equal((await evaluate('backend.command("audio-info")')).sampleRate, 48000, "Play must wait for a pending rate change");
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             await click("#settings");
             await writeFile(`build/test/settings-audio-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
             await click("#settings-plugins-tab");
@@ -148,7 +148,7 @@ try {
                 assert.match(await evaluate('document.querySelector("#plugin-paths").textContent'), /Not found/);
                 assert.deepEqual(JSON.parse(await readFile(preferences, "utf8"))["plugin-paths"].clap, [folder, missing]);
                 assert(await evaluate('[...document.querySelectorAll(".catalog-item")].some(row => row.dataset.path.endsWith("fixture.clap"))'));
-                assert(await evaluate('document.querySelector("#audio").checked'), "Scan must preserve the running engine");
+                assert(await evaluate('document.querySelector("#settings-audio-engine").checked'), "Scan must preserve the running engine");
                 assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
                 assert.match(await evaluate('document.querySelector("#state").textContent'), /^Playing/);
                 await set("#catalog-filter", "unavailable");

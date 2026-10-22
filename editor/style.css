@@ -186,7 +186,6 @@ dialog h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; }
     #transport > button { min-width: 40px; min-height: 44px; border: 0; border-radius: 3px; background: transparent; color: inherit; }
     #transport > button:disabled { color: var(--muted); }
     #transport > button[aria-pressed=true] { background: var(--active); color: var(--accent); }
-    #transport > label:has(#audio) { display: none; }
     .compact-view { display: block; }
     body > footer { order: 2; }
     #state { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

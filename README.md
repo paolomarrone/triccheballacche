@@ -91,7 +91,7 @@ relative to the score; plugin paths are relative to the host's working directory
 For a finite score or WAV export, give `daw/score` a duration:
 `(daw/score pattern {:duration 30})`, then `./build/cli score.janet renders/score.wav`.
 A graph without scheduled events needs neither `daw/score` nor `daw/end`:
-prepare it in the editor to play MIDI and adjust plugins with the timeline stopped.
+apply it in the editor to play MIDI and adjust plugins with the timeline stopped.
 WAV export still requires an explicit, positive duration.
 
 The audio graph is explicit: `daw/plugin` creates an instance, `daw/through`
@@ -123,7 +123,7 @@ Editors use 48000 Hz.
 
 [examples/midi.janet](examples/midi.janet) combines a repeating phrase and a
 keyboard input. In **Settings → MIDI**, discover devices and connect each input
-or output to a score node. Prepare enables audio and MIDI without starting the
+or output to a score node. Apply enables audio and MIDI without starting the
 timeline. Stop releases sequenced notes; the keyboard and effect tails remain active.
 Turning off the audio engine releases device-held notes and cancels pending output.
 Reevaluate a new graph to clear device bindings;
@@ -161,14 +161,17 @@ Open a file with the path bar's folder icon, enter a path and press Enter, or
 choose an example. Save uses the disk on native; web Download saves a local copy
 and updates the session's files. Reloading the page restores the published files.
 
-- **Prepare** (the lightning icon, Ctrl/Command+Enter) evaluates the code and
+- **Apply** (beside the file path, Ctrl/Command+Enter) evaluates the code and
   imports, loads the plugins and enables audio. A stopped timeline stays stopped;
   during playback it updates the music. Plugin controls and MIDI work in either state.
-- **Play** (Ctrl/Command+Space) evaluates changed code or resumes the prepared
-  score. Opening another file keeps audio running; Play starts it as a new session.
-- **Stop** (Esc) holds the position, releases sequenced notes and keeps processing
+- **Play/Stop** (Ctrl/Command+Space) evaluates changed code before starting or
+  resumes the prepared score. While playing it stops, even with unapplied edits;
+  use Apply to update the music. Opening a file keeps the current music running;
+  Apply switches to the new score.
+  Stop (also Esc) holds the position, releases sequenced notes and keeps processing
   MIDI and effect tails. Play retriggers spanning notes without resetting effects.
-  The power toggle disables the audio engine separately, retaining the prepared graph.
+  Settings → Audio disables the engine separately, retaining the prepared graph.
+  The status reads Ready with audio active and the transport stopped, or Audio off.
   Click the ruler or enter seconds to seek; seeking resets effect history and
   restores controls. Spanning notes restart when the transport plays.
 - **Live updates** to `daw/score` enter on the next beat grid (`:quantum`, default
@@ -208,7 +211,7 @@ and updates the session's files. Reloading the page restores the published files
   downloads a file. Presets change the prepared instance, not the score or its
   automation; reevaluation and seeking still apply the score's parameter values.
 - **Settings** groups Audio, Plugins and MIDI. Change sample rate with the engine
-  off; the next Play or Prepare rebuilds the score at that rate. On desktop,
+  off; the next Play or Apply rebuilds the score at that rate. On desktop,
   **Apply** saves plugin paths and rescans; **Rescan** refreshes discovery without
   changing the graph. Paths accept `~/` and relative folders or bundles. Empty lists
   disable discovery for a format; explicit score references still work. Plugin paths

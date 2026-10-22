@@ -20,7 +20,7 @@ export async function presets({evaluate, wait, click}, native, directory, node =
         URL.createObjectURL = blob => { globalThis.exportedPreset = blob.text(); return create(blob); };
     })()`);
     await click(`${plugin} button[aria-label="Export preset"]`);
-    await wait('document.querySelector("#stop").disabled');
+    await wait('document.querySelector("#play").getAttribute("aria-label") === "Play"');
     const path = `${directory}/roundtrip.tbpreset.json`;
     if (native) {
         await wait('document.querySelector(".preset-dialog")?.open');

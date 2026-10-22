@@ -62,7 +62,7 @@ try {
             await screenshot("settings");
             await key("Escape", "Escape");
             await wait('!document.querySelector("#settings-dialog").open');
-            assert.equal(await evaluate('document.querySelector("#stop").disabled'), false, "Escape closes Settings without stopping playback");
+            assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Stop", "Escape closes Settings without stopping playback");
             assert.equal(await evaluate('document.activeElement.id'), "settings");
             const examples = await evaluate('[...document.querySelector("#examples").options].map(option => option.value).filter(Boolean).sort()');
             assert.deepEqual(examples, expectedExamples, "The dropdown must contain scores without support modules");
@@ -95,7 +95,7 @@ try {
             await click("#open");
             await key("Escape", "Escape");
             await wait('!document.querySelector("#file-dialog").open');
-            assert.equal(await evaluate('document.querySelector("#stop").disabled'), false);
+            assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Stop");
             await set("#path", entry);
             await evaluate('document.querySelector("#path").focus()');
             await key("Enter", "Enter");
@@ -119,7 +119,7 @@ try {
                 assert.equal(await evaluate('document.querySelector("#code").textContent'), uploadedSource);
                 assert.equal(await evaluate('document.querySelector("#path").value'), "/examples/upload 音.janet");
             }
-            await click("#play");
+            await click("#apply");
             await wait(`document.querySelector("#errors").textContent.includes(${JSON.stringify(mode === "native" ? "Selected file imports its neighbor" : "Uploaded file imports pattern")})`);
             await set("#examples", entry);
             await wait('document.querySelector("#path").value === "examples/polpo.janet" && !document.querySelector("#play").disabled');
@@ -130,7 +130,7 @@ try {
             await key("Escape", "Escape");
             assert.equal(await evaluate('document.querySelector("#code").textContent'), original);
             assert.equal(await readFile(entry, "utf8"), original, "Opening and browsing must never save files");
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             await wait('!document.querySelector("#play").disabled');
             await set("#examples", "examples/sempiterno.janet");
             await wait('document.querySelector("#path").value === "examples/sempiterno.janet" && !document.querySelector("#play").disabled');
@@ -144,7 +144,7 @@ try {
             await key("Enter", "Enter");
             await wait('Number(document.querySelector("#time").value) > 60');
             assert(await evaluate('document.querySelector("#errors").hidden'));
-            await click("#stop");
+            await click('#play[aria-label="Stop"]');
             assert.deepEqual(diagnostics, []);
             await call("Page.navigate", {url: "about:blank"});
             console.log(`OK: ${mode} Settings, catalog, examples, Sempiterno playback, discard guard, file picker, paths/imports, uploads and modal shortcuts`);
