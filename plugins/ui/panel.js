@@ -29,13 +29,14 @@ export function drag(node, begin, move, end) {
     for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) node.addEventListener(type, finish);
 }
 
-export function panel(element, callbacks, kind) {
+export function panel(element, callbacks, kind, options = {}) {
+    const prefix = options.prefix || "bw", format = options.format || readout;
     const style = el("link", "");
-    style.rel = "stylesheet"; style.href = new URL("./panel.css", import.meta.url);
+    style.rel = "stylesheet"; style.href = options.stylesheet || new URL("./panel.css", import.meta.url);
     const ready = new Promise((resolve, reject) => {
         style.onload = resolve; style.onerror = () => reject(Error("Could not load plugin stylesheet"));
     });
-    const root = el("div", `bw-panel ${kind}`);
+    const root = el("div", `${prefix}-panel ${kind}`);
     root.setAttribute("role", "group"); root.setAttribute("aria-label", callbacks.product.name);
     element.append(style, root);
     const parameters = callbacks.product.parameters.map((p, index) => {
@@ -67,36 +68,36 @@ export function panel(element, callbacks, kind) {
         return p;
     }
     function group(parent, title, className = "") {
-        const section = el("section", `bw-module ${className}`);
+        const section = el("section", `${prefix}-module ${className}`);
         if (title) section.append(el("h2", "", title));
         parent.append(section);
-        const controls = el("div", "bw-controls"); section.append(controls);
+        const controls = el("div", `${prefix}-controls`); section.append(controls);
         return controls;
     }
     function control(parent, id, label, icons) {
-        const state = parameter(id), p = state.p, row = el("div", "bw-control");
+        const state = parameter(id), p = state.p, row = el("div", `${prefix}-control`);
         row.dataset.parameter = id; row.title = p.name;
         const name = label ?? p.shortName ?? p.name;
-        if (name && !p.toggled) row.append(el("span", "bw-label", name));
+        if (name && !p.toggled) row.append(el("span", `${prefix}-label`, name));
         parent.append(row);
         if (p.direction === "output") {
-            row.classList.add("bw-output");
-            const meter = el("meter", ""), value = el("output", "bw-value");
+            row.classList.add(`${prefix}-output`);
+            const meter = el("meter", ""), value = el("output", `${prefix}-value`);
             meter.min = p.minimum; meter.max = p.maximum;
             meter.setAttribute("aria-label", p.name);
             row.append(meter, value);
-            state.watch(next => { meter.value = next; value.textContent = parameterText(p, next); });
+            state.watch(next => { meter.value = next; value.textContent = format(p, next); });
         } else if (p.toggled) {
-            row.classList.add("bw-toggle");
+            row.classList.add(`${prefix}-toggle`);
             const button = el("button", "", name); button.type = "button";
             button.setAttribute("aria-label", p.name);
             button.onclick = () => { state.write(state.value >= .5 ? 0 : 1); state.end(); };
             state.watch(next => button.setAttribute("aria-pressed", next >= .5));
             row.append(button);
         } else if (p.list) {
-            row.classList.add("bw-discrete");
+            row.classList.add(`${prefix}-discrete`);
             const choices = Object.entries(p.scalePoints).sort((a, b) => a[1] - b[1]);
-            const buttons = el("span", "bw-choices"); buttons.setAttribute("role", "group");
+            const buttons = el("span", `${prefix}-choices`); buttons.setAttribute("role", "group");
             buttons.setAttribute("aria-label", p.name);
             for (const [text, value] of choices) {
                 const button = el("button", "", text); button.type = "button";
@@ -108,18 +109,18 @@ export function panel(element, callbacks, kind) {
                     button.title = text; button.setAttribute("aria-label", text);
                 }
                 button.onclick = () => { state.write(value); state.end(); };
-                state.watch(next => button.setAttribute("aria-pressed", next === value));
+                state.watch(next => button.setAttribute("aria-pressed", (options.selected ? options.selected(p, next, value) : next === value)));
                 buttons.append(button);
             }
             row.append(buttons);
         } else {
-            const dial = el("span", "bw-dial"), input = el("input", "bw-range"), value = el("input", "bw-value");
+            const dial = el("span", `${prefix}-dial`), input = el("input", `${prefix}-range`), value = el("input", `${prefix}-value`);
             input.type = "range"; input.min = 0; input.max = 1; input.step = "any";
             input.setAttribute("aria-label", p.name);
             value.type = "text"; value.inputMode = "decimal"; value.spellcheck = false;
             value.setAttribute("aria-label", `${p.name} value`);
             dial.title = "Drag · Shift for fine adjustment · Double-click to reset";
-            dial.append(input, el("span", "bw-pointer")); row.append(dial, value);
+            dial.append(input, el("span", `${prefix}-pointer`)); row.append(dial, value);
             let y, ratio;
             drag(input, event => { y = event.clientY; ratio = state.ratio(); state.begin(); }, event => {
                 ratio = Math.max(0, Math.min(1, ratio + (y - event.clientY) / (event.shiftKey ? 1600 : 160)));
@@ -147,14 +148,15 @@ export function panel(element, callbacks, kind) {
             };
             value.onblur = () => {
                 if (edited && !cancel && value.value.trim()) { state.write(Number(value.value)); state.end(); }
-                cancel = false; value.value = readout(p, state.value);
+                cancel = false; value.value = format(p, state.value);
             };
             state.watch(next => {
                 const ratio = state.ratio();
-                input.value = ratio; input.setAttribute("aria-valuetext", parameterText(p, next));
-                value.title = parameterText(p, next);
+                input.value = ratio; input.setAttribute("aria-valuetext", format(p, next));
+                value.title = format(p, next);
+                dial.style.setProperty("--ratio", ratio);
                 dial.style.setProperty("--angle", `${ratio * 270}deg`);
-                if (value.getRootNode().activeElement !== value) value.value = readout(p, next);
+                if (value.getRootNode().activeElement !== value) value.value = format(p, next);
             });
         }
         return row;

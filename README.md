@@ -12,7 +12,7 @@ trusted. Plugin crashes are not isolated, and APIs may change.
 
 Run commands from the repository root. You need a C compiler, GNU Make, git,
 curl and patch. The native build also needs Meson, Ninja and pkg-config for
-Lilv and its dependencies; the plugin library needs Node.js and npm.
+Lilv and its dependencies; the plugin library needs a C++17 compiler, Node.js and npm.
 
 ```sh
 make -j4 cli library
@@ -24,19 +24,28 @@ mkdir -p renders
 Dependencies are downloaded into `.deps/` at pinned versions. Janet and Spork's
 JSON module are linked into the host; no Janet or jpm installation is needed.
 The host uses Brickworks headers for its mixer. Plugins are compiled separately:
-`make library` builds the 40 Brickworks C examples as Perone bundles, excluding
-their C++ duplicates. No sibling repositories are needed for the commands above.
-All 40 include HTML/CSS/JS UIs, shared by native and Wasm. Try
-[controls.janet](examples/controls.janet): drag knobs vertically (Shift
-for fine adjustment), double-click to reset, or type a value. The XY pads control
-parameters, not a measured spectrum. UI sources live in `plugins/brickworks/ui/`;
-`make library` packages them without changing the upstream DSP sources.
+`make library` builds 40 Brickworks C examples (excluding C++ duplicates) and
+39 [MDA plugins](https://github.com/pluginguru/mda-effects) as Perone bundles.
+All include HTML/CSS/JS UIs shared by native and Wasm. No sibling repositories
+are needed. Try [controls.janet](examples/controls.janet) or [mda.janet](examples/mda.janet).
+Drag knobs vertically (Shift for fine adjustment), double-click to reset, or type
+a value. XY pads control parameters; SpecMeter displays measured audio levels.
+
+MDA retains its normalized 0–1 parameters and factory presets. Its DSP is C++;
+the host remains C. `plugins/mda/` adapts the original sources without a VST SDK.
+`patches/mda-perone.patch` initializes DSP state, applies MIDI at Perone's sample
+boundaries, isolates ePiano sample storage, removes native UI/timer/file I/O, and
+fixes delay-buffer initialization and low-frequency coefficient precision.
+Looplex allocates its 200-second capacity during preparation; Reset applies the
+selected length and clears the loop without reallocating on the audio thread. Recorded loops are not saved in
+plugin state. UI sources are in `plugins/{brickworks,mda}/ui/`, with shared controls
+in `plugins/ui/`.
 
 | Command | Output |
 | --- | --- |
 | `make` or `make cli` | `build/cli`: playback and WAV export. |
 | `make gui` | `build/gui`: native editor. |
-| `make library` | `build/library/brickworks/`: plugin bundles. |
+| `make library` | `build/library/{brickworks,mda}/`: plugin bundles. |
 | `make web` | `build/web/player.{mjs,wasm}` and project catalog. |
 | `make web-offline` | `build/web/offline.{mjs,wasm}`: offline rendering runtime. |
 | `make tools` | `build/tools/perone-host` and `build/tools/plugin-scan`: plugin diagnostics. |
@@ -392,6 +401,7 @@ Native discovery and applicable examples accept these environment overrides:
 | Variable | Default |
 | --- | --- |
 | `BRICKWORKS_PERONE` | `build/library/brickworks` |
+| `MDA_PERONE` | `build/library/mda` |
 | `ASID_PERONE` | `../asid/plugin/perone/build/asid.perone` |
 | `TIBIA_PERONE` | `../tibia/out/perone/c/build/tibia-test.perone` |
 
@@ -428,6 +438,7 @@ Formatting is in `.editorconfig` and
 | `make test-build` / `make test-build-web` | Node.js; also Emscripten for web. |
 | `make test-plugins` / `make test-brickworks` | Corresponding prebuilt bundles. |
 | `make test-library-build` | Node.js/npm; builds and checks the canonical library. |
+| `make test-mda` | Native and Wasm library, Emscripten and Chromium; all 39 DSPs and UIs. |
 | `make test-brickworks-ui` | Emscripten, Chromium and native audio; checks the library UIs and both DSP backends. |
 | `make test-web` / `make test-browser` | Emscripten/Node.js; Chromium for browser. |
 | `make test-editor` | Native GUI build, Node.js, Chromium and an audio device. |
@@ -445,7 +456,8 @@ downloads and local plugin builds; `make -C plugins clean` removes the latter.
 Use one `make -j` invocation for concurrent targets sharing a build directory.
 
 Dependency versions are pinned in [Makefile](Makefile),
-[plugins/library.mk](plugins/library.mk) and [tools/lv2-deps.sh](tools/lv2-deps.sh).
+[plugins/library.mk](plugins/library.mk), [plugins/mda/library.mk](plugins/mda/library.mk)
+and [tools/lv2-deps.sh](tools/lv2-deps.sh).
 `MINIAUDIO`, `JANET`, `SPORK`, `WEBUI`, `CLAP`, `VST3`, `PORTMIDI` and `LV2_DEPS` accept explicit paths.
 Fixes live in [patches/](patches/); the build applies them
 to generated copies, leaving downloaded sources intact.

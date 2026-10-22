@@ -1,0 +1,2302 @@
+--- a/mdaAmbience.h
++++ b/mdaAmbience.h
+@@ -27,15 +27,15 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam0;
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
++    float fParam0{};
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
+ 
+-    float* buf1, * buf2, * buf3, * buf4;
+-    float fil, fbak, damp, wet, dry, size;
+-    VstInt32  pos, den, rdy;
++    float* buf1{}, * buf2{}, * buf3{}, * buf4{};
++    float fil{}, fbak{}, damp{}, wet{}, dry{}, size{};
++    VstInt32  pos{}, den{}, rdy{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaBandisto.h
++++ b/mdaBandisto.h
+@@ -26,13 +26,13 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1, fParam2, fParam3, fParam4;
+-    float fParam5, fParam6, fParam7, fParam8;
+-    float fParam9, fParam10;
+-    float gain1, driv1, trim1;
+-    float gain2, driv2, trim2;
+-    float gain3, driv3, trim3;
+-    float fi1, fb1, fo1, fi2, fb2, fo2, fb3, slev;
+-    int valve;
+-    char programName[32];
++    float fParam1{}, fParam2{}, fParam3{}, fParam4{};
++    float fParam5{}, fParam6{}, fParam7{}, fParam8{};
++    float fParam9{}, fParam10{};
++    float gain1{}, driv1{}, trim1{};
++    float gain2{}, driv2{}, trim2{};
++    float gain3{}, driv3{}, trim3{};
++    float fi1{}, fb1{}, fo1{}, fi2{}, fb2{}, fo2{}, fb3{}, slev{};
++    int valve{};
++    char programName[32]{};
+ };
+--- a/mdaBeatBox.h
++++ b/mdaBeatBox.h
+@@ -28,31 +28,31 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
+-    float fParam7;
+-    float fParam8;
+-    float fParam9;
+-    float fParam10;
+-    float fParam11;
+-    float fParam12;
+-    float hthr, hfil, sthr, kthr, kfil1, kfil2, mix;
+-    float klev, hlev, slev;
+-    float  ww, wwx, sb1, sb2, sf1, sf2, sf3;
+-    float kww, kwwx, ksb1, ksb2, ksf1, ksf2;
+-    float dyne, dyna, dynr, dynm;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
++    float fParam7{};
++    float fParam8{};
++    float fParam9{};
++    float fParam10{};
++    float fParam11{};
++    float fParam12{};
++    float hthr{}, hfil{}, sthr{}, kthr{}, kfil1{}, kfil2{}, mix{};
++    float klev{}, hlev{}, slev{};
++    float  ww{}, wwx{}, sb1{}, sb2{}, sf1{}, sf2{}, sf3{};
++    float kww{}, kwwx{}, ksb1{}, ksb2{}, ksf1{}, ksf2{};
++    float dyne{}, dyna{}, dynr{}, dynm{};
+ 
+-    float* hbuf;
+-    float* kbuf;
+-    float* sbuf, * sbuf2;
+-    VstInt32 hbuflen, hbufpos, hdel;
+-    VstInt32 sbuflen, sbufpos, sdel, sfx;
+-    VstInt32 kbuflen, kbufpos, kdel, ksfx;
+-    VstInt32 rec, recx, recpos;
++    float* hbuf{};
++    float* kbuf{};
++    float* sbuf{}, * sbuf2{};
++    VstInt32 hbuflen{}, hbufpos{}, hdel{};
++    VstInt32 sbuflen{}, sbufpos{}, sdel{}, sfx{};
++    VstInt32 kbuflen{}, kbufpos{}, kdel{}, ksfx{};
++    VstInt32 rec{}, recx{}, recpos{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaCombo.cpp
++++ b/mdaCombo.cpp
+@@ -145,11 +145,11 @@
+ 
+ float mdaCombo::filterFreq(float hz)
+ {
+-    float j, k, r = 0.999f;
++    double j, k, r = 0.999;
+ 
+     j = r * r - 1;
+-    k = (float)(2.f - 2.f * r * r * cos(0.647f * hz / getSampleRate()));
+-    return (float)((sqrt(k * k - 4.f * j * j) - k) / (2.f * j));
++    k = (2.0 - 2.0 * r * r * cos(0.647 * hz / getSampleRate()));
++    return (float)((sqrt(k * k - 4.0 * j * j) - k) / (2.0 * j));
+ }
+ 
+ void mdaCombo::setProgramName(char* name)
+--- a/mdaCombo.h
++++ b/mdaCombo.h
+@@ -28,22 +28,22 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
+-    float fParam7;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
++    float fParam7{};
+ 
+-    float clip, drive, trim, lpf, hpf, mix1, mix2;
+-    float ff1, ff2, ff3, ff4, ff5, bias;
+-    float ff6, ff7, ff8, ff9, ff10;
+-    float hhf, hhq, hh0, hh1; //hpf
++    float clip{}, drive{}, trim{}, lpf{}, hpf{}, mix1{}, mix2{};
++    float ff1{}, ff2{}, ff3{}, ff4{}, ff5{}, bias{};
++    float ff6{}, ff7{}, ff8{}, ff9{}, ff10{};
++    float hhf{}, hhq{}, hh0{}, hh1{}; //hpf
+ 
+-    float* buffer, * buffe2;
+-    VstInt32 size, bufpos, del1, del2;
+-    int mode, ster;
++    float* buffer{}, * buffe2{};
++    VstInt32 size{}, bufpos{}, del1{}, del2{};
++    int mode{}, ster{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaDX10.cpp
++++ b/mdaDX10.cpp
+@@ -525,7 +525,7 @@
+ 
+ VstInt32 mdaDX10::processEvents(VstEvents* ev)
+ {
+-    VstInt32 npos = 0;
++
+ 
+     for (VstInt32 i = 0; i < ev->numEvents; i++)
+     {
+@@ -536,15 +536,11 @@
+         switch (midiData[0] & 0xf0) //status byte (all channels)
+         {
+         case 0x80: //note off
+-            notes[npos++] = event->deltaFrames; //delta
+-            notes[npos++] = midiData[1] & 0x7F; //note
+-            notes[npos++] = 0;                  //vel
++            noteOn(midiData[1] & 0x7F, 0);
+             break;
+ 
+         case 0x90: //note on
+-            notes[npos++] = event->deltaFrames; //delta
+-            notes[npos++] = midiData[1] & 0x7F; //note
+-            notes[npos++] = midiData[2] & 0x7F; //vel
++            noteOn(midiData[1] & 0x7F, midiData[2] & 0x7F);
+             break;
+ 
+         case 0xB0: //controller
+@@ -562,9 +558,7 @@
+                 sustain = midiData[2] & 0x40;
+                 if (sustain == 0)
+                 {
+-                    notes[npos++] = event->deltaFrames;
+-                    notes[npos++] = SUSTAIN; //end all sustained notes
+-                    notes[npos++] = 0;
++                    noteOn(SUSTAIN, 0);
+                 }
+                 break;
+ 
+@@ -591,10 +585,11 @@
+         default: break;
+         }
+ 
+-        if (npos > EVENTBUFFER) npos -= 3; //discard events if buffer full!!
++
+         event++;
+     }
+-    notes[npos] = EVENTS_DONE;
++
++    activevoices = NVOICES;
+     return 1;
+ }
+ 
+--- a/mdaDX10.h
++++ b/mdaDX10.h
+@@ -12,27 +12,27 @@
+ {
+     friend class mdaDX10;
+ private:
+-    float param[NPARAMS];
+-    char  name[24];
++    float param[NPARAMS]{};
++    char  name[24]{};
+ };
+ 
+ 
+ struct VOICE  //voice state
+ {
+-    float env;  //carrier envelope
+-    float dmod; //modulator oscillator 
+-    float mod0;
+-    float mod1;
+-    float menv; //modulator envelope
+-    float mlev; //modulator target level
+-    float mdec; //modulator envelope decay
+-    float car;  //carrier oscillator
+-    float dcar; //carrier phase increment
+-    float cenv; //smoothed env
+-    float catt; //smoothing
+-    float cdec; //carrier envelope decay
+-    VstInt32  note; //remember what note triggered this
+-    float tuning;   //used in recomputing dcar for pitch bend
++    float env{};  //carrier envelope
++    float dmod{}; //modulator oscillator 
++    float mod0{};
++    float mod1{};
++    float menv{}; //modulator envelope
++    float mlev{}; //modulator target level
++    float mdec{}; //modulator envelope decay
++    float car{};  //carrier oscillator
++    float dcar{}; //carrier phase increment
++    float cenv{}; //smoothed env
++    float catt{}; //smoothing
++    float cdec{}; //carrier envelope decay
++    VstInt32  note{}; //remember what note triggered this
++    float tuning{};   //used in recomputing dcar for pitch bend
+ };
+ 
+ 
+@@ -78,22 +78,22 @@
+         float p6, float p7, float p8, float p9, float p10, float p11,
+         float p12, float p13, float p14, float p15, float p16);
+ 
+-    mdaDX10Program* programs;
+-    float Fs;
++    mdaDX10Program* programs{};
++    float Fs{};
+ 
+ #define EVENTBUFFER 120
+ #define EVENTS_DONE 99999999
+-    VstInt32 notes[EVENTBUFFER + 8];  //list of delta|note|velocity for current block
++    VstInt32 notes[EVENTBUFFER + 8]{};  //list of delta|note|velocity for current block
+ 
+     ///global internal variables
+-    VOICE voice[NVOICES];
++    VOICE voice[NVOICES]{};
+ #define SUSTAIN 128
+-    VstInt32 sustain, activevoices, K;
++    VstInt32 sustain{}, activevoices{}, K{};
+ 
+-    float tune, rati, ratf, ratio; //modulator ratio
+-    float catt, cdec, crel;        //carrier envelope
+-    float depth, dept2, mdec, mrel; //modulator envelope
+-    float lfo0, lfo1, dlfo, modwhl, MW, pbend, velsens, volume, vibrato; //LFO and CC
+-    float rich, modmix;
+-    bool enableModWheelToVibrato;
++    float tune{}, rati{}, ratf{}, ratio{}; //modulator ratio
++    float catt{}, cdec{}, crel{};        //carrier envelope
++    float depth{}, dept2{}, mdec{}, mrel{}; //modulator envelope
++    float lfo0{}, lfo1{}, dlfo{}, modwhl{}, MW{}, pbend{}, velsens{}, volume{}, vibrato{}; //LFO and CC
++    float rich{}, modmix{};
++    bool enableModWheelToVibrato{};
+ };
+--- a/mdaDeEss.h
++++ b/mdaDeEss.h
+@@ -26,10 +26,10 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fbuf1, fbuf2, gai;
+-    float thr, att, rel, env, fil;
+-    char programName[32];
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fbuf1{}, fbuf2{}, gai{};
++    float thr{}, att{}, rel{}, env{}, fil{};
++    char programName[32]{};
+ };
+--- a/mdaDegrade.h
++++ b/mdaDegrade.h
+@@ -27,18 +27,18 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
+ 
+     struct degrader
+     {
+-        float fi2, fo2, clp, lin, lin2, g1, g2, g3, mode;
+-        float buf0, buf1, buf2, buf3, buf4, buf5, buf6, buf7, buf8, buf9;
+-        int tn, tcount;
++        float fi2{}, fo2{}, clp{}, lin{}, lin2{}, g1{}, g2{}, g3{}, mode{};
++        float buf0{}, buf1{}, buf2{}, buf3{}, buf4{}, buf5{}, buf6{}, buf7{}, buf8{}, buf9{};
++        int tn{}, tcount{};
+ 
+         void init();
+         void update(float fParam1, float fParam2, float fParam3, float fParam4, float fParam5, float fParam6, float sampleRate);
+@@ -46,5 +46,5 @@
+ 
+     } left, right;
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaDelay.cpp
++++ b/mdaDelay.cpp
+@@ -102,7 +102,7 @@
+ 
+ void mdaDelay::suspend()
+ {
+-    memset(buffer, 0, size * sizeof(float));
++    memset(buffer, 0, (size + 2) * sizeof(float));
+ }
+ 
+ void mdaDelay::setProgramName(char* name)
+--- a/mdaDelay.h
++++ b/mdaDelay.h
+@@ -27,18 +27,18 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam0;
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
++    float fParam0{};
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
+ 
+-    float* buffer;               //delay
+-    VstInt32 size, ipos, ldel, rdel; //delay max time, pointer, left time, right time
+-    float wet, dry, fbk;         //wet & dry mix
+-    float lmix, hmix, fil, fil0; //low & high mix, crossover filter coeff & buffer
++    float* buffer{};               //delay
++    VstInt32 size{}, ipos{}, ldel{}, rdel{}; //delay max time, pointer, left time, right time
++    float wet{}, dry{}, fbk{};         //wet & dry mix
++    float lmix{}, hmix{}, fil{}, fil0{}; //low & high mix, crossover filter coeff & buffer
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaDetune.h
++++ b/mdaDetune.h
+@@ -9,8 +9,8 @@
+ struct mdaDetuneProgram
+ {
+     friend class mdaDetune;
+-    float param[NPARAMS];
+-    char name[32];
++    float param[NPARAMS]{};
++    char name[32]{};
+ };
+ 
+ 
+@@ -39,16 +39,16 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    mdaDetuneProgram programs[NPROGS];
+-    float buf[BUFMAX];
+-    float win[BUFMAX];
++    mdaDetuneProgram programs[NPROGS]{};
++    float buf[BUFMAX]{};
++    float win[BUFMAX]{};
+ 
+     ///global internal variables
+-    VstInt32  buflen;           //buffer length
+-    float bufres;           //buffer resolution display
+-    float semi;             //detune display
+-    VstInt32  pos0;             //buffer input
+-    float pos1, dpos1;      //buffer output, rate
+-    float pos2, dpos2;      //downwards shift
+-    float wet, dry;         //ouput levels
++    VstInt32  buflen{};           //buffer length
++    float bufres{};           //buffer resolution display
++    float semi{};             //detune display
++    VstInt32  pos0{};             //buffer input
++    float pos1{}, dpos1{};      //buffer output, rate
++    float pos2{}, dpos2{};      //downwards shift
++    float wet{}, dry{};         //ouput levels
+ };
+--- a/mdaDither.h
++++ b/mdaDither.h
+@@ -27,16 +27,16 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam0;
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
++    float fParam0{};
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
+ 
+-    float dith;
+-    VstInt32  rnd1, rnd3;
+-    float shap, sh1, sh2, sh3, sh4;
+-    float offs, bits, wlen, gain;
++    float dith{};
++    VstInt32  rnd1{}, rnd3{};
++    float shap{}, sh1{}, sh2{}, sh3{}, sh4{};
++    float offs{}, bits{}, wlen{}, gain{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaDubDelay.cpp
++++ b/mdaDubDelay.cpp
+@@ -93,7 +93,7 @@
+ 
+ void mdaDubDelay::suspend()
+ {
+-    memset(buffer, 0, size * sizeof(float));
++    memset(buffer, 0, (size + 2) * sizeof(float));
+ }
+ 
+ void mdaDubDelay::setProgramName(char* name)
+--- a/mdaDubDelay.h
++++ b/mdaDubDelay.h
+@@ -27,21 +27,21 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam0;
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
++    float fParam0{};
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
+ 
+-    float* buffer;               //delay
+-    VstInt32 size, ipos;             //delay max time, pointer, left time, right time
+-    float wet, dry, fbk;         //wet & dry mix
+-    float lmix, hmix, fil, fil0; //low & high mix, crossover filter coeff & buffer
+-    float env, rel;              //limiter (clipper when release is instant)
+-    float del, mod, phi, dphi;   //lfo
+-    float dlbuf;                 //smoothed modulated delay
++    float* buffer{};               //delay
++    VstInt32 size{}, ipos{};             //delay max time, pointer, left time, right time
++    float wet{}, dry{}, fbk{};         //wet & dry mix
++    float lmix{}, hmix{}, fil{}, fil0{}; //low & high mix, crossover filter coeff & buffer
++    float env{}, rel{};              //limiter (clipper when release is instant)
++    float del{}, mod{}, phi{}, dphi{};   //lfo
++    float dlbuf{};                 //smoothed modulated delay
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaDynamics.h
++++ b/mdaDynamics.h
+@@ -26,19 +26,19 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
+-    float fParam7;
+-    float fParam8;
+-    float fParam9;
+-    float fParam10;
+-    float thr, rat, env, env2, att, rel, trim, lthr, xthr, xrat, dry;
+-    float genv, gatt, irel;
+-    int mode;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
++    float fParam7{};
++    float fParam8{};
++    float fParam9{};
++    float fParam10{};
++    float thr{}, rat{}, env{}, env2{}, att{}, rel{}, trim{}, lthr{}, xthr{}, xrat{}, dry{};
++    float genv{}, gatt{}, irel{};
++    int mode{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaEPiano.cpp
++++ b/mdaEPiano.cpp
+@@ -38,7 +38,8 @@
+         setUniqueID('MDAe');	///
+     }
+ 
+-    waves = epianoData;
++    waves = new short[sizeof(epianoData) / sizeof(epianoData[0])];
++    memcpy(waves, epianoData, sizeof(epianoData));
+ 
+     //Waveform data and keymapping
+     kgrp[0].root = 36;  kgrp[0].high = 39; //C1
+@@ -163,6 +164,7 @@
+ mdaEPiano::~mdaEPiano()  //destroy any buffers...
+ {
+     if (programs) delete[] programs;
++    delete[] waves;
+ }
+ 
+ 
+@@ -547,7 +549,7 @@
+ VstInt32 mdaEPiano::processEvents(VstEvents* ev)
+ {
+     float* param = programs[curProgram].param;
+-    VstInt32 npos = 0;
++
+ 
+     for (VstInt32 i = 0; i < ev->numEvents; i++)
+     {
+@@ -558,15 +560,11 @@
+         switch (midiData[0] & 0xf0) //status byte (all channels)
+         {
+         case 0x80: //note off
+-            notes[npos++] = event->deltaFrames; //delta
+-            notes[npos++] = midiData[1] & 0x7F; //note
+-            notes[npos++] = 0;                  //vel
++            noteOn(midiData[1] & 0x7F, 0);
+             break;
+ 
+         case 0x90: //note on
+-            notes[npos++] = event->deltaFrames; //delta
+-            notes[npos++] = midiData[1] & 0x7F; //note
+-            notes[npos++] = midiData[2] & 0x7F; //vel
++            noteOn(midiData[1] & 0x7F, midiData[2] & 0x7F);
+             break;
+ 
+         case 0xB0: //controller
+@@ -591,9 +589,7 @@
+                 sustain = midiData[2] & 0x40;
+                 if (sustain == 0)
+                 {
+-                    notes[npos++] = event->deltaFrames;
+-                    notes[npos++] = SUSTAIN; //end all sustained notes
+-                    notes[npos++] = 0;
++                    noteOn(SUSTAIN, 0);
+                 }
+                 break;
+ 
+@@ -615,10 +611,10 @@
+         default: break;
+         }
+ 
+-        if (npos > EVENTBUFFER) npos -= 3; //discard events if buffer full!!
++
+         event++; //?
+     }
+-    notes[npos] = EVENTS_DONE;
++
+     return 1;
+ }
+ 
+--- a/mdaEPiano.h
++++ b/mdaEPiano.h
+@@ -14,39 +14,39 @@
+ {
+     friend class mdaEPiano;
+ private:
+-    float param[NPARAMS];
+-    char  name[24];
++    float param[NPARAMS]{};
++    char  name[24]{};
+ };
+ 
+ 
+ struct VOICE  //voice state
+ {
+-    VstInt32  delta;  //sample playback
+-    VstInt32  frac;
+-    VstInt32  pos;
+-    VstInt32  end;
+-    VstInt32  loop;
++    VstInt32  delta{};  //sample playback
++    VstInt32  frac{};
++    VstInt32  pos{};
++    VstInt32  end{};
++    VstInt32  loop{};
+ 
+-    float env;  //envelope
+-    float dec;
++    float env{};  //envelope
++    float dec{};
+ 
+-    float f0;   //first-order LPF
+-    float f1;
+-    float ff;
++    float f0{};   //first-order LPF
++    float f1{};
++    float ff{};
+ 
+-    float outl;
+-    float outr;
+-    VstInt32  note; //remember what note triggered this
++    float outl{};
++    float outr{};
++    VstInt32  note{}; //remember what note triggered this
+ };
+ 
+ 
+ struct KGRP  //keygroup
+ {
+-    VstInt32  root;  //MIDI root note
+-    VstInt32  high;  //highest note
+-    VstInt32  pos;
+-    VstInt32  end;
+-    VstInt32  loop;
++    VstInt32  root{};  //MIDI root note
++    VstInt32  high{};  //highest note
++    VstInt32  pos{};
++    VstInt32  end{};
++    VstInt32  loop{};
+ };
+ 
+ class mdaEPiano : public AudioEffectX
+@@ -82,7 +82,7 @@
+ 
+     virtual VstInt32 getNumMidiInputChannels() { return 1; }
+ 
+-    VstInt32 guiUpdate;
++    VstInt32 guiUpdate{};
+     void guiGetDisplay(VstInt32 index, char* label);
+ 
+ private:
+@@ -91,22 +91,22 @@
+     void fillpatch(VstInt32 p, char* name, float p0, float p1, float p2, float p3, float p4,
+         float p5, float p6, float p7, float p8, float p9, float p10, float p11);
+ 
+-    mdaEPianoProgram* programs;
+-    float Fs, iFs;
++    mdaEPianoProgram* programs{};
++    float Fs{}, iFs{};
+ 
+ #define EVENTBUFFER 120
+ #define EVENTS_DONE 99999999
+-    VstInt32 notes[EVENTBUFFER + 8];  //list of delta|note|velocity for current block
++    VstInt32 notes[EVENTBUFFER + 8]{};  //list of delta|note|velocity for current block
+ 
+     ///global internal variables
+     KGRP  kgrp[34];
+-    VOICE voice[NVOICES];
+-    VstInt32  activevoices, poly;
+-    short* waves;
+-    float width;
+-    VstInt32  size, sustain;
+-    float lfo0, lfo1, dlfo, lmod, rmod;
+-    float treb, tfrq, tl, tr;
+-    float tune, fine, random, stretch, overdrive;
+-    float muff, muffvel, sizevel, velsens, volume, modwhl;
++    VOICE voice[NVOICES]{};
++    VstInt32  activevoices{}, poly{};
++    short* waves{};
++    float width{};
++    VstInt32  size{}, sustain{};
++    float lfo0{}, lfo1{}, dlfo{}, lmod{}, rmod{};
++    float treb{}, tfrq{}, tl{}, tr{};
++    float tune{}, fine{}, random{}, stretch{}, overdrive{};
++    float muff{}, muffvel{}, sizevel{}, velsens{}, volume{}, modwhl{};
+ };
+--- a/mdaEnvelope.h
++++ b/mdaEnvelope.h
+@@ -27,12 +27,12 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
+     long  mode;
+-    float env, att, rel, drel, out;
++    float env{}, att{}, rel{}, drel{}, out{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaImage.h
++++ b/mdaImage.h
+@@ -27,13 +27,13 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
+-    float l2l, l2r, r2l, r2r;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
++    float l2l{}, l2r{}, r2l{}, r2r{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaJX10.cpp
++++ b/mdaJX10.cpp
+@@ -719,8 +719,7 @@
+                         V->f2 = x;
+ 
+                         o += V->env * V->f0;
+-                        if (o < -1.0f || o > 1.0f)
+-                            fprintf(stderr, "%f\n", o);
++
+                     }
+                     V++;
+                 }
+@@ -908,7 +907,7 @@
+ 
+ VstInt32 mdaJX10::processEvents(VstEvents* ev)
+ {
+-    VstInt32 npos = 0;
++
+ 
+     for (VstInt32 i = 0; i < ev->numEvents; i++)
+     {
+@@ -919,15 +918,11 @@
+         switch (midiData[0] & 0xf0) //status byte (all channels)
+         {
+         case 0x80: //note off
+-            notes[npos++] = event->deltaFrames; //delta
+-            notes[npos++] = midiData[1] & 0x7F; //note
+-            notes[npos++] = 0;                  //vel
++            noteOn(midiData[1] & 0x7F, 0);
+             break;
+ 
+         case 0x90: //note on
+-            notes[npos++] = event->deltaFrames; //delta
+-            notes[npos++] = midiData[1] & 0x7F; //note
+-            notes[npos++] = midiData[2] & 0x7F; //vel
++            noteOn(midiData[1] & 0x7F, midiData[2] & 0x7F);
+             break;
+ 
+         case 0xB0: //controller
+@@ -957,9 +952,7 @@
+                 sustain = midiData[2] & 0x40;
+                 if (sustain == 0)
+                 {
+-                    notes[npos++] = event->deltaFrames;
+-                    notes[npos++] = SUSTAIN; //end all sustained notes
+-                    notes[npos++] = 0;
++                    noteOn(SUSTAIN, 0);
+                 }
+                 break;
+ 
+@@ -995,10 +988,11 @@
+         default: break;
+         }
+ 
+-        if (npos > EVENTBUFFER) npos -= 3; //discard events if buffer full!!
++
+         event++;
+     }
+-    notes[npos] = EVENTS_DONE;
++
++    activevoices = NVOICES;
+     return 1;
+ }
+ 
+--- a/mdaJX10.h
++++ b/mdaJX10.h
+@@ -17,53 +17,53 @@
+ public:
+     mdaJX10Program();
+ private:
+-    float param[NPARAMS];
+-    char  name[24];
++    float param[NPARAMS]{};
++    char  name[24]{};
+ };
+ 
+ 
+ struct VOICE  //voice state
+ {
+-    float  period;
+-    float  p;    //sinc position
+-    float  pmax; //loop length
+-    float  dp;   //delta
+-    float  sin0; //sine osc
+-    float  sin1;
+-    float  sinx;
+-    float  dc;   //dc offset
++    float  period{};
++    float  p{};    //sinc position
++    float  pmax{}; //loop length
++    float  dp{};   //delta
++    float  sin0{}; //sine osc
++    float  sin1{};
++    float  sinx{};
++    float  dc{};   //dc offset
+ 
+-    float  detune;
+-    float  p2;    //sinc position
+-    float  pmax2; //loop length
+-    float  dp2;   //delta
+-    float  sin02; //sine osc
+-    float  sin12;
+-    float  sinx2;
+-    float  dc2;   //dc offset
++    float  detune{};
++    float  p2{};    //sinc position
++    float  pmax2{}; //loop length
++    float  dp2{};   //delta
++    float  sin02{}; //sine osc
++    float  sin12{};
++    float  sinx2{};
++    float  dc2{};   //dc offset
+ 
+-    float  fc;  //filter cutoff root
+-    float  ff;  //filter cutoff
+-    float  f0;  //filter buffers
+-    float  f1;
+-    float  f2;
++    float  fc{};  //filter cutoff root
++    float  ff{};  //filter cutoff
++    float  f0{};  //filter buffers
++    float  f1{};
++    float  f2{};
+ 
+-    float  saw;
++    float  saw{};
+     //float  vca;  //current level  ///eliminate osc1 level when separate amp & filter envs?
+     //float  env;  //envelope
+     //float  att;  //attack
+     //float  dec;  //decay
+-    float  env;
+-    float  envd;
+-    float  envl;
+-    float  fenv;
+-    float  fenvd;
+-    float  fenvl;
++    float  env{};
++    float  envd{};
++    float  envl{};
++    float  fenv{};
++    float  fenvd{};
++    float  fenvl{};
+ 
+-    float  lev;  //osc levels
+-    float  lev2;
+-    float  target; //period target
+-    VstInt32   note; //remember what note triggered this
++    float  lev{};  //osc levels
++    float  lev2{};
++    float  target{}; //period target
++    VstInt32   note{}; //remember what note triggered this
+ };
+ 
+ 
+@@ -109,27 +109,27 @@
+         float p12, float p13, float p14, float p15, float p16, float p17,
+         float p18, float p19, float p20, float p21, float p22, float p23);
+ 
+-    mdaJX10Program* programs;
+-    float Fs;
++    mdaJX10Program* programs{};
++    float Fs{};
+ 
+ #define EVENTBUFFER 120
+ #define EVENTS_DONE 99999999
+-    VstInt32 notes[EVENTBUFFER + 8];  //list of delta|note|velocity for current block
++    VstInt32 notes[EVENTBUFFER + 8]{};  //list of delta|note|velocity for current block
+ #define KMAX 32
+ 
+ ///global internal variables
+ #define SUSTAIN -1
+-    VstInt32 sustain, activevoices;
+-    VOICE voice[NVOICES];
++    VstInt32 sustain{}, activevoices{};
++    VOICE voice[NVOICES]{};
+ 
+-    float semi, cent;
+-    float tune, detune;
+-    float filtf, fzip, filtq, filtlfo, filtenv, filtvel, filtwhl;
+-    float oscmix, noisemix;
+-    float att, dec, sus, rel, fatt, fdec, fsus, frel;
+-    float lfo, dlfo, modwhl, press, pbend, ipbend, rezwhl;
+-    float velsens, volume, voltrim;
+-    float vibrato, pwmdep, lfoHz, glide, glidedisp;
+-    VstInt32  K, lastnote, veloff, mode;
++    float semi{}, cent{};
++    float tune{}, detune{};
++    float filtf{}, fzip{}, filtq{}, filtlfo{}, filtenv{}, filtvel{}, filtwhl{};
++    float oscmix{}, noisemix{};
++    float att{}, dec{}, sus{}, rel{}, fatt{}, fdec{}, fsus{}, frel{};
++    float lfo{}, dlfo{}, modwhl{}, press{}, pbend{}, ipbend{}, rezwhl{};
++    float velsens{}, volume{}, voltrim{};
++    float vibrato{}, pwmdep{}, lfoHz{}, glide{}, glidedisp{};
++    VstInt32  K{}, lastnote{}, veloff{}, mode{};
+     unsigned int noise;
+ };
+--- a/mdaLeslie.h
++++ b/mdaLeslie.h
+@@ -11,8 +11,8 @@
+     mdaLeslieProgram();
+ private:
+     friend class mdaLeslie;
+-    float param[NPARAMS];
+-    char name[24];
++    float param[NPARAMS]{};
++    char name[24]{};
+ };
+ 
+ class mdaLeslie : public AudioEffectX
+@@ -42,15 +42,15 @@
+ 
+ protected:
+     void update();
+-    mdaLeslieProgram* programs;
++    mdaLeslieProgram* programs{};
+ 
+-    float filo; //crossover filter coeff
+-    float fbuf1, fbuf2; //filter buffers
+-    float twopi; //speed, target, momentum, phase, width, ampmod, freqmod...
+-    float hspd, hset, hmom, hphi, hwid, hlev, hdep;
+-    float lspd, lset, lmom, lphi, lwid, llev, gain;
+-    float* hbuf;  //HF delay buffer
+-    VstInt32 size, hpos; //buffer length & pointer
++    float filo{}; //crossover filter coeff
++    float fbuf1{}, fbuf2{}; //filter buffers
++    float twopi{}; //speed, target, momentum, phase, width, ampmod, freqmod...
++    float hspd{}, hset{}, hmom{}, hphi{}, hwid{}, hlev{}, hdep{};
++    float lspd{}, lset{}, lmom{}, lphi{}, lwid{}, llev{}, gain{};
++    float* hbuf{};  //HF delay buffer
++    VstInt32 size{}, hpos{}; //buffer length & pointer
+ 
+-    float chp, dchp, clp, dclp, shp, dshp, slp, dslp;
++    float chp{}, dchp{}, clp{}, dclp{}, shp{}, dshp{}, slp{}, dslp{};
+ };
+--- a/mdaLimiter.h
++++ b/mdaLimiter.h
+@@ -26,12 +26,12 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float thresh, gain, att, rel, trim;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float thresh{}, gain{}, att{}, rel{}, trim{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaLooplex.cpp
++++ b/mdaLooplex.cpp
+@@ -4,136 +4,10 @@
+ #include <stdlib.h>
+ #include <math.h>
+ 
+-#if __linux__
+-#include <pthread.h>
+-#include <unistd.h>
+-#endif
+-
+-
+ AudioEffect* createEffectInstance(audioMasterCallback audioMaster)
+ {
+     return new mdaLooplex(audioMaster);
+ }
+-
+-
+-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+-//replacement for fxIdle that Steinberg stupidly removed from VST2.4 forcing loads of plug-ins to set up their own timers...
+-
+-#define IDLE_MSEC  40   //25 Hz
+-
+-class IdleList  //wzDSP objects to receive idle timer (same timer is used for all instances)
+-{
+-public:
+-    IdleList(mdaLooplex* effect, IdleList* next);
+-
+-    mdaLooplex* effect;
+-    IdleList* next;
+-    bool      remove;
+-
+-} static idleList(0, 0);  //idleList->next points to start of idle list
+-
+-
+-#if _WIN32
+-#include <windows.h>
+-#pragma comment(lib, "user32.lib")
+-static UINT_PTR timer = 0;
+-VOID CALLBACK TimerCallback(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime)
+-#elif __linux__
+-#define IDLE_MICS (IDLE_MSEC * 1000)
+-static pthread_t thread = 0;
+-static unsigned int timer = 0;
+-static void TimerCallback();
+-static void* ThreadCallback(void* args)
+-{
+-    while (timer)
+-    {
+-        TimerCallback();
+-        usleep(IDLE_MICS);
+-    }
+-    thread = 0;
+-    pthread_exit(0);
+-    return 0;
+-}
+-void TimerCallback()
+-#else //OSX
+-#include <Carbon/Carbon.h>
+-EventLoopTimerRef timer = 0;
+-pascal void TimerCallback(EventLoopTimerRef timerRef, void* userData)
+-#endif
+-{
+-    IdleList* prev = &idleList;
+-    IdleList* item = prev->next;
+-    while (item)
+-    {
+-        if (item->remove)
+-        {
+-            prev->next = item->next;  //remove item from list and close gap
+-            delete item;
+-            item = prev->next;
+-
+-            if (prev == &idleList && prev->next == 0) //stop timer after last item removed
+-            {
+-#if _WIN32
+-                KillTimer(NULL, timer);
+-#elif defined(__linux__)
+-                timer = 0;
+-                while (thread) usleep(1000);
+-#else //OSX
+-                RemoveEventLoopTimer(timer);
+-#endif
+-                timer = 0;
+-            }
+-        }
+-        else
+-        {
+-            item->effect->idle();  //call idle() for each item in list
+-            prev = item;
+-            item = item->next;
+-        }
+-    }
+-}
+-
+-
+-IdleList::IdleList(mdaLooplex* effect, IdleList* next) : effect(effect), next(next), remove(false)
+-{
+-    if (effect && !timer) //start timer
+-    {
+-#if WIN32
+-        timer = SetTimer(NULL, 0, IDLE_MSEC, TimerCallback);
+-#elif __linux__
+-        timer = 1;
+-        pthread_attr_t attr;
+-        pthread_attr_init(&attr);
+-        pthread_attr_setstacksize(&attr, 16 * 1024);
+-        int policy;
+-
+-        if (pthread_attr_getschedpolicy(&attr, &policy) == 0)
+-        {
+-            struct sched_param param;
+-            param.sched_priority = sched_get_priority_min(policy);
+-            pthread_attr_setschedpolicy(&attr, SCHED_OTHER);
+-            pthread_attr_setschedparam(&attr, &param);
+-        }
+-        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+-        pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, 0);
+-
+-        if (pthread_create(&thread, &attr, &ThreadCallback, 0) != 0)
+-        {
+-            thread = 0;
+-            timer = 0;
+-            fprintf(stderr, "Error: mdaLooplex.cpp (line %d)\n", __LINE__);
+-        }
+-        pthread_attr_destroy(&attr);
+-#else //OSX
+-        double ms = kEventDurationMillisecond * (double)IDLE_MSEC;
+-        InstallEventLoopTimer(GetCurrentEventLoop(), ms, ms, NewEventLoopTimerUPP(TimerCallback), 0, &timer);
+-#endif
+-    }
+-}
+-
+-
+-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+-
+ 
+ mdaLooplexProgram::mdaLooplexProgram()
+ {
+@@ -156,14 +30,13 @@
+     Fs = 44100.0f; //won't we know the sample rate by the time we need it?
+ 
+     //initialise...
+-    bypass = bypassed = busy = status = 0; //0=not recorded 1=first pass 2=looping
++    status = 0; //0=not recorded 1=first pass 2=looping
+     bufmax = 882000;
+-    buffer = new short[bufmax + 10];
+-    memset(buffer, 0, (bufmax + 10) * sizeof(short));
++    buffer = nullptr;
+     bufpos = 0;
+     buflen = 0;
+     recreq = 0;
+-    oldParam0 = oldParam1 = oldParam2 = 0.0f;
++    oldParam1 = oldParam2 = 0.0f;
+     modwhl = 1.0f;
+ 
+     programs = new mdaLooplexProgram[NPROGS];
+@@ -179,9 +52,10 @@
+     }
+ 
+     update();
++    notes[0] = EVENTS_DONE;
+     suspend();
+ 
+-    idleList.next = new IdleList(this, idleList.next); //add to idle list, start timer if not running...
++
+ }
+ 
+ 
+@@ -192,11 +66,8 @@
+     if (fabs(param[1] - oldParam1) > 0.1f)
+     {
+         oldParam1 = param[1];
+-        if (fabs(oldParam0 - param[0]) > 0.01f)
+-        {
+-            oldParam0 = param[0];
+-            bypass = 1;  //re-assign memory
+-        }
++        bufmax = 2 * (VstInt32)Fs * (VstInt32)(10.5f + 190.0f * param[0]);
++        status = bufpos = buflen = 0;
+     }
+ 
+     if (param[2] > 0.5f && oldParam2 < 0.5f)
+@@ -224,12 +95,17 @@
+ {
+     AudioEffectX::setSampleRate(sampleRate);
+     Fs = sampleRate;
++    delete[] buffer;
++    buffer = new short[2 * (VstInt32)Fs * 200 + 10];
++    bufmax = 2 * (VstInt32)Fs * (VstInt32)(10.5f + 190.0f * programs[curProgram].param[0]);
++    status = bufpos = buflen = 0;
+ }
+ 
+ 
+ void mdaLooplex::resume()
+ {
+-    //should reset position here...
++    // Preparation restores parameters before resume().
++    bufmax = 2 * (VstInt32)Fs * (VstInt32)(10.5f + 190.0f * programs[curProgram].param[0]);
+     bufpos = 0;
+ 
+     //needIdle();  //idle broken in VST2.4
+@@ -237,98 +113,10 @@
+ }
+ 
+ 
+-void mdaLooplex::idle()
+-{
+-    if (bypassed)
+-    {
+-        if (busy) return; //only do once per bypass
+-        busy = 1;
+-        float* param = programs[curProgram].param;
+-        bufmax = 2 * (VstInt32)Fs * (VstInt32)(10.5f + 190.0f * param[0]);
+-        if (buffer) delete[] buffer;
+-        buffer = new short[bufmax + 10];
+-        if (buffer) memset(buffer, 0, (bufmax + 10) * sizeof(short)); else bufmax = 0;
+-
+-        bypass = busy = status = bufpos = buflen = 0;
+-    }
+-}
+-
+-
+-mdaLooplex::~mdaLooplex()  //destroy any buffers...
+-{
+-    for (IdleList* item = idleList.next; item; item = item->next)  //remove from idle list, stop timer if last item
+-    {
+-        if (item->effect == this)
+-        {
+-            item->remove = true;
+-#if _WIN32 //and stop timer in case our last instance is about to unload
+-            TimerCallback(0, 0, 0, 0);
+-#elif __linux__
+-            TimerCallback();
+-#else
+-            TimerCallback(0, 0);
+-#endif
+-            break;
+-        }
+-    }
+-
+-    if (programs) delete[] programs;
+-
+-    if (buffer)
+-    {
+-        FILE* fp; //dump loop to file
+-
+-        if (buflen && (fp = fopen("looplex.wav", "wb")))
+-        {
+-            char wh[44];
+-            memcpy(wh, "RIFF____WAVEfmt \20\0\0\0\1\0\2\0________\4\0\20\0data____", 44);
+-
+-            VstInt32 l = 36 + buflen * 2;
+-            wh[4] = (char)(l & 0xFF);  l >>= 8;
+-            wh[5] = (char)(l & 0xFF);  l >>= 8;
+-            wh[6] = (char)(l & 0xFF);  l >>= 8;
+-            wh[7] = (char)(l & 0xFF);
+-
+-            l = (VstInt32)(Fs + 0.5f);
+-            wh[24] = (char)(l & 0xFF);  l >>= 8;
+-            wh[25] = (char)(l & 0xFF);  l >>= 8;
+-            wh[26] = (char)(l & 0xFF);  l >>= 8;
+-            wh[27] = (char)(l & 0xFF);
+-
+-            l = 4 * (VstInt32)(Fs + 0.5f);
+-            wh[28] = (char)(l & 0xFF);  l >>= 8;
+-            wh[29] = (char)(l & 0xFF);  l >>= 8;
+-            wh[30] = (char)(l & 0xFF);  l >>= 8;
+-            wh[31] = (char)(l & 0xFF);
+-
+-            l = buflen * 2;
+-            wh[40] = (char)(l & 0xFF);  l >>= 8;
+-            wh[41] = (char)(l & 0xFF);  l >>= 8;
+-            wh[42] = (char)(l & 0xFF);  l >>= 8;
+-            wh[43] = (char)(l & 0xFF);
+-
+-            fwrite(wh, 1, 44, fp);
+-
+-#if __BIG_ENDIAN__
+-            char* c = (char*)buffer;
+-            char t;
+-
+-            for (l = 0; l < buflen; l++) //swap endian-ness
+-            {
+-                t = *c;
+-                *c = *(c + 1);
+-                c++;
+-                *c = t;
+-                c++;
+-            }
+-#endif
+-
+-            fwrite(buffer, sizeof(short), buflen, fp);
+-            fclose(fp);
+-        }
+-
+-        delete[] buffer;
+-    }
++mdaLooplex::~mdaLooplex()
++{
++    delete[] programs;
++    delete[] buffer;
+ }
+ 
+ 
+@@ -465,7 +253,7 @@
+     float imix = in_mix, ipan = in_pan, omix = out_mix, fb = feedback * modwhl;
+     VstInt32 x;
+ 
+-    if ((bypassed = bypass)) return;
++
+ 
+     while (frame < sampleFrames)
+     {
+@@ -497,7 +285,7 @@
+ #endif
+ 
+                 //left delay
+-                dl = fb * (float)buffer[bufpos];
++                dl = status == 1 ? 0.0f : fb * (float)buffer[bufpos];
+                 if (recreq)
+                 {
+                     x = (VstInt32)(32768.0f * l + dl + d0 - d1 + 100000.5f) - 100000;
+@@ -507,7 +295,7 @@
+                 bufpos++;
+ 
+                 //right delay
+-                dr = fb * (float)buffer[bufpos];
++                dr = status == 1 ? 0.0f : fb * (float)buffer[bufpos];
+                 if (recreq)
+                 {
+                     x = (VstInt32)(32768.0f * r + dr - d0 + d1 + 100000.5f) - 100000;
+@@ -558,7 +346,7 @@
+ 
+ VstInt32 mdaLooplex::processEvents(VstEvents* ev)
+ {
+-    VstInt32 npos = 0;
++
+ 
+     for (VstInt32 i = 0; i < ev->numEvents; i++)
+     {
+@@ -569,15 +357,15 @@
+         switch (midiData[0] & 0xf0) //status byte (all channels)
+         {
+         case 0x80: //note off
+-          //notes[npos++] = event->deltaFrames; //delta
+-          //notes[npos++] = midiData[1] & 0x7F; //note
+-          //notes[npos++] = 0;                  //vel
++
++
++
+             break;
+ 
+         case 0x90: //note on
+-          //notes[npos++] = event->deltaFrames; //delta
+-          //notes[npos++] = midiData[1] & 0x7F; //note
+-          //notes[npos++] = midiData[2] & 0x7F; //vel
++
++
++
+             break;
+ 
+         case 0xB0: //controller
+@@ -590,9 +378,7 @@
+             case 0x40:  //sustain
+                 if (midiData[2] > 63)
+                 {
+-                    notes[npos++] = event->deltaFrames; //delta
+-                    notes[npos++] = 1; //note
+-                    notes[npos++] = 127; //vel
++                    recreq = !recreq;
+                 }
+                 break;
+ 
+@@ -600,9 +386,7 @@
+             case 0x43:
+                 if (midiData[2] > 63)
+                 {
+-                    notes[npos++] = event->deltaFrames; //delta
+-                    notes[npos++] = 2; //note
+-                    notes[npos++] = 127; //vel
++                    bufpos = 0;
+                 }
+                 break;
+ 
+@@ -618,10 +402,10 @@
+         default: break;
+         }
+ 
+-        if (npos > EVENTBUFFER) npos -= 3; //discard events if buffer full!!
++
+         event++;
+     }
+-    notes[npos] = EVENTS_DONE;
++
+     return 1;
+ }
+ 
+--- a/mdaLooplex.h
++++ b/mdaLooplex.h
+@@ -14,8 +14,8 @@
+ public:
+     mdaLooplexProgram();
+ private:
+-    float param[NPARAMS];
+-    char  name[24];
++    float param[NPARAMS]{};
++    char  name[24]{};
+ };
+ 
+ 
+@@ -54,24 +54,23 @@
+ 
+     virtual VstInt32 getNumMidiInputChannels() { return 1; }
+ 
+-    void idle();
+ 
+ private:
+     void update();  //my parameter update
+ 
+-    mdaLooplexProgram* programs;
+-    float Fs;
++    mdaLooplexProgram* programs{};
++    float Fs{};
+ 
+ #define EVENTBUFFER 120
+ #define EVENTS_DONE 99999999
+-    VstInt32 notes[EVENTBUFFER + 8];  //list of delta|note|velocity for current block
++    VstInt32 notes[EVENTBUFFER + 8]{};  //list of delta|note|velocity for current block
+ 
+     ///global internal variables
+-    float in_mix, in_pan, out_mix, feedback, modwhl;
++    float in_mix{}, in_pan{}, out_mix{}, feedback{}, modwhl{};
+ 
+-    short* buffer;
+-    VstInt32 bufpos, buflen, bufmax, mode;
++    short* buffer{};
++    VstInt32 bufpos{}, buflen{}, bufmax{};
+ 
+-    VstInt32 bypass, bypassed, busy, status, recreq;
+-    float oldParam0, oldParam1, oldParam2;
++    VstInt32 status{}, recreq{};
++    float oldParam1{}, oldParam2{};
+ };
+--- a/mdaLoudness.h
++++ b/mdaLoudness.h
+@@ -12,8 +12,8 @@
+     mdaLoudnessProgram();
+ private:
+     friend class mdaLoudness;
+-    float param[NPARAMS];
+-    char name[32];
++    float param[NPARAMS]{};
++    char name[32]{};
+ };
+ 
+ 
+@@ -44,10 +44,10 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    mdaLoudnessProgram* programs;
++    mdaLoudnessProgram* programs{};
+ 
+     ///global internal variables
+-    float Z0, Z1, Z2, Z3, A0, A1, A2, gain;
+-    float igain, ogain;
+-    VstInt32  mode;
++    float Z0{}, Z1{}, Z2{}, Z3{}, A0{}, A1{}, A2{}, gain{};
++    float igain{}, ogain{};
++    VstInt32  mode{};
+ };
+--- a/mdaMultiBand.h
++++ b/mdaMultiBand.h
+@@ -26,14 +26,14 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1, fParam2, fParam3, fParam4;
+-    float fParam5, fParam6, fParam7, fParam8;
+-    float fParam9, fParam10, fParam11, fParam12, fParam13;
+-    float gain1, driv1, att1, rel1, trim1;
+-    float gain2, driv2, att2, rel2, trim2;
+-    float gain3, driv3, att3, rel3, trim3;
+-    float fi1, fb1, fo1, fi2, fb2, fo2, fb3, slev;
+-    int mswap;
++    float fParam1{}, fParam2{}, fParam3{}, fParam4{};
++    float fParam5{}, fParam6{}, fParam7{}, fParam8{};
++    float fParam9{}, fParam10{}, fParam11{}, fParam12{}, fParam13{};
++    float gain1{}, driv1{}, att1{}, rel1{}, trim1{};
++    float gain2{}, driv2{}, att2{}, rel2{}, trim2{};
++    float gain3{}, driv3{}, att3{}, rel3{}, trim3{};
++    float fi1{}, fb1{}, fo1{}, fi2{}, fb2{}, fo2{}, fb3{}, slev{};
++    int mswap{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaOverdrive.h
++++ b/mdaOverdrive.h
+@@ -26,13 +26,13 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
+ 
+-    float filt1, filt2; //filter buffers
+-    float filt;         //filter coeff.
+-    float gain;         //output gain
++    float filt1{}, filt2{}; //filter buffers
++    float filt{};         //filter coeff.
++    float gain{};         //output gain
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaPiano.cpp
++++ b/mdaPiano.cpp
+@@ -397,7 +397,7 @@
+ 
+                 if (!(l > -2.0f) || !(l < 2.0f))
+                 {
+-                    printf("what is this shit?   %d,  %f,  %f\n", i, x, V->f0);
++
+                     l = 0.0f;
+                 }
+                 if (!(r > -2.0f) || !(r < 2.0f))
+@@ -503,7 +503,7 @@
+ 
+ VstInt32 mdaPiano::processEvents(VstEvents* ev)
+ {
+-    VstInt32 npos = 0;
++
+ 
+     for (VstInt32 i = 0; i < ev->numEvents; i++)
+     {
+@@ -514,15 +514,11 @@
+         switch (midiData[0] & 0xf0) //status byte (all channels)
+         {
+         case 0x80: //note off
+-            notes[npos++] = event->deltaFrames; //delta
+-            notes[npos++] = midiData[1] & 0x7F; //note
+-            notes[npos++] = 0;                  //vel
++            noteOn(midiData[1] & 0x7F, 0);
+             break;
+ 
+         case 0x90: //note on
+-            notes[npos++] = event->deltaFrames; //delta
+-            notes[npos++] = midiData[1] & 0x7F; //note
+-            notes[npos++] = midiData[2] & 0x7F; //vel
++            noteOn(midiData[1] & 0x7F, midiData[2] & 0x7F);
+             break;
+ 
+         case 0xB0: //controller
+@@ -542,9 +538,7 @@
+                 sustain = midiData[2] & 0x40;
+                 if (sustain == 0)
+                 {
+-                    notes[npos++] = event->deltaFrames;
+-                    notes[npos++] = SUSTAIN; //end all sustained notes
+-                    notes[npos++] = 0;
++                    noteOn(SUSTAIN, 0);
+                 }
+                 break;
+ 
+@@ -566,10 +560,10 @@
+         default: break;
+         }
+ 
+-        if (npos > EVENTBUFFER) npos -= 3; //discard events if buffer full!!
++
+         event++; //?
+     }
+-    notes[npos] = EVENTS_DONE;
++
+     return 1;
+ }
+ 
+--- a/mdaPiano.h
++++ b/mdaPiano.h
+@@ -18,39 +18,39 @@
+     ~mdaPianoProgram() {}
+ 
+ private:
+-    float param[NPARAMS];
+-    char  name[24];
++    float param[NPARAMS]{};
++    char  name[24]{};
+ };
+ 
+ 
+ struct VOICE  //voice state
+ {
+-    VstInt32  delta;  //sample playback
+-    VstInt32  frac;
+-    VstInt32  pos;
+-    VstInt32  end;
+-    VstInt32  loop;
++    VstInt32  delta{};  //sample playback
++    VstInt32  frac{};
++    VstInt32  pos{};
++    VstInt32  end{};
++    VstInt32  loop{};
+ 
+-    float env;  //envelope
+-    float dec;
++    float env{};  //envelope
++    float dec{};
+ 
+-    float f0;   //first-order LPF
+-    float f1;
+-    float ff;
++    float f0{};   //first-order LPF
++    float f1{};
++    float ff{};
+ 
+-    float outl;
+-    float outr;
+-    VstInt32  note; //remember what note triggered this
++    float outl{};
++    float outr{};
++    VstInt32  note{}; //remember what note triggered this
+ };
+ 
+ 
+ struct KGRP  //keygroup
+ {
+-    VstInt32  root;  //MIDI root note
+-    VstInt32  high;  //highest note
+-    VstInt32  pos;
+-    VstInt32  end;
+-    VstInt32  loop;
++    VstInt32  root{};  //MIDI root note
++    VstInt32  high{};  //highest note
++    VstInt32  pos{};
++    VstInt32  end{};
++    VstInt32  loop{};
+ };
+ 
+ class mdaPiano : public AudioEffectX
+@@ -86,7 +86,7 @@
+ 
+     virtual VstInt32 getNumMidiInputChannels() { return 1; }
+ 
+-    VstInt32 guiUpdate;
++    VstInt32 guiUpdate{};
+     void guiGetDisplay(VstInt32 index, char* label);
+ 
+ private:
+@@ -95,22 +95,22 @@
+     void fillpatch(VstInt32 p, char* name, float p0, float p1, float p2, float p3, float p4,
+         float p5, float p6, float p7, float p8, float p9, float p10, float p11);
+ 
+-    float param[NPARAMS];
+-    mdaPianoProgram* programs;
+-    float Fs, iFs;
++    float param[NPARAMS]{};
++    mdaPianoProgram* programs{};
++    float Fs{}, iFs{};
+ 
+ #define EVENTBUFFER 120
+ #define EVENTS_DONE 99999999
+-    VstInt32 notes[EVENTBUFFER + 8];  //list of delta|note|velocity for current block
++    VstInt32 notes[EVENTBUFFER + 8]{};  //list of delta|note|velocity for current block
+ 
+     ///global internal variables
+     KGRP  kgrp[16];
+-    VOICE voice[NVOICES];
+-    VstInt32  activevoices, poly, cpos;
+-    short* waves;
+-    VstInt32  cmax;
+-    float* comb, cdep, width, trim;
+-    VstInt32  size, sustain;
+-    float fine, random, stretch;
+-    float muff, muffvel, sizevel, velsens, volume;
++    VOICE voice[NVOICES]{};
++    VstInt32  activevoices{}, poly{}, cpos{};
++    short* waves{};
++    VstInt32  cmax{};
++    float* comb{}, cdep{}, width{}, trim{};
++    VstInt32  size{}, sustain{};
++    float fine{}, random{}, stretch{};
++    float muff{}, muffvel{}, sizevel{}, velsens{}, volume{};
+ };
+--- a/mdaRePsycho!.h
++++ b/mdaRePsycho!.h
+@@ -27,18 +27,18 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
+-    float fParam7;
+-    float thr, env, gai, tun, wet, dry, fil, buf, buf2;
+-    VstInt32 tim, dtim;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
++    float fParam7{};
++    float thr{}, env{}, gai{}, tun{}, wet{}, dry{}, fil{}, buf{}, buf2{};
++    VstInt32 tim{}, dtim{};
+ 
+-    float* buffer, * buffer2;
+-    VstInt32 size;
++    float* buffer{}, * buffer2{};
++    VstInt32 size{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaRezFilter.h
++++ b/mdaRezFilter.h
+@@ -27,23 +27,23 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam0;
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
+-    float fParam7;
+-    float fParam8;
+-    float fParam9;
++    float fParam0{};
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
++    float fParam7{};
++    float fParam8{};
++    float fParam9{};
+ 
+-    float fff, fq, fg, fmax;
+-    float env, fenv, att, rel;
+-    float flfo, phi, dphi, bufl;
+-    float buf0, buf1, buf2, tthr, env2;
+-    int lfomode, ttrig, tatt;
++    float fff{}, fq{}, fg{}, fmax{};
++    float env{}, fenv{}, att{}, rel{};
++    float flfo{}, phi{}, dphi{}, bufl{};
++    float buf0{}, buf1{}, buf2{}, tthr{}, env2{};
++    int lfomode{}, ttrig{}, tatt{};
+ 
+-    char bugFix[32]; //Program name was corrupted here!
+-    char programName[32];
++    char bugFix[32]{}; //Program name was corrupted here!
++    char programName[32]{};
+ };
+--- a/mdaRingMod.h
++++ b/mdaRingMod.h
+@@ -26,15 +26,15 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fPhi;
+-    float fdPhi;
+-    float nul;
+-    float twoPi;
+-    float ffb, fprev;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fPhi{};
++    float fdPhi{};
++    float nul{};
++    float twoPi{};
++    float ffb{}, fprev{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaRoundPan.h
++++ b/mdaRoundPan.h
+@@ -27,14 +27,14 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float phi, dphi;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float phi{}, dphi{};
+ 
+     //float *buffer, *buffer2;
+       //VstInt32 size, bufpos;
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaShepard.h
++++ b/mdaShepard.h
+@@ -27,13 +27,13 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam0;
+-    float fParam1;
+-    float fParam2;
+-    float level, pos, rate, drate, out, filt;
++    float fParam0{};
++    float fParam1{};
++    float fParam2{};
++    float level{}, pos{}, rate{}, drate{}, out{}, filt{};
+ 
+-    float* buf1, * buf2;
+-    VstInt32 max, mode;
++    float* buf1{}, * buf2{};
++    VstInt32 max{}, mode{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaSpecMeter.cpp
++++ b/mdaSpecMeter.cpp
+@@ -12,7 +12,7 @@
+ #include <math.h>
+ 
+ #include "mdaSpecMeter.h"
+-#include "mdaSpecMeterGUI.h"
++
+ //#include "AEffEditor.hpp"
+ 
+ AudioEffect *createEffectInstance(audioMasterCallback audioMaster)
+@@ -25,13 +25,14 @@
+ 	param[_PARAM0] = 0.5;
+ 	param[_PARAM1] = 0.5;
+ 	param[_PARAM2] = 0.75;
++	param[_PARAM3] = 0.0;
+ 	strcpy (name, "default");
+ }
+ 
+ 
+ mdaSpecMeter::mdaSpecMeter(audioMasterCallback audioMaster) : AudioEffectX(audioMaster, 1, NPARAMS)
+ {
+-  editor = new mdaSpecMeterGUI(this);
++
+ 
+ 	programs = new mdaSpecMeterProgram[numPrograms];
+ 	if(programs)
+--- a/mdaSpecMeter.h
++++ b/mdaSpecMeter.h
+@@ -27,8 +27,8 @@
+ public:
+ 	mdaSpecMeterProgram();
+ private:	
+-	float param[NPARAMS];
+-	char  name[24];
++	float param[NPARAMS]{};
++	char  name[24]{};
+ };
+ 
+ 
+@@ -58,16 +58,16 @@
+ 	virtual VstInt32 getVendorVersion() { return 1000; }
+ 
+   //accessible from editor
+-  VstInt32  counter;
+-  float Lpeak, Lhold, Lmin, Lrms, Rpeak, Rhold, Rmin, Rrms, Corr; // #11  #12
+-  float band[2][16]; //8  16  31  64  125  250  500  1k  2k  4k  8k  16k  32k
++  VstInt32  counter{};
++  float Lpeak{}, Lhold{}, Lmin{}, Lrms{}, Rpeak{}, Rhold{}, Rmin{}, Rrms{}, Corr{}; // #11  #12
++  float band[2][16]{}; //8  16  31  64  125  250  500  1k  2k  4k  8k  16k  32k
+  
+ private:
+-	mdaSpecMeterProgram *programs;
++	mdaSpecMeterProgram *programs{};
+ 
+-  float iK, lpeak, lmin, lrms, rpeak, rmin, rrms, corr, den;
+-  float lpp[6][16], rpp[6][16];
+-  VstInt32  topband, K, kmax;
++  float iK{}, lpeak{}, lmin{}, lrms{}, rpeak{}, rmin{}, rrms{}, corr{}, den{};
++  float lpp[6][16]{}, rpp[6][16]{};
++  VstInt32  topband{}, K{}, kmax{};
+ 
+-  float gain;
++  float gain{};
+ };
+--- a/mdaSplitter.h
++++ b/mdaSplitter.h
+@@ -22,8 +22,8 @@
+     }
+ private:
+     friend class mdaSplitter;
+-    float param[NPARAMS];
+-    char name[32];
++    float param[NPARAMS]{};
++    char name[32]{};
+ };
+ 
+ 
+@@ -53,12 +53,12 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    mdaSplitterProgram programs[NPROGS];
++    mdaSplitterProgram programs[NPROGS]{};
+ 
+     ///global internal variables
+-    float freq, fdisp, buf0, buf1, buf2, buf3;  //filter
+-    float level, ldisp, env, att, rel;          //level switch
+-    float ff, ll, pp, i2l, i2r, o2l, o2r;       //routing (freq, level, phase, output)
+-    VstInt32  mode;
++    float freq{}, fdisp{}, buf0{}, buf1{}, buf2{}, buf3{};  //filter
++    float level{}, ldisp{}, env{}, att{}, rel{};          //level switch
++    float ff{}, ll{}, pp{}, i2l{}, i2r{}, o2l{}, o2r{};       //routing (freq, level, phase, output)
++    VstInt32  mode{};
+ 
+ };
+--- a/mdaStereo.h
++++ b/mdaStereo.h
+@@ -27,17 +27,17 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
+ 
+-    float fli, fld, fri, frd, fdel, phi, dphi, mod;
++    float fli{}, fld{}, fri{}, frd{}, fdel{}, phi{}, dphi{}, mod{};
+ 
+-    float* buffer;
+-    VstInt32 size, bufpos;
++    float* buffer{};
++    VstInt32 size{}, bufpos{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaSubSynth.h
++++ b/mdaSubSynth.h
+@@ -28,17 +28,17 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
+-    float filt1, filt2, filt3, filt4, filti, filto;
+-    float thr, rls, dry, wet, dvd, phs, osc, env, phi, dphi;
+-    int typ;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
++    float filt1{}, filt2{}, filt3{}, filt4{}, filti{}, filto{};
++    float thr{}, rls{}, dry{}, wet{}, dvd{}, phs{}, osc{}, env{}, phi{}, dphi{};
++    int typ{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+ 
+ 
+--- a/mdaTalkBox.h
++++ b/mdaTalkBox.h
+@@ -17,8 +17,8 @@
+ 
+ private:
+     friend class mdaTalkBox;
+-    float param[NPARAMS];
+-    char name[24];
++    float param[NPARAMS]{};
++    char name[24]{};
+ };
+ 
+ 
+@@ -49,20 +49,20 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    mdaTalkBoxProgram* programs;
++    mdaTalkBoxProgram* programs{};
+ 
+     void lpc(float* buf, float* car, VstInt32 n, VstInt32 o);
+     void lpc_durbin(float* r, int p, float* k, float* g);
+ 
+     ///global internal variables
+-    float* car0, * car1;
+-    float* window;
+-    float* buf0, * buf1;
++    float* car0{}, * car1{};
++    float* window{};
++    float* buf0{}, * buf1{};
+ 
+-    float emphasis;
+-    VstInt32 K, N, O, pos, swap;
+-    float wet, dry, FX;
++    float emphasis{};
++    VstInt32 K{}, N{}, O{}, pos{}, swap{};
++    float wet{}, dry{}, FX{};
+ 
+-    float d0, d1, d2, d3, d4;
+-    float u0, u1, u2, u3, u4;
++    float d0{}, d1{}, d2{}, d3{}, d4{};
++    float u0{}, u1{}, u2{}, u3{}, u4{};
+ };
+--- a/mdaTestTone.h
++++ b/mdaTestTone.h
+@@ -29,18 +29,18 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategGenerator; }
+ 
+ protected:
+-    int updateTx, updateRx;
++    int updateTx{}, updateRx{};
+     void update();
+ 
+-    float fParam0, fParam1, fParam2;
+-    float fParam3, fParam4, fParam5;
+-    float fParam6, fParam7;
++    float fParam0{}, fParam1{}, fParam2{};
++    float fParam3{}, fParam4{}, fParam5{};
++    float fParam6{}, fParam7{};
+ 
+-    float thru, left, right, len;
+-    float zz0, zz1, zz2, zz3, zz4, zz5, phi, dphi;
+-    float sw, swd, swx, fscale, cal, calx;
+-    VstInt32 swt;
+-    int mode;
++    float thru{}, left{}, right{}, len{};
++    float zz0{}, zz1{}, zz2{}, zz3{}, zz4{}, zz5{}, phi{}, dphi{};
++    float sw{}, swd{}, swx{}, fscale{}, cal{}, calx{};
++    VstInt32 swt{};
++    int mode{};
+ 
+-    char programName[32], disp1[16], disp2[16];
++    char programName[32]{}, disp1[16]{}, disp2[16]{};
+ };
+--- a/mdaThruZero.h
++++ b/mdaThruZero.h
+@@ -14,8 +14,8 @@
+     mdaThruZeroProgram();
+ private:
+     friend class mdaThruZero;
+-    float param[NPARAMS];
+-    char name[32];
++    float param[NPARAMS]{};
++    char name[32]{};
+ };
+ 
+ 
+@@ -46,11 +46,11 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    mdaThruZeroProgram* programs;
++    mdaThruZeroProgram* programs{};
+ 
+     ///global internal variables
+-    float rat, dep, wet, dry, fb, dem; //rate, depth, wet & dry mix, feedback, mindepth
+-    float phi, fb1, fb2, deps;         //lfo & feedback buffers, depth change smoothing 
+-    float* buffer, * buffer2;           //maybe use 2D buffer?
+-    VstInt32 size, bufpos;
++    float rat{}, dep{}, wet{}, dry{}, fb{}, dem{}; //rate, depth, wet & dry mix, feedback, mindepth
++    float phi{}, fb1{}, fb2{}, deps{};         //lfo & feedback buffers, depth change smoothing 
++    float* buffer{}, * buffer2{};           //maybe use 2D buffer?
++    VstInt32 size{}, bufpos{};
+ };
+--- a/mdaTracker.cpp
++++ b/mdaTracker.cpp
+@@ -85,11 +85,11 @@
+ 
+ float mdaTracker::filterFreq(float hz)
+ {
+-    float j, k, r = 0.999f;
++    double j, k, r = 0.999;
+ 
+     j = r * r - 1;
+-    k = (float)(2.f - 2.f * r * r * cos(0.647f * hz / getSampleRate()));
+-    return (float)((sqrt(k * k - 4.f * j * j) - k) / (2.f * j));
++    k = (2.0 - 2.0 * r * r * cos(0.647 * hz / getSampleRate()));
++    return (float)((sqrt(k * k - 4.0 * j * j) - k) / (2.0 * j));
+ }
+ 
+ void mdaTracker::setProgramName(char* name)
+--- a/mdaTracker.h
++++ b/mdaTracker.h
+@@ -28,19 +28,19 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
+-    float fParam7;
+-    float fParam8;
+-    float fi, fo, thr, phi, dphi, ddphi, trans;
+-    float buf1, buf2, dn, bold, wet, dry;
+-    float dyn, env, rel, saw, dsaw;
+-    float res1, res2, buf3, buf4;
+-    VstInt32  max, min, num, sig, mode;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
++    float fParam7{};
++    float fParam8{};
++    float fi{}, fo{}, thr{}, phi{}, dphi{}, ddphi{}, trans{};
++    float buf1{}, buf2{}, dn{}, bold{}, wet{}, dry{};
++    float dyn{}, env{}, rel{}, saw{}, dsaw{};
++    float res1{}, res2{}, buf3{}, buf4{};
++    VstInt32  max{}, min{}, num{}, sig{}, mode{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaTransient.h
++++ b/mdaTransient.h
+@@ -26,14 +26,14 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    float fParam1;
+-    float fParam2;
+-    float fParam3;
+-    float fParam4;
+-    float fParam5;
+-    float fParam6;
+-    float dry, att1, att2, rel12, att34, rel3, rel4;
+-    float env1, env2, env3, env4, fili, filo, filx, fbuf1, fbuf2;
++    float fParam1{};
++    float fParam2{};
++    float fParam3{};
++    float fParam4{};
++    float fParam5{};
++    float fParam6{};
++    float dry{}, att1{}, att2{}, rel12{}, att34{}, rel3{}, rel4{};
++    float env1{}, env2{}, env3{}, env4{}, fili{}, filo{}, filx{}, fbuf1{}, fbuf2{};
+ 
+-    char programName[32];
++    char programName[32]{};
+ };
+--- a/mdaVocInput.h
++++ b/mdaVocInput.h
+@@ -13,8 +13,8 @@
+     mdaVocInputProgram();
+ private:
+     friend class mdaVocInput;
+-    float param[NPARAMS];
+-    char name[32];
++    float param[NPARAMS]{};
++    char name[32]{};
+ };
+ 
+ 
+@@ -46,20 +46,20 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    mdaVocInputProgram* programs;
++    mdaVocInputProgram* programs{};
+ 
+     ///global internal variables
+-    VstInt32  track;        //track input pitch
+-    float pstep;        //output sawtooth inc per sample
+-    float pmult;        //tuning multiplier
+-    float sawbuf;
+-    float noise;        //breath noise level
+-    float lenv, henv;   //LF and overall envelope
+-    float lbuf0, lbuf1; //LF filter buffers
+-    float lbuf2;        //previous LF sample
+-    float lbuf3;        //period measurement
+-    float lfreq;        //LF filter coeff
+-    float vuv;          //voiced/unvoiced threshold
+-    float maxp, minp;   //preferred period range
++    VstInt32  track{};        //track input pitch
++    float pstep{};        //output sawtooth inc per sample
++    float pmult{};        //tuning multiplier
++    float sawbuf{};
++    float noise{};        //breath noise level
++    float lenv{}, henv{};   //LF and overall envelope
++    float lbuf0{}, lbuf1{}; //LF filter buffers
++    float lbuf2{};        //previous LF sample
++    float lbuf3{};        //period measurement
++    float lfreq{};        //LF filter coeff
++    float vuv{};          //voiced/unvoiced threshold
++    float maxp{}, minp{};   //preferred period range
+     double root;        //tuning reference (MIDI note 0 in Hz)
+ };
+--- a/mdaVocoder.h
++++ b/mdaVocoder.h
+@@ -13,8 +13,8 @@
+     mdaVocoderProgram();
+ private:
+     friend class mdaVocoder;
+-    float param[NPARAMS];
+-    char name[32];
++    float param[NPARAMS]{};
++    char name[32]{};
+ };
+ 
+ 
+@@ -45,20 +45,20 @@
+     virtual VstPlugCategory getPlugCategory() { return kPlugCategEffect; }
+ 
+ protected:
+-    mdaVocoderProgram* programs;
++    mdaVocoderProgram* programs{};
+ 
+     // thread safety
+     std::mutex mutex;
+ 
+     // global internal variables
+-    VstInt32  swap;       //input channel swap
+-    float gain;       //output level
+-    float thru, high; //hf thru              
+-    float kout; //downsampled output
+-    VstInt32  kval; //downsample counter
+-    VstInt32  nbnd; //number of bands
++    VstInt32  swap{};       //input channel swap
++    float gain{};       //output level
++    float thru{}, high{}; //hf thru              
++    float kout{}; //downsampled output
++    VstInt32  kval{}; //downsample counter
++    VstInt32  nbnd{}; //number of bands
+ 
+     // filter coeffs and buffers - seems it's faster to leave this global than make local copy 
+-    float f[NBANDS][13]; //[0-15][0 1 2 | 0 1 2 3 | 0 1 2 3 | val rate]
++    float f[NBANDS][13]{}; //[0-15][0 1 2 | 0 1 2 3 | 0 1 2 3 | val rate]
+                          //   #   reson | carrier |modulator| envelope
+ };

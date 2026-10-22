@@ -1,4 +1,4 @@
-# Canonical Brickworks C library. Run from the repository root.
+# Canonical Perone libraries. Run from the repository root.
 # Tibia's Perone templates live on its perone branch, not main.
 BRICKWORKS_REV ?= f412e503a08c3ee2656561890eef64365b5a76b7
 TIBIA_REV ?= 884c7d4d7cf8ad9b60eb00402941c2be46271ec4
@@ -63,7 +63,7 @@ LIBRARY_JOBS := $(addprefix library-build-,$(BW_EXAMPLES))
 # Mono and Poly share parameters; small effects share a metadata-driven layout.
 BW_UI = $(if $(filter synth_mono synth_poly,$*),synth,$(if $(wildcard plugins/brickworks/ui/$*.js),$*,effect))
 # Bundle the same pure metadata helpers used by the editor; no host URL at runtime.
-BW_UI_COMMON := plugins/brickworks/ui/panel.js plugins/brickworks/ui/panel.css \
+BW_UI_COMMON := plugins/ui/panel.js plugins/brickworks/ui/panel.css \
 	plugins/brickworks/ui/plot.js editor/parameters.js
 
 library-build: $(LIBRARY_JOBS)
@@ -94,3 +94,5 @@ $(LIBRARY_JOBS): library-build-%: $(LIBRARY_GEN)/%/Makefile
 	mkdir -p "$(<D)/ui"
 	cp $(BW_UI_COMMON) plugins/brickworks/ui/$(BW_UI).js "$(<D)/ui/"
 	$(MAKE) -C "$(<D)" ui-web OUTPUT="$(LIBRARY_DEST)/$*/build/bw_example_$*.perone" UI_WEB_DIR=ui
+
+include plugins/mda/library.mk

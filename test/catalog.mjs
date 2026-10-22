@@ -20,6 +20,8 @@ try {
         await put(`plugins/${name}.perone/product.json`, product);
         await put(`plugins/${name}.perone/x86_64-linux/fixture.so`, "native");
         await put(`plugins/${name}.perone/ui/index.js`, "export default {};\n");
+        await put(`plugins/${name}.perone/LICENSE`, "Bundle license\n");
+        await put(`plugins/${name}.perone/MDA-LICENSE`, "DSP license\n");
     }
     await put("plugins/ready.perone/wasm32/fixture.wasm", dsp);
     await put("plugins/ready.perone/wasm32/fixture-ui.wasm", new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
@@ -29,18 +31,19 @@ try {
     const files = JSON.parse(await readFile(join(directory, output), "utf8"));
     assert.deepEqual(files.map(file => file.path), [
         "examples/score.janet", "examples/sources/theme.janet",
+        "plugins/ready.perone/LICENSE", "plugins/ready.perone/MDA-LICENSE",
         "plugins/ready.perone/product.json", "plugins/ready.perone/ui/index.js",
         "plugins/ready.perone/ui/style.css", "plugins/ready.perone/wasm32/fixture-ui.wasm",
         "plugins/ready.perone/wasm32/fixture.wasm"
     ]);
     for (const file of files) {
         assert.deepEqual(await readFile(join(directory, "published", file.url)), await readFile(join(directory, file.path)));
-        assert.equal(!!file.asset, file.path.includes("/ui/") || file.path.endsWith("-ui.wasm"));
+        assert.equal(!!file.asset, file.path.includes("/ui/") || file.path.endsWith("-ui.wasm") || file.path.endsWith("LICENSE"));
     }
     // Explicit bundle roots (including a trailing slash) obey the same readiness rule.
     execFileSync(process.execPath, [script, output, "plugins/native-only.perone/"], {cwd: directory});
     assert.deepEqual(JSON.parse(await readFile(join(directory, output), "utf8")), []);
-    console.log("OK: web catalog keeps score imports and UI assets, and publishes only bundles with a Wasm DSP");
+    console.log("OK: web catalog keeps score imports, UI assets and licenses, and publishes only bundles with a Wasm DSP");
 } finally {
     await rm(directory, {recursive: true, force: true});
 }

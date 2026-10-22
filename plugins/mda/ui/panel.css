@@ -1,0 +1,80 @@
+.mda-panel {
+    --accent:#78d9c7; --ink:#e8edf1; --muted:#8c9ba5; --line:#ffffff13; --base:#1b2028;
+    color:var(--ink); background:var(--base); color-scheme:dark; font:11px/1.35 system-ui,sans-serif;
+    font-variant-numeric:tabular-nums; min-width:280px; max-width:560px; border-radius:7px; overflow:hidden;
+    border:1px solid #ffffff28; border-top:3px solid var(--accent); box-shadow:0 5px 16px #0003;
+    user-select:none; -webkit-user-select:none;
+}
+.mda-panel *, .mda-panel *::before, .mda-panel *::after { box-sizing:border-box; }
+.mda-panel button,.mda-panel input,.mda-panel select { font:inherit; color:inherit; }
+.mda-panel button { cursor:pointer; }
+.mda-panel :focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.mda-modules { display:flex; flex-wrap:wrap; }
+.mda-module { flex:1 1 190px; min-width:0; padding:10px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); }
+.mda-module h2 { margin:0 0 9px; font-size:9px; text-transform:uppercase; letter-spacing:.14em; text-align:center; color:var(--accent); font-weight:600; }
+.mda-controls { display:grid; grid-template-columns:repeat(var(--columns,3),minmax(0,1fr)); gap:8px; }
+.mda-control { display:flex; flex-direction:column; align-items:center; min-width:0; gap:5px; }
+.mda-label { font-size:10px; text-align:center; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mda-dial { width:42px; height:42px; position:relative; border-radius:50%; background:conic-gradient(from 225deg,var(--accent) 0 var(--angle),#ffffff12 var(--angle) 270deg,transparent 270deg); }
+.mda-dial::before { content:""; position:absolute; inset:3px; border:3px solid var(--base); border-radius:50%; background:linear-gradient(145deg,#46515b,#20252c); box-shadow:0 2px 3px #0006; }
+.mda-pointer { position:absolute; inset:6px; transform:rotate(calc(var(--angle) - 135deg)); pointer-events:none; }
+.mda-pointer::before { content:""; position:absolute; top:2px; left:calc(50% - 1px); width:2px; height:8px; background:var(--ink); }
+.mda-range { position:absolute; inset:0; width:100%; height:100%; opacity:0; margin:0; cursor:ns-resize; touch-action:none; }
+.mda-dial:focus-within { outline:2px solid var(--accent); outline-offset:3px; }
+.mda-value { width:100%; min-width:0; text-align:center; border:0; border-radius:2px; padding:2px 0; background:transparent; font:10px/1.2 ui-monospace,monospace !important; color:var(--accent) !important; }
+input.mda-value:focus { background:#0004; user-select:text; -webkit-user-select:text; }
+.mda-presets { display:block; width:calc(100% - 16px); margin:8px; padding:4px 7px; border:1px solid var(--line); background:#0003; border-radius:3px; font-size:10px !important; }
+.mda-discrete { grid-column:1 / -1; align-items:stretch; }
+.mda-choices { display:flex; flex-wrap:wrap; gap:3px; }
+.mda-choices button,.mda-toggle button { flex:1 1 48px; padding:5px 6px; border:1px solid var(--line); border-radius:3px; background:#0003; color:var(--muted); font-size:10px; }
+.mda-choices button[aria-pressed=true],.mda-toggle button[aria-pressed=true] { color:#111820; background:var(--accent); border-color:var(--accent); }
+.mda-toggle { justify-content:center; }
+.mda-toggle button { flex:none; }
+.mda-visual { position:relative; padding:20px 24px 24px; background:#0003; border-bottom:1px solid var(--line); }
+.mda-plane { position:relative; height:76px; border:1px solid #ffffff24; background:linear-gradient(transparent calc(var(--y) - .5px),#ffffff13 0 calc(var(--y) + .5px),transparent 0),linear-gradient(90deg,transparent calc(var(--x) - .5px),#ffffff13 0 calc(var(--x) + .5px),transparent 0),repeating-linear-gradient(90deg,#ffffff07 0 1px,transparent 1px 25%); }
+.mda-axis { position:absolute; font-size:9px; color:var(--muted); }
+.mda-y { top:5px; left:24px; } .mda-x { right:24px; bottom:5px; }
+.mda-point { position:absolute; transform:translate(-50%,50%); width:24px; height:24px; border:1px solid var(--accent); border-radius:50%; background:var(--base); color:var(--accent) !important; touch-action:none; cursor:move !important; padding:0; box-shadow:0 0 0 4px #ffffff08; }
+.mda-visual>svg { width:100%; height:100px; display:block; overflow:visible; }
+.mda-curve { fill:none; stroke:var(--accent); stroke-width:1.5; stroke-linejoin:round; }
+.mda-guide { fill:none; stroke:#ffffff23; stroke-width:1; }
+.mda-caption { display:block; margin-top:4px; font:9px ui-monospace,monospace; color:var(--muted); text-align:center; }
+.mda-module.hero { flex-basis:100%; }
+.hero .mda-dial { width:64px; height:64px; }
+.hero .mda-pointer { inset:9px; } .hero .mda-pointer::before { height:12px; }
+.faders .mda-dial { height:76px; width:30px; border-radius:3px; background:repeating-linear-gradient(0deg,transparent 0 11px,#ffffff25 11px 12px); }
+.faders .mda-dial::before { inset:0 13px; background:#0006; border:0; border-radius:2px; }
+.faders .mda-pointer { inset:auto 1px; top:calc(65px - var(--ratio) * 65px); height:11px; transform:none; background:linear-gradient(#6c7983,#39434d); border:1px solid #ffffff45; border-radius:2px; box-shadow:0 2px 3px #0006; }
+.faders .mda-pointer::before { left:2px; right:2px; top:4px; width:auto; height:1px; background:var(--accent); }
+.mda-bands .mda-module:nth-child(-n+3) { flex-basis:30%; padding-inline:7px; }
+.mda-bands .mda-module:nth-child(1) { --accent:#eab276; } .mda-bands .mda-module:nth-child(2) { --accent:#90d7b6; } .mda-bands .mda-module:nth-child(3) { --accent:#a5b8ef; }
+.mda-bands .mda-module:nth-child(-n+3) .mda-controls { gap:2px; }
+.mda-drum { --base:#292327; }
+.mda-drum .mda-module:nth-child(-n+3) { flex-basis:100%; border-left:4px solid var(--accent); }
+.mda-drum .mda-module:nth-child(2) { --accent:#e4c16c; } .mda-drum .mda-module:nth-child(3) { --accent:#94c9b8; }
+.mda-drum .mda-module h2 { text-align:left; }
+.mda-digital { --base:#192825; border-radius:2px; }
+.mda-digital .mda-dial { border-radius:4px; } .mda-digital .mda-dial::before { border-radius:3px; }
+.mda-digital .mda-visual { background:repeating-linear-gradient(0deg,#0002 0 1px,transparent 1px 4px),#101b18; }
+.mda-tape { --base:#282725; } .mda-tape .mda-visual { border:7px solid var(--base); box-shadow:inset 0 0 0 1px #ffffff1a; border-radius:14px; }
+.mda-tape .mda-plane { background-color:#191d1b; }
+.mda-keys { --base:#2b2420; } .mda-piano { --base:#26272a; }
+.mda-keys .mda-module:nth-child(1),.mda-piano .mda-module:nth-child(1) { flex-basis:100%; background:#ffffff06; }
+.mda-analog { --base:#252a2b; } .mda-analog .mda-module:nth-child(2n) { background:#ffffff04; }
+.mda-fm { --base:#172a2b; border-radius:3px; } .mda-fm .mda-module h2 { color:var(--muted); }
+.mda-strip { max-width:360px; } .mda-strip .mda-module { flex-basis:100%; }
+.mda-console { --base:#303332; max-width:320px; } .mda-console .mda-module { border:0; }
+.mda-pedal { --base:#3a2e2c; max-width:340px; border-radius:14px; border-width:2px; }
+.mda-pedal .mda-visual { background:transparent; padding:10px 20px; }
+.mda-pedal .mda-module { border:0; } .mda-pedal .hero .mda-dial { width:76px; height:76px; }
+.mda-matrix .mda-plane { background-image:linear-gradient(135deg,transparent 49.5%,#ffffff15 50%,transparent 50.5%),linear-gradient(45deg,transparent 49.5%,#ffffff15 50%,transparent 50.5%); }
+.mda-rotor { --base:#302a25; } .mda-rotor .mda-plane { border-radius:50%; background:radial-gradient(ellipse,transparent 45%,#ffffff13 46% 47%,transparent 48%); }
+.mda-orbit { --base:#222538; max-width:340px; } .mda-orbit .mda-visual>svg { height:130px; }
+.mda-space { --base:#1c2930; } .mda-space .mda-plane { border-style:dashed; }
+.mda-voice { --base:#202c2c; } .mda-voice .mda-module:nth-last-child(1) { background:#ffffff06; }
+.mda-spectrum { padding:12px; } .mda-spectrum .channel-0 { fill:var(--accent); } .mda-spectrum .channel-1 { fill:#7ea7dd; }
+.mda-spectrum text { fill:var(--muted); font:7px ui-monospace,monospace; }
+.mda-levels { display:flex; flex-wrap:wrap; gap:6px 14px; padding-top:10px; }
+.mda-level { display:flex; justify-content:space-between; flex:1 1 100px; gap:8px; font:10px ui-monospace,monospace; }
+.mda-level span { color:var(--muted); }
+@media (pointer:coarse) { .mda-point { width:30px; height:30px; } .mda-dial { width:46px; height:46px; } .mda-choices button,.mda-toggle button { min-height:32px; } }

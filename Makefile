@@ -40,7 +40,7 @@ SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli build/gui build/tools/perone-host build/tools/plugin-scan
 NATIVE_TESTS = $(addprefix build/test/,dsp daw player routing score_view plugins ui view_json sequence clap lv2 vst3 midi midi_devices)
-FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h host/*.c host/*.h posix/*.c posix/*.h gtk/*.c x11/*.c x11/*.h tools/*.c test/*.c test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c test/vst3/*.c web/*.c web/*.h plugins/*/*.h plugins/*/test.c))
+FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h host/*.c host/*.h posix/*.c posix/*.h gtk/*.c x11/*.c x11/*.h tools/*.c test/*.c test/*.cpp test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c test/vst3/*.c web/*.c web/*.h plugins/*/*.h plugins/*/*.cpp plugins/*/test.c))
 GUI_LOOP = posix/gui_loop.o
 ifeq ($(TARGET_OS),Linux)
 GUI_LOOP = gtk/gui_loop.o
@@ -361,9 +361,9 @@ SCORE_EXPORTS = "_score_new","_web_score_free","_score_listen","_score_duration"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'
 PLAYER_FLAGS = -pthread -sWASM_WORKERS -DMA_ENABLE_AUDIO_WORKLETS -DMA_NO_ENCODING
 PLAYER_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_dsp","_score_state_save","_score_state_load","_player_time","_player_audio_time","_player_active","_player_monitor","_score_player","_transport_update_web","_player_free","_player_start","_player_stop","_player_pause","_player_seek","_player_sync","_player_status","_player_context","_player_node","_player_midi","_player_midi_read","_player_midi_capture","_player_midi_panic"]'
-# Publish C Brickworks examples only; fxpp_* and synthpp_* are duplicate C++ variants.
+# Exclude Brickworks fxpp_* and synthpp_*: they duplicate the C examples.
 WEB_CONTENT ?= lib examples $(wildcard plugins/*/build/*.perone \
-    $(BRICKWORKS_PERONE)/fx_*/build/*.perone $(BRICKWORKS_PERONE)/synth_*/build/*.perone \
+    $(BRICKWORKS_PERONE)/fx_*/build/*.perone $(BRICKWORKS_PERONE)/synth_*/build/*.perone $(MDA_PERONE)/*.perone \
     ../asid/plugin/perone/build/asid.perone ../tibia/out/perone/c/build/tibia-test.perone)
 
 .PHONY: web web-offline
@@ -528,3 +528,18 @@ build/web/player.mjs: build/config/web-player.link
 $(WEB_FIXTURES): build/config/web-fixtures
 build/generated/web/miniaudio.h: build/config/web-audio
 build/generated/janet.c: build/config/janet
+
+# Run after building the native and Wasm library. HOST_CXX may be clang++ for sanitizers.
+MDA_TEST_FLAGS ?= -O1 -g -fwrapv -Wno-multichar -Wno-write-strings
+MDA_TESTS := $(addprefix build/test/mda/,$(MDA_NAMES))
+build/test/mda/%: test/mda.cpp plugins/mda/plugin_cxx.h plugins/mda/mda.h $(MDA_GEN)/%/Makefile
+	mkdir -p "$(@D)"
+	$(HOST_CXX) -std=c++17 $(MDA_TEST_FLAGS) $(MDA_INCLUDES) -I$(MDA_GEN)/$* -I$(MDA_GEN)/$*/src \
+	    $(if $(filter mdaSpecMeter,$*),-DMDA_METER) -MMD -MP -MF "$@.d" $< -o "$@"
+
+.PHONY: test-mda
+test-mda: $(MDA_TESTS) cli gui build/test/dsp build/web/offline.mjs build/web/player.mjs | build/test
+	@for test in $(MDA_TESTS); do "$$test" || exit $$?; done
+	$(NODE) test/mda.mjs
+	$(NODE) test/mda-ui.mjs
+-include $(addsuffix .d,$(MDA_TESTS))
