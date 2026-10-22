@@ -460,6 +460,12 @@ test-editor-web: web | build/test
 test-library: gui web | build/test
 	node test/library.mjs
 
+.PHONY: test-brickworks-ui
+test-brickworks-ui: gui build/web/player.mjs library | build/test
+	$(MAKE) -f plugins/library.mk library-build PERONE_PLATFORM=wasm32
+	$(MAKE) web
+	node test/brickworks-ui.mjs
+
 .PHONY: test-settings
 test-settings: gui test-web build/test/fixture.clap
 	node test/settings.mjs

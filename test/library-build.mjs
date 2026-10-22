@@ -16,6 +16,10 @@ for (let i = 0; i < names.length; i++) {
     const {product} = JSON.parse(readFileSync(join(bundles[i], "product.json"), "utf8"));
     assert.equal(product.bundleName, `bw_example_${names[i]}`);
     assert(statSync(binaries[i]).size > 0);
+    assert(product.ui?.web, "Every C example includes a web UI");
+    assert(existsSync(join(bundles[i], product.ui.web)));
+    assert.equal(readFileSync(join(bundles[i], "ui/parameters.js"), "utf8"), readFileSync("editor/parameters.js", "utf8"),
+        "Bundles carry the shared parameter mappings without runtime host imports");
 }
 execFileSync("./build/test/dsp", bundles, {stdio: "inherit"});
 

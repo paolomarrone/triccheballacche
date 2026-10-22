@@ -1,5 +1,5 @@
 // Metadata has one meaning for parameter controls and score automation.
-const units = {db: "dB", hz: "Hz", khz: "kHz", pc: "%"};
+const units = {db: "dB", hz: "Hz", khz: "kHz", pc: "%", semitone12TET: "st"};
 const format = new Intl.NumberFormat(undefined, {maximumFractionDigits: 3});
 const logarithmic = p => p.map === "logarithmic" && p.minimum * p.maximum > 0 && p.minimum !== p.maximum;
 

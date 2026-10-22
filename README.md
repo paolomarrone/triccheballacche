@@ -26,6 +26,11 @@ JSON module are linked into the host; no Janet or jpm installation is needed.
 The host uses Brickworks headers for its mixer. Plugins are compiled separately:
 `make library` builds the 40 Brickworks C examples as Perone bundles, excluding
 their C++ duplicates. No sibling repositories are needed for the commands above.
+All 40 include HTML/CSS/JS UIs, shared by native and Wasm. Try
+[controls.janet](examples/controls.janet): drag knobs vertically (Shift
+for fine adjustment), double-click to reset, or type a value. The XY pads control
+parameters, not a measured spectrum. UI sources live in `plugins/brickworks/ui/`;
+`make library` packages them without changing the upstream DSP sources.
 
 | Command | Output |
 | --- | --- |
@@ -224,6 +229,7 @@ All scores are directly in `examples/`; `examples/sources/` holds imported theme
 | Example | Focus |
 | --- | --- |
 | [patterns](examples/patterns.janet) | Brickworks instruments, stereo effects, pattern transforms and automation. Start here. |
+| [controls](examples/controls.janet) | Mono → SVF → EQ, with custom plugin UIs and looping automation. |
 | [live](examples/live.janet) | Loops and quantized updates. |
 | [routing](examples/routing.janet) | Groups, parallel effects and crossfades. |
 | [midi](examples/midi.janet) | Keyboard input and MIDI output. |
@@ -422,6 +428,7 @@ Formatting is in `.editorconfig` and
 | `make test-build` / `make test-build-web` | Node.js; also Emscripten for web. |
 | `make test-plugins` / `make test-brickworks` | Corresponding prebuilt bundles. |
 | `make test-library-build` | Node.js/npm; builds and checks the canonical library. |
+| `make test-brickworks-ui` | Emscripten, Chromium and native audio; checks the library UIs and both DSP backends. |
 | `make test-web` / `make test-browser` | Emscripten/Node.js; Chromium for browser. |
 | `make test-editor` | Native GUI build, Node.js, Chromium and an audio device. |
 | `make test-code` / `make test-parameter-ui` | Node.js and Chromium; no audio build. |
