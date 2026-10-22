@@ -42,6 +42,15 @@ export async function testPlayerLifecycle(host) {
     };
     try {
         let player = await open();
+        await player.control("watch", 0, true);
+        const snapshots = await player.controls([0]);
+        check(snapshots.length === 1 && snapshots[0].values.length > 0 && !snapshots[0].error,
+            "A batch must return the watched plugin's values");
+        for (const id of [-1, .5, NaN, Infinity, 4294967296])
+            await rejects(Promise.resolve().then(() => player.controls([id])), /Invalid plugin node/);
+        await player.control("watch", 0, false);
+        const detached = await player.controls([0]);
+        check(detached[0].error, "A detached plugin reports an error inside the batch");
         await player.context.close(); // A caller/browser can close the context before the player.
         await player.close();
         await player.close();

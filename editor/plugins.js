@@ -226,16 +226,25 @@ export function plugins(request, adapter, fail, showPanel) {
             await request("watch", token.revision, id, "web");
             if (entry.token !== token) return;
             token.controls.attach(ui);
+            token.watching = true;
             // Reveal only after current values, including host overrides, have arrived.
-            await pollEntry(entry);
+            await pollEntries([entry]);
         } catch (error) { failed(entry, token, error); }
     }
 
-    async function pollEntry(entry) {
-        const token = entry.token;
-        if (token && await token.controls.poll() && entry.token === token && token.host.inert) {
-            token.host.style.visibility = ""; token.host.inert = false;
-        }
+    async function pollEntries(views) {
+        const active = views.filter(entry => entry.token?.watching).map(entry => ({entry, token: entry.token}));
+        let pending;
+        // Capture every UI's edit sequence before awaiting the shared snapshot.
+        await Promise.all(active.map(async ({entry, token}, i) => {
+            const ready = await token.controls.poll(async () => {
+                pending ||= request("controls", token.revision, active.map(view => view.entry.id));
+                return (await pending).controls[i];
+            });
+            if (ready && entry.token === token && token.host.inert) {
+                token.host.style.visibility = ""; token.host.inert = false;
+            }
+        }));
     }
 
     return {
@@ -279,6 +288,6 @@ export function plugins(request, adapter, fail, showPanel) {
             }
         },
         dispose,
-        async poll() { for (const entry of [...entries.values()]) await pollEntry(entry); }
+        poll() { return pollEntries([...entries.values()]); }
     };
 }

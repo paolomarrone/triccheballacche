@@ -92,8 +92,12 @@ function request(op, ...args) {
             frames = response.revision === revision ? response.frames || [] : [];
             partial = response.truncated;
         }
-        projection.position(seconds, playing, op === "seek" && !response.error);
-        update();
+        // Plugin feedback carries no transport state on native. Updating the whole
+        // editor here would repaint it once for every control exchange.
+        if (typeof response.playing === "boolean") {
+            projection.position(seconds, playing, op === "seek" && !response.error);
+            update();
+        }
         if (response.error) throw Error(response.error);
         return response;
     });

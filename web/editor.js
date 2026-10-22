@@ -180,6 +180,8 @@ export async function command(op, ...args) {
             if (op === "watch") {
                 if (!["off", "web"].includes(values[0])) throw Error("Invalid view type");
                 await player.control("watch", node, values[0] === "web");
+            } else if (op === "controls") {
+                result.controls = await player.controls(node);
             } else {
                 result = await player.control(op, node, ...values);
             }

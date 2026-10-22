@@ -25,6 +25,25 @@ import {pluginControls} from "../editor/plugin-controls.js";
     console.log("OK: preset capture waits for edits and propagates write failures");
 }
 
+// Repeated snapshots do not repaint unchanged controls, but local edits invalidate feedback.
+{
+    const values = [], messages = [];
+    const controls = pluginControls({parameters: [{direction: "input", minimum: 0, maximum: 1}]},
+        async () => ({}), error => { throw error; });
+    controls.attach({set_parameter: (index, value) => values.push([index, value]), msg_in: bytes => messages.push([...bytes])});
+    const read = async () => ({values: [.25], messages: [[1]]});
+    assert(await controls.poll(read));
+    assert(await controls.poll(read));
+    assert.deepEqual(values, [[0, .25]]);
+    assert.deepEqual(messages, [[1], [1]], "Messages are events, even if their payloads match");
+    controls.callbacks.set_parameter(0, .75);
+    await controls.flush();
+    assert(await controls.poll(read));
+    assert.deepEqual(values, [[0, .25], [0, .25]], "Fresh automation can restore the value from before a local edit");
+    controls.close();
+    console.log("OK: unchanged feedback is skipped without losing messages or post-edit automation");
+}
+
 // Shared UI behavior needs only the browser and metadata, without audio builds.
 await mkdir("build/test", {recursive: true});
 const directory = await mkdtemp("build/test/parameter-ui-"), server = serve(0);
@@ -49,7 +68,7 @@ try {
             const request = async (op, revision, id, index, value) => {
                 if (op === 'parameter') return new Promise(resolve => writes.push(() => { values[index] = value; resolve({}); }));
                 if (op === 'controls') {
-                    const data = {values: [...values], messages: []};
+                    const data = {controls: id.map(() => ({values: [...values], messages: []}))};
                     if (hold) return new Promise(resolve => replies.push(() => resolve(data)));
                     return data;
                 }
@@ -174,6 +193,39 @@ try {
         await evaluate('controlsTest.host.dispose()');
         assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 0);
         console.log("OK: styled parameter controls, keyboard menus, switches, logarithmic mapping and disposal");
+
+        await evaluate(`(async () => {
+            const {plugins} = await import('/editor/plugins.js');
+            const product = {parameters: [{id: 'gain', name: 'Gain', direction: 'input', minimum: 0, maximum: 1, defaultValue: 0}]};
+            const requests = [], failures = [];
+            let reply;
+            const host = plugins(async (op, revision, ids) => {
+                if (op !== 'controls') return {};
+                requests.push(ids);
+                if (globalThis.holdBatch) return new Promise(resolve => { reply = resolve; });
+                return {controls: ids.map(id => ({values: [(id + 1) / 10], messages: []}))};
+            }, {}, error => failures.push(error.message), () => {});
+            host.status(true, false);
+            host.score({revision: 1, nodes: [0, 1, 2].map(id => ({name: 'Plugin ' + id, product, inputs: id ? [id - 1] : []}))
+                .concat({inputs: [2]}), tracks: [[0, 3, 1, 2]]});
+            host.show(true);
+            for (const details of document.querySelectorAll('.plugin')) details.open = true;
+            globalThis.batchTest = {host, requests, failures, reply(data) { reply(data); }};
+        })()`);
+        await wait('Array.from(document.querySelectorAll(".plugin-body > div")).filter(host => !host.inert).length === 3');
+        await evaluate('batchTest.requests.length = 0; holdBatch = true; globalThis.batchPending = batchTest.host.poll(); void 0');
+        assert.deepEqual(await evaluate('batchTest.requests'), [[0, 1, 2]], "Open views share one snapshot request");
+        await evaluate('document.querySelectorAll(".plugin")[1].open = false');
+        await wait('document.querySelectorAll(".plugin-body > div").length === 2');
+        await evaluate(`batchTest.reply({controls: [{values: [.8], messages: []}, {values: [.9], messages: []}, {error: 'Plugin disconnected'}]}); batchPending`);
+        assert.deepEqual(await evaluate('batchTest.failures'), ["Plugin disconnected"]);
+        assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 1, "Disposal and a failed view do not affect the others");
+        assert.equal(await evaluate('document.querySelector(".plugin-body > div").shadowRoot.querySelector("input").value'), "0.8");
+        await evaluate('holdBatch = false; batchTest.requests.length = 0; batchTest.host.poll()');
+        assert.deepEqual(await evaluate('batchTest.requests'), [[0]], "Closed and failed views are absent from subsequent snapshots");
+        await evaluate('batchTest.host.dispose(); batchTest.requests.length = 0; batchTest.host.poll()');
+        assert.deepEqual(await evaluate('batchTest.requests'), [], "No requests without mounted views");
+        console.log("OK: batched plugin feedback, disposal during reads and independent view failures");
     });
 } finally {
     server.closeAllConnections();

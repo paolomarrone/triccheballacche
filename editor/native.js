@@ -15,6 +15,7 @@ export async function connect() {
 
 export async function command(op, ...args) {
     if (op === "message") args[2] = args[2].map(byte => byte.toString(16).padStart(2, "0")).join("");
+    if (op === "controls") args[1] = args[1].join(",");
     const reply = JSON.parse(await webui.call("command", op, ...args));
     const state = reply.state;
     if (state?.view?.score) state.view.score.controlRevision = state.controlRevision;

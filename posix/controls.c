@@ -64,15 +64,75 @@ static const char *preset(Session *s, int node, State *state, const char *text, 
 	return state->length > 16 * 1024 * 1024 ? "Preset exceeds 16 MiB" : NULL;
 }
 
+// Each view keeps its own error within a shared snapshot.
+static void snapshot(Json *json, Controls *c, Session *s, int id) {
+	DSP *dsp = s->nodes[id].dsp[0].dsp;
+	const char *error = !dsp ? "Invalid module" : !c->watched[id] ? "Web view not attached" : NULL;
+	json_print(json, "{");
+	if (!error) {
+		json_print(json, "\"values\":[");
+		for (int i = 0; i < dsp->config.nparams; ++i) {
+			double value;
+			json_print(json, "%s", i ? "," : "");
+			if (read_dsp(dsp, i, &value) && isfinite(value))
+				json_print(json, "%.17g", value);
+			else
+				json_print(json, "null");
+		}
+		json_print(json, "],\"messages\":[");
+		size_t size;
+		unsigned char bytes[MAX_MESSAGE];
+		for (int i = 0; i < MESSAGE_SLOTS; ++i) {
+			int result = receive_dsp(dsp, &size, bytes);
+			if (result <= 0) {
+				if (result < 0)
+					error = "DSP message queue full";
+				break;
+			}
+			json_print(json, "%s[", i ? "," : "");
+			for (size_t j = 0; j < size; ++j)
+				json_print(json, "%s%u", j ? "," : "", bytes[j]);
+			json_print(json, "]");
+		}
+		json_print(json, "],");
+	}
+	json_print(json, "\"error\":");
+	json_string(json, error);
+	json_print(json, "}");
+}
+
 void controls_command(Controls *c, Session *s, unsigned revision, webui_event_t *event) {
 	const char *op = webui_get_string_at(event, 0), *error = NULL;
-	double version = number(event, 1), id = number(event, 2);
+	double version = number(event, 1);
 	Json json = {0};
 	json_print(&json, "{");
 	if (version != revision || !s->audio) {
 		error = "Stale plugin view";
 		goto done;
 	}
+	if (!strcmp(op, "controls")) {
+		const char *text = webui_get_string_at(event, 2);
+		int ids[MAX_NODES], count = 0;
+		while (*text) {
+			char *end;
+			long node = strtol(text, &end, 10);
+			if (end == text || node < 0 || node >= s->nnodes || count == MAX_NODES ||
+			    (*end && (*end != ',' || !end[1]))) {
+				error = "Invalid plugin nodes";
+				goto done;
+			}
+			ids[count++] = node;
+			text = *end ? end + 1 : end;
+		}
+		json_print(&json, "\"controls\":[");
+		for (int i = 0; i < count; ++i) {
+			json_print(&json, "%s", i ? "," : "");
+			snapshot(&json, c, s, ids[i]);
+		}
+		json_print(&json, "],");
+		goto done;
+	}
+	double id = number(event, 2);
 	if (!isfinite(id) || id < 0 || id >= s->nnodes || id != floor(id) || !s->nodes[(int)id].dsp[0].dsp) {
 		error = "Invalid module";
 		goto done;
@@ -153,32 +213,6 @@ void controls_command(Controls *c, Session *s, unsigned revision, webui_event_t 
 			if (!error && send_dsp(dsp, length / 2, bytes))
 				error = "UI message queue full";
 		}
-	} else if (!strcmp(op, "controls")) {
-		json_print(&json, "\"values\":[");
-		for (int i = 0; i < config->nparams; ++i) {
-			double value;
-			json_print(&json, "%s", i ? "," : "");
-			if (read_dsp(dsp, i, &value) && isfinite(value))
-				json_print(&json, "%.17g", value);
-			else
-				json_print(&json, "null");
-		}
-		json_print(&json, "],\"messages\":[");
-		size_t size;
-		unsigned char bytes[MAX_MESSAGE];
-		for (int i = 0; i < MESSAGE_SLOTS; ++i) {
-			int result = receive_dsp(dsp, &size, bytes);
-			if (result <= 0) {
-				if (result < 0)
-					error = "DSP message queue full";
-				break;
-			}
-			json_print(&json, "%s[", i ? "," : "");
-			for (size_t j = 0; j < size; ++j)
-				json_print(&json, "%s%u", j ? "," : "", bytes[j]);
-			json_print(&json, "]");
-		}
-		json_print(&json, "],");
 	}
 done:
 	json_print(&json, "\"error\":");

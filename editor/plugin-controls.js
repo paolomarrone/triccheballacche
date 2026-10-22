@@ -3,6 +3,7 @@
 export function pluginControls(product, request, fail) {
     const edits = new Map(), gestures = new Set(), messages = [];
     const changes = product.parameters.map(() => 0), uninitialized = new Set(changes.keys());
+    const received = [];
     let ui, closed = false, sending;
 
     async function flush() {
@@ -25,8 +26,12 @@ export function pluginControls(product, request, fail) {
 
     function send(op, ...args) {
         if (closed) return;
-        if (op === "parameter") { ++changes[args[0]]; edits.set(args[0], args[1]); }
-        else if (messages.length < 64) messages.push(args[0]);
+        if (op === "parameter") {
+            const [index, value] = args;
+            ++changes[index]; edits.set(index, value);
+            // Fresh automation may restore the value from before this edit.
+            received[index] = undefined;
+        } else if (messages.length < 64) messages.push(args[0]);
         else { fail(Error("UI message queue full")); return; }
         if (ui && !sending) sending = flush();
     }
@@ -60,18 +65,20 @@ export function pluginControls(product, request, fail) {
             ui = view;
             if (!sending && (edits.size || messages.length)) sending = flush();
         },
-        async poll() {
+        async poll(read) {
             if (!ui || closed) return false;
             const before = changes.slice(), pending = new Set(edits.keys());
             try {
-                const data = await request("controls");
+                const data = await read();
                 if (closed) return false;
+                if (data.error) throw Error(data.error);
                 for (const [index, value] of data.values.entries()) {
                     if (closed) return false;
                     // Deliver only feedback taken after the latest local edit.
                     if (Number.isFinite(value) && !gestures.has(index) && !pending.has(index) &&
                         !edits.has(index) && changes[index] === before[index]) {
-                        ui.set_parameter?.(index, value);
+                        if (received[index] !== value) ui.set_parameter?.(index, value);
+                        received[index] = value;
                         uninitialized.delete(index);
                     }
                 }
