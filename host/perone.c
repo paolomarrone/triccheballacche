@@ -226,10 +226,11 @@ int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity) {
 	if (!(p->instance = a->alloc()) || a->init(p->instance, &callbacks))
 		return -1;
 	p->initialized = 1;
+	// Parameter setters may derive coefficients from the sample rate.
+	a->set_sample_rate(p->instance, sample_rate);
 	for (int i = 0; i < config->nparams; ++i)
 		if (!(config->parameters[i].flags & PARAM_OUTPUT))
 			a->set_parameter(p->instance, i, config->parameters[i].value);
-	a->set_sample_rate(p->instance, sample_rate);
 	size_t size = a->mem_req(p->instance);
 	if (size) {
 		if (!(p->memory = malloc(size)))

@@ -118,8 +118,8 @@ export class Perone {
             p.instance = api.alloc() >>> 0;
             if (!p.instance || api.init(p.instance, callbacks)) throw Error("Perone initialization failed");
             p.initialized = true;
-            parameters.forEach((value, i) => { if (!isOutput(i)) api.set_parameter(p.instance, i, value); });
             api.set_sample_rate(p.instance, sampleRate);
+            parameters.forEach((value, i) => { if (!isOutput(i)) api.set_parameter(p.instance, i, value); });
             const size = api.mem_req(p.instance) >>> 0;
             if (size) api.mem_set(p.instance, allocate(size));
             api.reset(p.instance);

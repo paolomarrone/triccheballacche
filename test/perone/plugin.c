@@ -89,6 +89,7 @@ static void reset(void *p) {
 static void set(void *p, size_t index, float value) {
 	assert(index == 1 || index == 2);
 	Instance *i = p;
+	assert(i->initialized && i->rate > 0);
 	if (index == 1)
 		i->gain = value;
 	else
