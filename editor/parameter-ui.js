@@ -1,5 +1,5 @@
 // Parameter controls adapted from tibia/templates/perone-web/ui.js (GPL-3.0-or-later).
-import {parameterRatio, parameterValue, parameterText} from "./parameters.js";
+import {parameterClamp, parameterRatio, parameterValue, parameterText} from "./parameters.js";
 
 let serial = 0;
 export function create(element, callbacks) {
@@ -51,9 +51,8 @@ export function create(element, callbacks) {
                 control.addEventListener("keydown", event => { if (!event.repeat && event.key != "Tab") begin(); });
             }
             control.addEventListener("input", () => {
-                let next = choices ? Number(control.value) : toggle ? (control.checked ? 1 : 0) : parameterValue(p, Number(control.value));
+                const next = parameterClamp(p, choices ? Number(control.value) : toggle ? (control.checked ? 1 : 0) : parameterValue(p, Number(control.value)));
                 begin();
-                if (p.integer) next = Math.round(next);
                 set(next); callbacks.set_parameter(index, next);
             });
             for (const event of ["change", "pointerup", "pointercancel", "keyup", "blur"]) control.addEventListener(event, end);

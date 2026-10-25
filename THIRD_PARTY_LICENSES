@@ -27,6 +27,37 @@ These projects use GNU GPL version 3; the full text is in LICENSE. The copied
 Perone headers and Tibia web UI code explicitly permit GPL version 3 or later;
 that permission is preserved. This project's license does not replace it.
 
+MDA plugins
+-----------
+https://github.com/pluginguru/mda-effects
+
+The optional Perone library reuses MDA DSP and piano sample data. Port changes
+are in patches/mda-perone.patch; each built bundle includes both MIT notices.
+No VST2 SDK is included or required.
+
+MIT License
+
+Copyright (c) 2008 Paul Kellett
+Copyright (c) 2019 Shane Dunne
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 A-SID (optional external plugin)
 -------------------------------
 https://github.com/Orastron/asid

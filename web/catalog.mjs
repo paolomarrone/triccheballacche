@@ -6,6 +6,7 @@ import {createHash} from "node:crypto";
 const [output, ...roots] = process.argv.slice(2);
 if (!output || !roots.length) throw Error("Usage: node web/catalog.mjs output.json directory-or-file ...");
 const files = new Set();
+const notice = path => /(^|[-_])(LICENSE|LICENCE|COPYING|NOTICE)([.-]|$)/i.test(basename(path));
 async function collect(path) {
     path = path.split(sep).join("/"); // Manifest paths and bundle URLs are platform-independent.
     if ((await stat(path)).isDirectory()) {
@@ -20,7 +21,8 @@ async function collect(path) {
         }
         for (const entry of await readdir(path, {withFileTypes: true}))
             if (!entry.name.startsWith(".") && !entry.isSymbolicLink()) await collect(join(path, entry.name));
-    } else if (path.includes(".perone/ui/") || [".janet", ".json", ".wasm"].includes(extname(path))) files.add(path);
+    } else if (path.includes(".perone/ui/") || (path.includes(".perone/") && notice(path)) ||
+        [".janet", ".json", ".wasm"].includes(extname(path))) files.add(path);
 }
 for (const root of roots) await collect(root);
 const assets = basename(output, ".json") + "-files", manifest = [];
@@ -33,7 +35,7 @@ for (const path of [...files].sort()) {
     const url = `${assets}/${name}`;
     await mkdir(dirname(join(dirname(output), url)), {recursive: true});
     await copyFile(path, join(dirname(output), url));
-    let asset = bundle?.[2].startsWith("ui/");
+    let asset = bundle && (bundle[2].startsWith("ui/") || notice(path));
     if (bundle && !asset && extname(path) === ".wasm") {
         // A UI can live beside the DSP. Recognize the DSP's ABI without executing either module.
         const module = new WebAssembly.Module(await readFile(path));

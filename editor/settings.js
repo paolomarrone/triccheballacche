@@ -57,9 +57,9 @@ export function settings(request, open, fail) {
         byId("settings").disabled = !enabled;
         engine.disabled = !enabled || !state.prepared || audioPending;
         if (!audioPending) engine.checked = !!state.audio;
-        engine.closest("label").title = state.prepared ? "" : "Prepare a score first";
+        engine.closest("label").title = state.prepared ? "" : "Apply code or press Play first";
         rate.disabled = !enabled || !sampleRate || state.audio || audioPending;
-        rate.parentElement.title = state.audio ? "Turn the engine off to change sample rate" : "Applies on the next Play or Prepare";
+        rate.parentElement.title = state.audio ? "Turn the engine off to change sample rate" : "Applies on the next Play or Apply";
         catalog.status(enabled);
     }
     return {

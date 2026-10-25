@@ -1,4 +1,4 @@
-# Canonical Brickworks C library. Run from the repository root.
+# Canonical Perone libraries. Run from the repository root.
 # Tibia's Perone templates live on its perone branch, not main.
 BRICKWORKS_REV ?= f412e503a08c3ee2656561890eef64365b5a76b7
 TIBIA_REV ?= bde094cc61d2c4e510e9aeb48a30f84a783b1717
@@ -60,6 +60,11 @@ LIBRARY_TEMPLATES := $(wildcard $(TIBIA_SOURCE)/templates/api/* $(TIBIA_SOURCE)/
 LIBRARY_JOBS := $(addprefix library-build-,$(BW_EXAMPLES))
 # Template headers such as "new" are inputs, not implicit C++ executable targets.
 $(LIBRARY_TEMPLATES): ;
+# Mono and Poly share parameters; small effects share a metadata-driven layout.
+BW_UI = $(if $(filter synth_mono synth_poly,$*),synth,$(if $(wildcard plugins/brickworks/ui/$*.js),$*,effect))
+# Bundle the same pure metadata helpers used by the editor; no host URL at runtime.
+BW_UI_COMMON := plugins/ui/panel.js plugins/brickworks/ui/panel.css \
+	plugins/brickworks/ui/plot.js editor/parameters.js
 
 library-build: $(LIBRARY_JOBS)
 	@test -n "$(BW_EXAMPLES)" || { echo "No Brickworks C examples found; run make library first." >&2; exit 1; }
@@ -74,7 +79,8 @@ $(LIBRARY_GEN)/%/Makefile: $(BW_SOURCE)/examples/%/src/product.json $(BW_SOURCE)
 	$(NODE) "$(TIBIA_SOURCE)/tibia" "$(BW_SOURCE)/examples/common/src/company.json,$<" \
 	    "$(TIBIA_SOURCE)/templates/api" "$(@D)/src" 'product.version="$(BW_VERSION)"' 'product.buildVersion="1"'
 	$(NODE) "$(TIBIA_SOURCE)/tibia" "$(BW_SOURCE)/examples/common/src/company.json,$<" \
-	    "$(TIBIA_SOURCE)/templates/perone" "$(@D)" 'product.version="$(BW_VERSION)"' 'product.buildVersion="1"'
+	    "$(TIBIA_SOURCE)/templates/perone" "$(@D)" 'product.version="$(BW_VERSION)"' 'product.buildVersion="1"' \
+	    'product.ui={"web":"ui/$(BW_UI).js"}'
 	$(NODE) "$(TIBIA_SOURCE)/tibia" "$(BW_SOURCE)/examples/common/src/company.json,$<" \
 	    "$(TIBIA_SOURCE)/templates/perone-make" "$(@D)" 'product.version="$(BW_VERSION)"' 'product.buildVersion="1"'
 	touch "$@"
@@ -85,3 +91,10 @@ $(LIBRARY_JOBS): library-build-%: $(LIBRARY_GEN)/%/Makefile
 	    COMMON_DIR="$(<D)" DATA_DIR="$(<D)" API_DIR="$(<D)/src" PLUGIN_DIR="$(BW_SOURCE)/examples/$*/src" \
 	    CPPFLAGS="$(CPPFLAGS) -I$(BW_SOURCE)/include -I$(BW_SOURCE)/examples/common/src" \
 	    CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" PERONE_PLATFORM="$(PERONE_PLATFORM)" $(PERONE_BUILD)
+	rm -rf "$(<D)/ui" "$(BRICKWORKS_PERONE)/$*/build/bw_example_$*.perone/ui"
+	mkdir -p "$(<D)/ui"
+	cp $(BW_UI_COMMON) plugins/brickworks/ui/$(BW_UI).js "$(<D)/ui/"
+	$(MAKE) -f "$<" -I "$(<D)" ui-web OUTPUT="$(BRICKWORKS_PERONE)/$*/build/bw_example_$*.perone" \
+	    COMMON_DIR="$(<D)" DATA_DIR="$(<D)" UI_WEB_DIR="$(<D)/ui"
+
+include plugins/mda/library.mk

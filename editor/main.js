@@ -38,17 +38,17 @@ function update() {
     preferences.status(ready && !busy, {audio, prepared});
     controls?.status(prepared, busy);
     projection.status(prepared, busy);
-    for (const id of ["open", "save", "prepare", "play", "views"]) byId(id).disabled = !ready || busy;
-    byId("stop").disabled = !ready || busy || !playing;
-    byId("audio").disabled = !ready || busy || !prepared;
-    byId("audio").checked = audio;
-    byId("play").title = `${needsEvaluation() ? "Evaluate and play" : "Play"} · Ctrl+Space · Ctrl+Enter to prepare`;
+    for (const id of ["open", "save", "apply", "play", "views"]) byId(id).disabled = !ready || busy;
+    const play = byId("play");
+    play.setAttribute("aria-label", playing ? "Stop" : "Play");
+    play.title = playing ? "Stop · Ctrl+Space / Esc" : `${needsEvaluation() ? "Apply and play" : "Play"} · Ctrl+Space`;
+    text("play", playing ? "■" : "▶");
     byId("rewind").disabled = byId("time").disabled = !ready || busy || !prepared;
     path.disabled = !ready || busy;
     code.readOnly(!ready || busy);
     text("modified", dirty() ? "●" : "");
-    text("state", !ready ? "Connecting…" : busy ? "Please wait…" : !playing ? "Stopped" :
-        pending ? "Playing · revision queued" : tracking() ? `Playing${partial ? " · partial origins" : ""}` : "Playing · tracking paused: press Play to apply changes");
+    text("state", !ready ? "Connecting…" : busy ? "Please wait…" : !audio ? "Audio off" : !playing ? "Ready" :
+        pending ? "Playing · revision queued" : tracking() ? `Playing${partial ? " · partial origins" : ""}` : "Playing · tracking paused: apply code to resume");
     cursor();
     document.title = `${dirty() ? "* " : ""}${savedPath ? savedPath + " · " : ""}triccheballacche`;
     code.mark(playing && tracking() ? frames.filter(frame => frame[0] === tracedPath).map(frame => frame[1]) : []);
@@ -92,8 +92,12 @@ function request(op, ...args) {
             frames = response.revision === revision ? response.frames || [] : [];
             partial = response.truncated;
         }
-        projection.position(seconds, playing, op === "seek" && !response.error);
-        update();
+        // Plugin feedback carries no transport state on native. Updating the whole
+        // editor here would repaint it once for every control exchange.
+        if (typeof response.playing === "boolean") {
+            projection.position(seconds, playing, op === "seek" && !response.error);
+            update();
+        }
         if (response.error) throw Error(response.error);
         return response;
     });
@@ -111,6 +115,7 @@ async function action(op, entry = path.value, file) {
     try {
         // Prior commands may invalidate the preparation or finish a live revision.
         await queue;
+        if (op === "toggle") op = playing ? "stop" : "play";
         if (op === "play" && needsEvaluation()) op = "run";
         const evaluating = op === "run" || op === "prepare";
         const updating = evaluating && live && playing && entry === tracedPath;
@@ -160,8 +165,9 @@ const projection = timeline(request, origins => {
     node(id, path) { controls?.node(id, path); }
 }, time => action("seek", time), showError);
 
-for (const op of ["save", "prepare", "play", "stop"]) byId(op).addEventListener("click", () => action(op));
-byId("audio").onchange = () => action("audio", Number(byId("audio").checked));
+byId("save").onclick = () => action("save");
+byId("apply").onclick = () => action("prepare");
+byId("play").onclick = () => action("toggle");
 byId("rewind").onclick = () => action("seek", 0);
 byId("time").onkeydown = event => {
     if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
@@ -195,12 +201,12 @@ function shortcut(event) {
     if (event.defaultPrevented || document.querySelector("dialog:modal, :popover-open")) return;
     let op;
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") op = "prepare";
-    if ((event.ctrlKey || event.metaKey) && event.code === "Space") op = "play";
+    if ((event.ctrlKey || event.metaKey) && event.code === "Space") op = "toggle";
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") op = "save";
     if (event.key === "Escape" && playing) op = "stop";
     if (op) {
         event.preventDefault();
-        action(op);
+        if (!event.repeat) action(op);
     }
 }
 document.addEventListener("keydown", shortcut);

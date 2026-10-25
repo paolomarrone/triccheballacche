@@ -47,6 +47,7 @@
   (distinct
     (if (= format :perone)
       ["plugins" (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks")
+       (or (os/getenv "MDA_PERONE") "build/library/mda")
        (or (os/getenv "ASID_PERONE") "../asid/plugin/perone/build/asid.perone")
        (or (os/getenv "TIBIA_PERONE") "../tibia/out/perone/c/build/tibia-test.perone")]
       (do

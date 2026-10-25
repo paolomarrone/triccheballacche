@@ -30,6 +30,7 @@ typedef struct {
 	MidiInput *midi_in;
 	MidiBuffer *midi_out;
 	InputState *inputs; // Per-edge solo fades and latency compensation.
+	int ninputs;
 } NodeState;
 
 typedef struct {

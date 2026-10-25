@@ -21,7 +21,7 @@ try {
         assert.equal(await evaluate('getComputedStyle(document.querySelector("#sheet")).display'), "flex");
         const source = await evaluate('document.querySelector("#code").textContent');
         await click("#play");
-        await wait('!document.querySelector("#stop").disabled');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Stop"');
         await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
         const revision = await evaluate('document.querySelector("#timeline").dataset.revision');
         await wait(`(async () => {
@@ -39,8 +39,8 @@ try {
         await writeFile(`build/test/editor-web-${basename(entry, ".janet")}.png`, Buffer.from(screenshot.data, "base64"));
         await set("#code", "# draft\n" + source);
         assert.equal(await evaluate('document.querySelector("#marks").childElementCount'), 0);
-        await click("#stop");
-        await wait('document.querySelector("#state").textContent === "Stopped"');
+        await click('#play[aria-label="Stop"]');
+        await wait('document.querySelector("#state").textContent === "Ready"');
         assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision);
         const size = await evaluate('[document.querySelector("#score-canvas").width,document.querySelector("#score-canvas").height]');
         await evaluate(`(() => {
@@ -58,10 +58,10 @@ try {
         assert(await evaluate('Number(document.querySelector("#score-canvas").dataset.notes) > 0'));
         await set("#code", source); // Restore the exact unsaved score.
         await click("#play");
-        await wait('!document.querySelector("#stop").disabled');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Stop"');
         assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision, "Restoring the prepared buffer resumes the existing score");
-        await click("#stop");
-        await wait('document.querySelector("#state").textContent === "Stopped"');
+        await click('#play[aria-label="Stop"]');
+        await wait('document.querySelector("#state").textContent === "Ready"');
         assert.equal(await evaluate('document.querySelector("#errors").hidden'), true);
         const downloaded = source + "\n# Unicode 音\n";
         await set("#code", downloaded);

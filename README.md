@@ -1,20 +1,19 @@
 # triccheballacche
 
 A minimal scriptable DAW: Janet scores, C audio, Perone, CLAP, LV2 and VST3 plugins.
-The native and browser editors share the same interface, audio engine and 2D/3D score view.
+Native and browser editors share the interface, audio engine and 2D/3D score view.
 Music can be finite or repeat indefinitely, with quantized live updates.
 
-This is a development project. Linux, Windows x64 and Chromium/Wasm are tested;
-macOS is unverified. Scripts and plugins must be
-trusted. Plugin crashes are not isolated, and APIs may change.
+Linux, Windows x64 and Chromium/Wasm are supported; macOS is unverified. This is a development project: APIs may change, scripts and plugins
+must be trusted, and plugin crashes are not isolated.
 
 ## Build and run
 
-Run commands from the repository root. Windows uses the same Make targets inside
-MSYS2 UCRT64; see the one-time setup below.
-On Linux you need a C compiler, GNU Make, git,
-curl and patch. The native build also needs Meson, Ninja and pkg-config for
-Lilv and its dependencies; the plugin library needs Node.js and npm.
+Run commands from the repository root. Install a C compiler, GNU Make, git, curl,
+patch, Meson, Ninja and pkg-config. The plugin library also needs C++17, Node.js
+and npm. Dependencies are fetched at pinned versions into `.deps/`; Janet and
+Spork's JSON module are embedded. No Janet installation or sibling checkout is
+needed for the canonical library.
 
 ```sh
 make -j4 cli library
@@ -23,98 +22,37 @@ mkdir -p renders
 ./build/cli --play examples/patterns.janet 48000
 ```
 
-Dependencies are downloaded into `.deps/` at pinned versions. Janet and Spork's
-JSON module are linked into the host; no Janet or jpm installation is needed.
-The host uses Brickworks headers for its mixer. Plugins are compiled separately:
-`make library` builds the 40 Brickworks C examples as Perone bundles, excluding
-their C++ duplicates. No sibling repositories are needed for the commands above.
-
-| Command | Output |
+| Target | Output |
 | --- | --- |
-| `make` or `make cli` | `build/cli`: playback and WAV export. |
+| `make` / `make cli` | `build/cli`: playback and WAV export. |
 | `make gui` | `build/gui`: native editor. |
-| `make library` | `build/library/brickworks/`: plugin bundles. |
-| `make web` | `build/web/player.{mjs,wasm}` and project catalog. |
+| `make library` | `build/library/{brickworks,mda}/`: 40 Brickworks C examples and 39 MDA plugins. |
+| `make web` | `build/web/player.{mjs,wasm}` and a catalog of scripts and prebuilt Wasm bundles. |
 | `make web-offline` | `build/web/offline.{mjs,wasm}`: offline rendering runtime. |
-| `make tools` | `build/tools/perone-host` and `build/tools/plugin-scan`: plugin diagnostics. |
+| `make tools` | `build/tools/{perone-host,plugin-scan}`: plugin diagnostics. |
 
-On Linux, the native editor needs X11 development libraries, GTK 3 and
-WebKitGTK 4.1 (or 4.0) runtime libraries. MIDI device support needs CMake and
-ALSA development headers on Linux. WebUI and PortMidi are fetched automatically.
+All library plugins have HTML/CSS/JS UIs shared by native and Wasm. MDA retains
+its C++ DSP, normalized 0–1 parameters and factory presets; the host remains C.
+Looplex reserves 200 seconds during preparation; its Reset control applies the
+selected length without reallocating during audio processing. Recorded loops
+are not included in presets.
+
+On Linux, the native editor needs X11 development libraries, CMake, ALSA headers,
+GTK 3 and WebKitGTK 4.1 or 4.0 runtime libraries.
+WebUI and PortMidi are fetched automatically.
 
 ```sh
 make gui
 ./build/gui examples/patterns.janet
-./build/gui --serve examples/patterns.janet  # Use a browser instead of a WebView.
+./build/gui --serve examples/patterns.janet
 ```
 
-### Windows x64
+`--serve` uses a browser to control the **native** engine; audio and plugin windows
+remain on the server machine. It survives page reloads and tab closure; Ctrl+C
+stops it. Reopening restores the running score, but reloads the startup file from
+disk; unsaved text belongs to the previous page.
 
-Requires Windows 10 version 1903 or newer. Executables embed a
-[UTF-8 process manifest](https://learn.microsoft.com/en-us/windows/apps/design/globalizing/use-utf8-code-page)
-so command-line arguments, environment variables and dependency file APIs use
-the same encoding as the host.
-
-Install [MSYS2](https://www.msys2.org/), open **MSYS2 UCRT64**, and update/install
-the development tools (restart the shell if the core update asks you to):
-
-```sh
-pacman -Syu
-pacman -S --needed make git patch diffutils unzip mingw-w64-ucrt-x86_64-{gcc,cmake,meson,pkgconf,nodejs}
-```
-
-From the repository root in that shell:
-
-```sh
-make -j4 cli gui tools library
-make test test-clap test-brickworks
-./build/gui.exe examples/patterns.janet
-```
-
-GNU Make and shell utilities run inside MSYS2; GCC produces native Windows
-binaries. Visual Studio Build Tools are not required. Meson/Ninja build only
-the LV2 dependencies, and CMake builds PortMidi, just as on Linux. Dependency
-sources stay pinned in `.deps/`; there is no separate Windows build system.
-The local plugins use the sibling checkouts documented below.
-
-Executables live in `build/`, `build/tools/` and `build/test/`, with an `.exe`
-suffix. They also run from PowerShell without MSYS2 in `PATH`: compiler runtimes
-are linked statically. Keep the matching DLLs, bundles, `editor/` and scores
-alongside the build; run from the repository root. Close programs before rebuilding.
-The repository path may contain spaces; use relative dependency overrides.
-
-The native editor needs the Microsoft Edge WebView2 Runtime; Make downloads
-and copies its pinned loader DLL. `gui.exe --serve examples/patterns.janet`
-uses a browser instead. Perone binaries use `x86_64-windows/<bundleName>.dll`.
-
-For Wasm, install `mingw-w64-ucrt-x86_64-emscripten` and reopen the UCRT64 shell.
-MSYS2 currently supplies Emscripten 6.0.12. The build defaults to
-`BINARYEN_CORES=1` on MSYS2 to avoid a Binaryen 133 worker-pool hang; `make -j`
-still builds independent targets concurrently.
-
-Verified on Windows: core native tests, all 40 Brickworks DSP bundles, WAV export,
-editor preparation/playback, WebView2, and CLAP audio/state/native-window fixtures.
-LV2/VST3 Windows adapters are compiled but still need validation with real plugins;
-their Linux-only fixture/UI tests have not been ported. MIDI device I/O also needs
-hardware testing. Native Perone windows are unavailable because UI ABI v1 only
-defines X11 and web; shared parameter controls and web UIs remain available.
-
-Plugin path environment variables use `;` on Windows. Discovery defaults to
-`%LOCALAPPDATA%/Programs/Common/{CLAP,VST3}`, `%APPDATA%/LV2` and
-`%COMMONPROGRAMFILES%/{CLAP,LV2,VST3}`; settings are stored in
-`%APPDATA%/triccheballacche/settings.json`. Prefer forward slashes in Janet paths.
-The core test suite omits Unix `fork`/`RLIMIT_FSIZE` fault injection on Windows;
-render failures and atomic destination replacement are still exercised.
-
-For the Windows editor smoke test, build the library and run
-`node test/windows.mjs` with `CHROMIUM` set to a Chromium/Edge executable.
-`make test-webview` and `make test-clap-ui` exercise the actual native windows.
-
-`--serve` keeps the engine running across page reloads and tab closure; stop it
-with Ctrl+C. Reopening the page restores the running score and controls, but
-loads the startup file from disk; unsaved text belongs to the previous page.
-
-For browser playback, install Emscripten **6.0.12** and Node.js.
+For audio running **in the browser**, install Emscripten **6.0.12** and Node.js:
 
 ```sh
 make -j4 library PERONE_PLATFORM=wasm32
@@ -123,19 +61,57 @@ node test/server.mjs
 ```
 
 Open <http://localhost:8000/editor/index.html?score=examples/patterns.janet>.
-The test server supplies the required COOP/COEP headers. Hosting requires HTTPS
-or localhost, AudioWorklet and shared memory; the score view requires WebGL 2.
-Without WebGL, editing and audio remain available.
+Hosting needs HTTPS or localhost, COOP/COEP headers, AudioWorklet and shared
+memory. The test server supplies the headers. The score view needs WebGL 2;
+editing and audio work without it. Pass absolute `EMCC`/`EMXX` paths if needed.
 
-`make web` publishes the scripts and already-built Wasm bundles; it does not
-compile plugins. Override `WEB_CONTENT` to select files and bundle directories,
-for example `make web WEB_CONTENT="lib examples build/library/brickworks"`.
-The catalog is under `build/web/`; `?project=URL` selects another catalog.
-Pass absolute `EMCC`/`EMXX` paths if Emscripten is outside `PATH`.
+`make web` packages existing Wasm plugins; it does not compile them. Override
+`WEB_CONTENT` to choose scripts and bundle directories, for example
+`make web WEB_CONTENT="lib examples build/library/brickworks"`.
+`?project=URL` selects another catalog. These are development assets, not a
+complete release package.
+
+### Windows x64
+
+Requires Windows 10 version 1903 or newer. Install [MSYS2](https://www.msys2.org/),
+open **MSYS2 UCRT64**, then:
+
+```sh
+pacman -Syu
+pacman -S --needed make git patch diffutils unzip mingw-w64-ucrt-x86_64-{gcc,cmake,meson,pkgconf,nodejs}
+make -j4 cli gui tools library
+make test test-clap test-brickworks
+./build/gui.exe examples/patterns.janet
+```
+
+Restart the shell if the MSYS2 update requests it. The same Make targets produce
+native Windows binaries with an `.exe` suffix and statically linked compiler
+runtimes. They also run from PowerShell without MSYS2 in `PATH`; keep DLLs, bundles,
+`editor/` and scores alongside the build. Run from the repository root and close
+programs before rebuilding. Repository paths may contain spaces; use relative
+dependency overrides. Executables embed a UTF-8 process manifest.
+
+The editor needs the Microsoft Edge WebView2 Runtime; Make fetches its pinned
+loader DLL. For Wasm, install `mingw-w64-ucrt-x86_64-emscripten` and reopen UCRT64.
+The build sets `BINARYEN_CORES=1` on MSYS2 to avoid a Binaryen 133 worker-pool hang;
+`make -j` still builds independent targets concurrently.
+
+Windows validation covers core tests, Brickworks DSPs, WAV export, editor
+playback, WebView2 and CLAP audio/state/windows. MDA, LV2/VST3 with real plugins
+and MIDI hardware still need Windows validation. Native Perone UI ABI v1 only
+defines X11 and web; use web UIs or shared parameter controls on Windows.
+Run `node test/windows.mjs` for the editor smoke test (`CHROMIUM` may point to
+Edge), `make test-webview` and `make test-clap-ui` for native windows.
+LV2/VST3 fixtures and Unix fault-injection tests remain Linux-only.
+
+Plugin path lists use `;`. Discovery defaults to
+`%LOCALAPPDATA%/Programs/Common/{CLAP,VST3}`, `%APPDATA%/LV2` and
+`%COMMONPROGRAMFILES%/{CLAP,LV2,VST3}`; settings live in
+`%APPDATA%/triccheballacche/settings.json`. Prefer forward slashes in Janet paths.
 
 ## Write music
 
-Save this as `score.janet` in the repository root after building the library:
+Save as `score.janet` in the repository root after building the library:
 
 ```janet
 (import ./lib/pattern :as p)
@@ -152,379 +128,231 @@ Save this as `score.janet` in the repository root after building the library:
 
 Run `./build/cli --play score.janet` or `./build/gui score.janet`. Imports are
 relative to the score; plugin paths are relative to the host's working directory.
-For a finite score or WAV export, give `daw/score` a duration:
-`(daw/score pattern {:duration 30})`, then `./build/cli score.janet renders/score.wav`.
-A graph without scheduled events needs neither `daw/score` nor `daw/end`:
-prepare it in the editor to play MIDI and adjust plugins with the timeline stopped.
-WAV export still requires an explicit, positive duration.
+For a finite score, use `(daw/score pattern {:duration 30})`; export with
+`./build/cli score.janet renders/score.wav`. A graph without scheduled events needs
+neither `daw/score` nor `daw/end`: Apply lets you play MIDI and adjust plugins with
+the timeline stopped. WAV export requires a positive duration.
 
-The audio graph is explicit: `daw/plugin` creates an instance, `daw/through`
-connects an effect, `daw/mix` combines signals and `daw/output` selects the final
-output. `daw/track` adds a visible gain/pan point with optional `:effects`;
-`daw/master` adds an optional master mixer. Reusing a handle shares its audio.
-Mix before a shared effect; cycles and disconnected nodes are errors.
+- **Graph:** `daw/plugin` creates an instance, `daw/through` connects an effect,
+  `daw/mix` combines signals and `daw/output` selects the output. `daw/track` adds
+  gain/pan and a visible lane, with optional `:effects`; `daw/master` adds a master
+  mixer. Reusing a handle shares its audio. Mix before a shared effect; cycles
+  and disconnected nodes are errors.
+- **Patterns:** immutable data in quarter-note beats. `p/steps`, `p/events` and
+  `p/curve` create them; `p/serial`, `p/parallel`, `p/map`, `p/stretch`, `p/reverse`
+  and `p/loop` compose them. Notes use `[:note node pitch velocity]` on intervals;
+  automation uses `[:param node parameter value]` on points. Repetitions are
+  queried as needed. Janet runs once per revision, outside the audio callback.
+- **Seconds:** `daw/note`, `daw/param`, `daw/midi-event` and `daw/end` build an
+  absolute timeline. `daw/schedule start bpm pattern` places a finite pattern in it.
+- **Export:** stereo float32 WAV by default, without clipping or normalization.
+  `(daw/end 30 {:format :pcm16 :normalize 0.94})` selects PCM16 and a target peak.
+  Leave time for release and effect tails. Playback ignores export normalization.
+  CLI defaults to 44100 Hz (last argument overrides); editors start at 48000 Hz.
 
-Patterns are immutable musical data in quarter-note beats. `p/steps`, `p/events`
-and `p/curve` create them; `p/serial`, `p/parallel`, `p/map`, `p/stretch`,
-`p/reverse` and `p/loop` compose them. Notes use `[:note node pitch velocity]`
-on intervals; automation uses `[:param node parameter value]` on points.
-Loops stay compact: playback and the timeline query repetitions as needed.
-Janet evaluates once per revision, never inside the audio callback.
-
-For absolute seconds, use `daw/note`, `daw/param`, `daw/midi-event` and `daw/end`.
-`daw/schedule start bpm pattern` places a finite pattern in that same timeline.
-`daw/info` and `daw/product` expose parameter and product metadata.
-Function descriptions live in [lib/daw.janet](lib/daw.janet),
+Function documentation is in [lib/daw.janet](lib/daw.janet),
 [lib/pattern.janet](lib/pattern.janet) and [lib/music.janet](lib/music.janet).
+`daw/info` and `daw/product` expose plugin metadata.
 
-Export defaults to stereo float32 WAV without clipping or normalization.
-`(daw/end 30 {:format :pcm16 :normalize 0.94})` selects PCM16 and a target peak.
-Allow time for release and effect tails. Playback ignores export normalization.
-The CLI defaults to 44100 Hz; its last argument selects the sample rate.
-Editors use 48000 Hz.
+## Editor
+
+Open with the folder icon, enter a path and press Enter, or choose an example.
+Save writes to disk on native; web Download saves a copy and updates session
+files. A web reload restores published files.
+
+| Control | Behavior |
+| --- | --- |
+| Apply · Ctrl/Command+Enter | Evaluate code/imports and enable audio. Preserve stopped/playing state. |
+| Play/Stop · Ctrl/Command+Space | Evaluate changed code before playing; stop holds position and releases sequenced notes. Esc also stops. MIDI and effect tails remain active. |
+| Ruler / time field | Seek, resetting DSP history and restoring controls. Spanning notes restart on Play. |
+| Follow | Keep the playhead visible. |
+| Automation | Show/hide curves; each lane's checklist selects parameters. Audio automation is unaffected. |
+| Routing node | Inspect its signal path in the plugin panel. Background/Escape clears selection. Routing is read-only. |
+| M / S | Mute/solo tracks and routed groups for audition. |
+| Plugin window icon | Detach controls/web UI into a floating window, fullscreen on small screens. Native-only UIs open their original window. Closing returns web controls to the panel. |
+| Plugin ↓ / ↑ | Import/export `.tbpreset.json` (up to 16 MiB). Both pause playback. |
+
+Opening a file keeps the current music running; Apply switches scores. During
+playback, Apply queues `daw/score` revisions on the next beat grid (`:quantum`,
+default 4). Use stable keyword identities for plugins. Graph, identities, tempo,
+duration and plugin configurations must match; stop before changing them.
+Errors leave current music running; stop or seek cancels queued revisions.
+
+In 2D, drag or Shift+wheel pans time, wheel zooms time, and Ctrl/Command+wheel
+resizes tracks. Wheel over names scrolls tracks. Touch supports drag and pinch.
+The left divider resizes the routing map. In 3D, drag orbits, right-drag pans and
+Alt+wheel zooms time; Reset view restores camera and zoom at the playhead.
+Code/Score switches views on small screens. Notes, curves and execution highlights
+link back to the code.
+
+The CodeJar editor provides Janet highlighting, indentation, paired brackets and
+undo/redo. Known limits: whole-document paste can append a newline, and delayed
+highlighting can reclaim focus immediately after typing.
+
+Manual edits and presets affect the prepared plugin, not Janet; seek/reevaluation
+restores score parameters. Knobs in library UIs support vertical drag, Shift for
+fine adjustment, double-click reset and numeric entry (normalized 0–1 for MDA).
+
+Settings contains Audio, Plugins and MIDI. Turn audio off to change sample rate;
+the next Play/Apply rebuilds the graph. Native plugin paths accept `~/`, folders
+and bundles. Apply saves and rescans; Rescan only refreshes discovery. Empty lists
+disable discovery, while explicit score paths still work. Paths also affect CLI
+lookup and, on Linux, persist in `$XDG_CONFIG_HOME/triccheballacche/settings.json`
+(default `~/.config/…`). The browser lists its published Perone catalog.
+Restart after rebuilding a loaded native plugin.
 
 ## MIDI
 
-[examples/midi.janet](examples/midi.janet) combines a repeating phrase and a
-keyboard input. In **Settings → MIDI**, discover devices and connect each input
-or output to a score node. Prepare enables audio and MIDI without starting the
-timeline. Stop releases sequenced notes; the keyboard and effect tails remain active.
-Turning off the audio engine releases device-held notes and cancels pending output.
-Reevaluate a new graph to clear device bindings;
-live musical revisions retain them. Desktop Refresh rescans and disconnects ports.
-Native uses PortMidi; the browser uses Web MIDI and asks for device/SysEx access.
-Browser support and permission are required; MIDI is optional for ordinary playback.
+Connect devices to score nodes in Settings → MIDI. Apply enables monitoring
+without starting the timeline. Turning audio off releases device-held notes;
+new graphs clear bindings, live revisions retain them. Native Refresh disconnects
+ports and rescans. Bindings are session-only. Native uses PortMidi; browsers use
+Web MIDI with device/SysEx permission where supported.
 
 ```janet
 (def keys (daw/midi :keys))
-(daw/midi-through keys synth)    # Source output → target input; audio is separate.
-(daw/midi-output keys)           # Also keep this stream for an external device.
-(daw/note keys 0 0.5 60 100 3)   # Optional channel, 0–15; default 0.
+(daw/midi-through keys synth)    # MIDI routing is separate from audio.
+(daw/midi-output keys)           # Retain output for an external device.
+(daw/note keys 0 0.5 60 100 3)   # Optional channel 0–15; default 0.
 (daw/midi-event keys 0 [0xb3 1 64])
 ```
 
-Use `[:midi node [bytes...]]` on pattern points for CC, pressure, pitch bend and
-program changes, or `[:note node pitch velocity channel]` for notes. Routing
-supports fan-in, fan-out and MIDI-only plugins; cycles across audio/MIDI are
-rejected. Plugin events preserve sample offsets through the graph. Device input
-enters at the next audio block; output scheduling follows the audio clock, with
+Patterns accept `[:midi node [bytes...]]` and `[:note node pitch velocity channel]`.
+Routing supports fan-in/out and MIDI-only plugins, preserving sample offsets.
+Device input enters at the next audio block; output follows the audio clock with
 OS/browser timer precision. Offline rendering excludes devices.
 
-CLAP, LV2 and VST3 expose at most one MIDI input/output. MIDI 1.0 messages and
-SysEx up to 1 KiB are routed in bounded buffers (256 events / 16 KiB per stream).
-Overflow stops playback. Perone currently accepts short input messages only;
-its ABI has no MIDI output or SysEx entry. CLAP note-only ports receive notes;
-raw controllers require the MIDI dialect. VST3 controllers use the plugin's MIDI
-mapping and program parameters. MIDI 2.0, per-note expression, recording and
-`.mid` import/export are not implemented. Device bindings are session settings,
-not saved in Janet or presets.
-
-## Use the editor
-
-Open a file with the path bar's folder icon, enter a path and press Enter, or
-choose an example. Save uses the disk on native; web Download saves a local copy
-and updates the session's files. Reloading the page restores the published files.
-
-- **Prepare** (the lightning icon, Ctrl/Command+Enter) evaluates the code and
-  imports, loads the plugins and enables audio. A stopped timeline stays stopped;
-  during playback it updates the music. Plugin controls and MIDI work in either state.
-- **Play** (Ctrl/Command+Space) evaluates changed code or resumes the prepared
-  score. Opening another file keeps audio running; Play starts it as a new session.
-- **Stop** (Esc) holds the position, releases sequenced notes and keeps processing
-  MIDI and effect tails. Play retriggers spanning notes without resetting effects.
-  The power toggle disables the audio engine separately, retaining the prepared graph.
-  Click the ruler or enter seconds to seek; seeking resets effect history and
-  restores controls. Spanning notes restart when the transport plays.
-- **Live updates** to `daw/score` enter on the next beat grid (`:quantum`, default
-  4 beats). Give plugins stable keyword identities. Routing, identities, tempo,
-  duration and plugin configurations must match; stop before changing them.
-  Errors leave the current music running. Stop or seek cancels queued revisions.
-- **Code editor:** Janet highlighting, two-space tabs, basic auto-indentation,
-  paired brackets and Ctrl/Command+Z / Shift+Z undo/redo. CodeJar is experimental:
-  replacing all text by paste can append a newline, and delayed highlighting can
-  reclaim focus immediately after typing.
-- **Score view:** drag or Shift+wheel to pan time, wheel to zoom time,
-  Ctrl/Command+wheel to resize tracks. Wheel over names scrolls tracks vertically.
-  On touch screens, drag to pan and pinch to zoom time in 2D.
-  The left column shows compact routing blocks aligned with the score lanes;
-  click a block to inspect its signal path. Drag the divider to resize the map:
-  more width spreads nodes along the signal flow and shortens connections.
-  Follow keeps the playhead in view. The 3D toggle changes the projection;
-  drag then orbits, right-drag pans and Alt+wheel zooms time. Reset view restores
-  the camera and zoom around the current playback position.
-- **Small screens:** Code/Score switches views without interrupting playback.
-  Plugins open in an overlay; Show routing hides the map to give notes more room.
-- **Automation** toggles visibility only. Each track's checklist selects curves.
-  Source highlights and note/curve picking connect the view to the code.
-- **Routing blocks** show plugins and explicit mixes, folding track/master gain
-  stages into connections. Click a node to highlight its signal path and list
-  it in the side panel, including downstream group/master effects; only the
-  selected node opens. Click the background or press Escape to clear the highlight.
-  Routing is read-only.
-- **Track names** open the plugin panel. Mute/solo affects audition, including
-  routed groups. Plugin sections collapse; the window icon detaches a web UI or
-  parameter panel into a draggable window, fullscreen on small screens. Closing
-  it returns the controls to the panel. Oversized web UIs scale to fit the available
-  width. Plugins with only a native GUI open their original window. Manual
-  parameter edits are temporary, not written to Janet.
-  ↓/↑ import/export a plugin preset (`.tbpreset.json`, up to 16 MiB of state).
-  Both pause playback. Native export asks for a destination path; web export
-  downloads a file. Presets change the prepared instance, not the score or its
-  automation; reevaluation and seeking still apply the score's parameter values.
-- **Settings** groups Audio, Plugins and MIDI. Change sample rate with the engine
-  off; the next Play or Prepare rebuilds the score at that rate. On desktop,
-  **Apply** saves plugin paths and rescans; **Rescan** refreshes discovery without
-  changing the graph. Paths accept `~/` and relative folders or bundles. Empty lists
-  disable discovery for a format; explicit score references still work. Plugin paths
-  also apply to CLI lookup by ID and live in `$XDG_CONFIG_HOME/triccheballacche/settings.json`
-  (default `~/.config/…`). **Defaults** restores the paths below. The browser lists
-  its published Perone/Wasm catalog. Restart after rebuilding a loaded native plugin.
-
-All scores are directly in `examples/`; `examples/sources/` holds imported themes.
-
-| Example | Focus |
-| --- | --- |
-| [patterns](examples/patterns.janet) | Brickworks instruments, stereo effects, pattern transforms and automation. Start here. |
-| [live](examples/live.janet) | Loops and quantized updates. |
-| [routing](examples/routing.janet) | Groups, parallel effects and crossfades. |
-| [midi](examples/midi.janet) | Keyboard input and MIDI output. |
-| [gui](examples/gui.janet) | A-SID and Tibia UIs following automation. |
-| [surge](examples/surge.janet) | Surge XT and Surge XT Effects; set `format` to `:clap`, `:lv2` or `:vst3`. Native only. |
-
-[Rame](examples/rame.janet) is a complete piece using the canonical library.
-[Polpo](examples/polpo.janet), [Oculus](examples/oculus.janet), live and routing
-use the local plugins below.
-[Denti](examples/denti.janet), [Sempiterno](examples/sempiterno.janet) and
-[Falalalan](examples/falalalan.janet) also use A-SID.
-[Campagnola](examples/campagnola.janet) and
-[Insetti di vetro](examples/insetti-di-vetro.janet) need the optional sampled piano.
-[Crocevia](examples/crocevia.janet) combines local Perone drums/synths, Surge XT CLAP,
-A-SID LV2 from `../asid` (override with `ASID_LV2`) and Brickworks `fx_comb` VST3.
-Surge and the comb use the native plugin search paths described below.
-[Denoiser](examples/denoiser.janet) adds Clack.DIGITAL Ue Ue Wah and Bertom Denoiser
-Classic VST3 to local Perone plugins and the canonical library.
-[Due corpi](examples/due-corpi.janet) uses Samplo and Vitsel CLAP, Perone drums and
-Brickworks effects. Install
-[Samplo](https://github.com/mlm-games/samplo-clap) and
-[Vitsel](https://github.com/mlm-games/vitsel-clap) for your platform in a CLAP search
-path. Generate its original SFZ bank with `python examples/due-corpi.py DIRECTORY`,
-where `DIRECTORY` is a folder in Samplo's instrument library. Set
-`SAMPLO_INSTRUMENT` to the bank's index (default: `0`), then use the usual CLI or editor.
-Samplo 1.2.7 has an upstream limitation: it skips loading instrument `0` on startup
-and plays a test tone instead. Correct playback at that index needs an upstream fix.
+CLAP/LV2/VST3 expose at most one MIDI input/output, with MIDI 1.0 and SysEx up to
+1 KiB (256 events / 16 KiB per stream; overflow stops playback). Perone accepts
+short input messages only. CLAP controllers require the MIDI dialect; VST3 uses
+plugin MIDI mappings. MIDI 2.0, per-note expression, recording and `.mid`
+import/export are not implemented.
 
 ## Plugins
 
-**Perone** works natively and in the browser. Copy whole `.perone` bundles: `product.json`,
-the native `<platform>/<bundleName>.so` or `wasm32/<bundleName>.wasm`, and optional
-UI assets. Janet reads metadata; no per-plugin Janet wrapper is needed.
-DSP ABI v2 and optional native UI ABI v1 come from Tibia. Web UIs declare
-`product.ui.web` and may load their own Wasm. Native UI hosting currently uses X11.
-Native and Wasm DSPs receive playing/stopped status, BPM and quarter-note position;
-other transport fields are not advertised as valid.
+| Format | Reference to `daw/plugin` | Parameters / UI |
+| --- | --- | --- |
+| Perone | `"path/to/plugin.perone"` | `product.json` IDs; native X11 or web UI. Native and Wasm DSP. |
+| CLAP | `{:format :clap :id "plugin.id"}` | Native numeric IDs; X11/Win32 UI. |
+| LV2 | `{:format :lv2 :id "urn:plugin:uri"}` | Port symbols; X11/Win32 UI. |
+| VST3 | `{:format :vst3 :id "32-digit-processor-class-id"}` | Native numeric IDs; normalized 0–1 values, integer indices for discrete parameters; X11/Win32 UI. |
 
-**CLAP** works natively on Linux, including original X11 plugin windows and the
-shared parameter panel. Settings lists modules from `CLAP_PATH` (colon-separated),
-`~/.clap`, `/usr/lib/clap` and `/usr/local/lib/clap`, including each factory ID.
-An explicit path also works outside those directories:
+CLAP/LV2/VST3 run in the native host only. Add `:path` to select an explicit module or
+bundle; `:id` can be omitted only for a single supported plugin. No Janet wrapper
+is needed. `build/tools/plugin-scan PATH` lists IDs, parameters and rejection reasons.
 
-```janet
-(def synth (daw/plugin :synth
-  {:format :clap :id "org.surge-synth-team.surge-xt"}))
-# Or {:format :clap :path "/path/to/plugin.clap" :id "native.plugin.id"}.
-# :id is optional only when the module exports one supported plugin.
-```
+Perone bundles contain `product.json`, `<platform>/<bundleName>.so` (`.dll` on
+Windows) or `wasm32/<bundleName>.wasm`, and optional UI assets. Copy the whole bundle.
+Tibia supplies DSP ABI v2 and native UI ABI v1; web UIs declare `product.ui.web`
+and may load their own Wasm. Perone transport supplies play state, BPM and beat.
 
-The [Surge example](examples/surge.janet) uses separately installed Surge XT and
-Surge XT Effects 1.3.4, tested in all three native formats with their original UIs.
-For CLAP, run `CLAP_PATH=/path/to/plugins ./build/gui examples/surge.janet`.
-Use `build/tools/plugin-scan /path/to/plugin.clap` to inspect IDs and parameters.
-CLAP parameter keywords are native numeric IDs, such as `:825615485`;
-`daw/info` exposes their labels, ranges and automation flags. Enumeration indices
-also work but are less stable across plugin versions. No wrapper or `product.json`
-is required. CLAP native binaries do not run in the Wasm editor.
+| Discovery override | Default |
+| --- | --- |
+| `BRICKWORKS_PERONE` | `build/library/brickworks` |
+| `MDA_PERONE` | `build/library/mda` |
+| `ASID_PERONE` | `../asid/plugin/perone/build/asid.perone` |
+| `TIBIA_PERONE` | `../tibia/out/perone/c/build/tibia-test.perone` |
+| `CLAP_PATH`, `VST3_PATH` | Colon-separated additions to `~/.<format>`, `/usr/local/lib/<format>`, `/usr/lib/<format>`. |
+| `LV2_PATH` | Replaces the same default locations for LV2 when set. |
 
-Discovery uses a separate process, with a timeout and a file-stamped memory cache.
-Playback uses independent instances and cached modules in the host process.
-The initial patch supplies initial control values; these can differ from a
-parameter's declared default. Notes and automation retain sample boundaries,
-and plugins receive tempo and transport position. Host callbacks, timers and file
-descriptors run on the main thread. Plugin restarts pause audio; incompatible
-port or parameter changes require preparing the score again.
+Perone also searches `plugins/`. Each platform lists only bundles with its DSP.
+Native discovery runs in a separate process with a timeout/cache; playback uses
+independent instances and cached modules in the host. Original GUIs and shared
+parameter panels use the same DSP. Unavailable plugins include a rejection reason.
 
-**LV2** works natively on Linux, with Lilv reading the bundle's Turtle metadata.
-Settings lists `.lv2` bundles from `LV2_PATH` (colon-separated), or from `~/.lv2`,
-`/usr/local/lib/lv2` and `/usr/lib/lv2` when it is unset. References use the plugin
-URI; an explicit `:path` selects a bundle outside those directories:
+The graph routes main mono/stereo buses; additional inputs receive silence and
+additional outputs are not routed. CLAP/LV2/VST3 mono effects are not implicitly
+duplicated on stereo signals. Parallel paths are latency-compensated; leave room
+for output latency and tails in the score. WAV export requests offline processing;
+a plugin that rejects it prevents export. Structural plugin changes require
+preparing the score again.
 
-```janet
-(def synth (daw/plugin :synth
-  {:format :lv2 :id "https://surge-synthesizer.github.io/lv2/surge-xt"}))
-# Or {:format :lv2 :path "/path/to/plugin.lv2" :id "urn:plugin:uri"}.
-```
+LV2 supports Atom MIDI/transport, workers and bundle default state. Unknown required
+features/options and fixed/power-of-two blocks are unsupported. CV and non-sequence
+Atom ports must be optional. Atom buffers honor declared sizes (64 KiB default, 1 MiB limit);
+worker messages are limited to 4 KiB. Numeric `patch` properties are not Janet
+parameters; original UIs can exchange Atom messages. GTK/Qt-only UIs are not embedded.
 
-Set `format` to `:lv2` in [surge](examples/surge.janet) to try it.
-Use each plugin's window icon to open its original X11 UI. GTK/Qt UIs are not embedded;
-control ports still appear in the shared parameter panel. Parameter keywords
-are port symbols, such as `:gain`; `daw/info` lists them. Numeric `patch` properties
-are not yet exposed as Janet parameters, though original UIs can exchange Atom
-messages with their DSP. Native LV2 bundles do not run in the Wasm editor.
+Presets use Perone callbacks or input parameters, CLAP state, LV2 portable
+properties/input ports, or VST3 processor/controller state (not `.vstpreset`).
+Perone's envelope is shared across native/Wasm; custom payload portability belongs
+to the plugin. External files remain references. LV2 `makePath` and non-portable
+state are unsupported. Failed imports can partially change a plugin. Whole-project
+persistence is not implemented.
 
-LV2 supports MIDI and transport through Atom sequences, control automation,
-sample-rate-scaled ranges, bundle default state and workers (background during
-playback, synchronous offline). UI messages are serviced even while stopped.
-Unknown required features/options, fixed/power-of-two block requirements, CV ports and
-non-sequence Atom ports are rejected unless the port is optional. Atom buffers
-use each port's declared minimum size, with a 64 KiB default and a 1 MiB per-port
-limit. Buffers and UI message queues are allocated before processing; worker
-messages remain limited to 4 KiB.
-`build/tools/plugin-scan /path/to/plugin.lv2` lists IDs, parameters and rejection reasons.
-
-**VST3** works natively on Linux, including original X11 windows. The adapter uses
-Steinberg's pinned C API header; it does not compile or link the C++ SDK.
-Settings searches `VST3_PATH` (colon-separated), `~/.vst3`, `/usr/local/lib/vst3`
-and `/usr/lib/vst3`. References identify the processor class by its 32-digit ID:
-
-```janet
-(def synth (daw/plugin :synth
-  {:format :vst3 :id "ABCDEF019182FAEB566D624153675854"}))
-# Or {:format :vst3 :path "/path/to/plugin.vst3" :id "processor-class-id"}.
-```
-
-`build/tools/plugin-scan /path/to/plugin.vst3` lists classes and parameters.
-Set `format` to `:vst3` in [surge](examples/surge.janet) to try it;
-A-SID's Tibia-generated VST3 was also checked.
-Parameter keywords are native numeric IDs. Continuous values use VST3's normalized
-`0..1` range; discrete values use integer step indices and expose the plugin's
-labels. MIDI notes, pressure and mapped controllers, sample-accurate automation,
-transport, latency, and separate or combined controllers are supported.
-Controller metadata updates preserve playing voices. Changes to the graph,
-parameter identity or a request to reload the component require preparing the score again.
-Native VST3 binaries do not run in the Wasm editor.
-
-WAV export selects offline mode (VST3 processing, CLAP render and LV2 freewheel),
-then restores the previous mode. Changes run with audio stopped and rebuild
-latency compensation. A plugin that rejects offline rendering prevents export.
-
-For CLAP, LV2 and VST3, the audio graph routes the main mono/stereo buses. Additional inputs
-receive silence (VST3 auxiliary buses stay inactive); additional audio outputs
-are not routed. MIDI inputs and outputs use separate graph connections. Mono
-effects are not duplicated implicitly on stereo signals. Parallel paths are
-latency-compensated with buffers allocated before rendering; total output latency
-and effect tails still need room in the score's duration. Per-note expression,
-whole-project persistence are not implemented.
-Settings lists unavailable plugins with their rejection reason. Unsupported LV2
-GUI requirements are reported separately and do not prevent using the DSP.
-Plugin state uses a bounded memory buffer, independently of score snapshots.
-Perone uses its custom state callbacks when available, otherwise input parameters;
-Perone presets share an envelope across native and Wasm (custom payload portability
-belongs to the plugin). CLAP uses its state extension; VST3 stores processor and
-controller state together, not a `.vstpreset`. LV2 preserves input ports and portable
-properties with URI-based serialization. External files remain references, not
-embedded assets; LV2 states requiring `makePath` or non-portable properties are not
-supported. A failed import may already have changed the plugin; exports replace
-files only after success.
-
-The canonical library build is self-contained. Local plugin projects instead
-default to sibling `../tibia` and `../brickworks` checkouts. Tibia must provide
-the Perone templates and have its `dot` npm dependency installed. To use the
-pinned downloads instead, run `make library-deps` and override their paths:
+Local plugin projects use sibling Tibia/Brickworks checkouts by default. Tibia
+needs the Perone templates and its `dot` npm dependency. To use other checkouts,
+including the pinned downloads from `make library-deps`, override their paths:
 
 ```sh
 make -C plugins TIBIA=/path/to/tibia BRICKWORKS=/path/to/brickworks
-make -C plugins TIBIA=/path/to/tibia BRICKWORKS=/path/to/brickworks PERONE_PLATFORM=wasm32
+# Add PERONE_PLATFORM=wasm32 for the browser.
 ```
 
 On Windows, use relative paths without spaces, resolved from `plugins/<name>/`.
 
 This builds `synth_mono`, `fx_svf`, `tibia_test`, `drums`, `shape` and `echo` under
-`plugins/<name>/build/plugin.perone`. `drums` maps MIDI notes 0–6 to kick, snare,
-hat, open hat, crash, high tom and low tom. The optional sampled piano needs
-Python 3: run `python3 plugins/piano/fetch.py`, then `make -C plugins/piano`
-with the same Tibia setting. It embeds the downloaded Florestan samples.
+`plugins/<name>/build/plugin.perone`. Drums uses notes 0–6: kick, snare, hat, open
+hat, crash, high tom, low tom. The optional piano needs Python 3:
+`python3 plugins/piano/fetch.py`, then `make -C plugins/piano` with the same Tibia
+setting. Build A-SID and Tibia's original DSP/UI bundles in their own repositories.
 
-Build A-SID and Tibia's original DSP/UI bundles in their own repositories.
-Native discovery and applicable examples accept these environment overrides:
+## Examples
 
-| Variable | Default |
+| Examples | Requirements / focus |
 | --- | --- |
-| `BRICKWORKS_PERONE` | `build/library/brickworks` |
-| `ASID_PERONE` | `../asid/plugin/perone/build/asid.perone` |
-| `TIBIA_PERONE` | `../tibia/out/perone/c/build/tibia-test.perone` |
+| [patterns](examples/patterns.janet), [controls](examples/controls.janet), [Rame](examples/rame.janet) | Canonical Brickworks library; patterns, automation and plugin UIs. Start with patterns. |
+| [mda](examples/mda.janet) | MDA library instruments and effects. |
+| [live](examples/live.janet), [routing](examples/routing.janet), [midi](examples/midi.janet), [Polpo](examples/polpo.janet), [Oculus](examples/oculus.janet) | Local plugins; loops, routing, MIDI and complete pieces. |
+| [gui](examples/gui.janet) | A-SID and Tibia UIs. |
+| [Denti](examples/denti.janet), [Sempiterno](examples/sempiterno.janet), [Falalalan](examples/falalalan.janet) | Local plugins and A-SID. |
+| [Campagnola](examples/campagnola.janet), [Insetti di vetro](examples/insetti-di-vetro.janet) | Also require the sampled piano. |
+| [surge](examples/surge.janet) | Surge XT/Effects 1.3.4; choose CLAP, LV2 or VST3 in the score. |
+| [Crocevia](examples/crocevia.janet) | Perone, Surge CLAP, A-SID LV2 (`ASID_LV2` override) and Brickworks comb VST3. |
+| [Denoiser](examples/denoiser.janet) | Perone, Clack.DIGITAL Ue Ue Wah and Bertom Denoiser Classic VST3. |
+| [Due corpi](examples/due-corpi.janet) | Samplo/Vitsel CLAP, local drums and Brickworks. |
 
-The web catalog uses `WEB_CONTENT` and includes those default locations when
-built. Each platform lists only bundles with its DSP binary. Scores requiring
-missing bundles cannot play. Put support modules under `examples/sources/` to
-keep them out of the examples dropdown.
+For Due corpi, generate its SFZ bank with `python examples/due-corpi.py DIRECTORY`
+in Samplo's library; `SAMPLO_INSTRUMENT` selects its index (default 0). Samplo 1.2.7
+skips instrument 0 at startup and plays a test tone; that needs an upstream fix.
+Imported themes live in `examples/sources/`, outside the examples dropdown.
 
 ## Development
 
-Root C files own scores, sequencing, sessions and projection. `dsp.h` is the
-engine's plugin contract. `host/` implements native DSP instances, module caching
-and Perone/CLAP/LV2/VST3 adapters; each format owns its module resources. `native/`
-contains shared native applications, discovery, files, MIDI and worker logic.
-`posix/` and `win32/` implement system services and synchronization; `x11/` and
-`win32/` embed plugin windows. The build selects backend source files, not OS
-conditionals in the shared implementation. Platform-specific test fixtures are
-likewise separate under `test/posix/`, `test/x11/` and `test/win32/`.
-`web/` supplies the browser backend, `lib/` Janet composition, and `editor/` the
-shared editor. Keep system calls and platform headers out of core and `host/`.
-Prose and code comments use English; musical names keep their spelling.
-Formatting is in `.editorconfig` and
-`.clang-format` (clang-format 21).
+Core C files own scores, sequencing, sessions and projection. `dsp.h` is the plugin
+contract; `host/` implements native formats and module caching. `native/` holds
+shared native applications/services; `posix/` and `win32/` supply system backends.
+`x11/` and `win32/` host plugin windows. `web/` is the browser backend, `editor/`
+the shared UI, `lib/` the Janet API. Plugin DSP and UI sources
+live in `plugins/`. Keep system calls/platform headers out of core and `host/`.
+Use English for prose/comments; keep musical names. Formatting is defined by
+`.editorconfig` and `.clang-format` (clang-format 21).
 
-| Check | Requirements beyond the host build |
-| --- | --- |
-| `make test` | Local fixtures only; no audio device or sibling checkout. |
-| `make test-clap` | X11 headers/library for the fixture; no display needed. |
-| `make test-clap-ui` / `make test-clap-editor` | X11 display; Node.js/Chromium and audio for the editor. |
-| `make test-lv2` | X11 headers/library for the fixture; no display needed. |
-| `make test-lv2-ui` / `make test-lv2-editor` | X11 display; Node.js/Chromium and audio for the editor. |
-| `make test-vst3` | X11 headers/library for the fixture; no display needed. |
-| `make test-vst3-ui` / `make test-vst3-editor` | X11 display; Node.js/Chromium and audio for the editor. |
-| `make test-midi` | Format fixtures; MIDI routing, timestamps, channels, controls and seek. |
-| `make test-midi-devices` | PortMidi virtual ports; skips if the system cannot create them. |
-| `make test-midi-ui` | Native/browser editors, Chromium and an audio device. |
-| `make format-check` | clang-format 21. |
-| `make test-build` / `make test-build-web` | Node.js; also Emscripten for web. |
-| `make test-plugins` / `make test-brickworks` | Corresponding prebuilt bundles. |
-| `make test-library-build` | Node.js/npm; builds and checks the canonical library. |
-| `make test-web` / `make test-browser` | Emscripten/Node.js; Chromium for browser. |
-| `make test-editor` | Native GUI build, Node.js, Chromium and an audio device. |
-| `make test-code` / `make test-parameter-ui` | Node.js and Chromium; no audio build. |
-| `make test-webview` | Native display and WebView runtime; checks editor frame pacing in an actual window. |
-| `make test-mobile` | Native/browser editors and Chromium touch emulation; no physical device required. |
-| `make test-live test-editor-ui test-score-space test-graph` | Native and browser prerequisites. |
-| `make test-library` | Native and Wasm production bundles, plus editor prerequisites. |
-| `make -C plugins/piano test` | Downloaded bank and Tibia; `test-web` also needs Emscripten/Node.js. |
+```sh
+make -j4 test test-clap test-lv2 test-vst3 test-midi
+make format-check
+make test-web test-editor-ui       # Emscripten, Node.js, Chromium, native audio
+make test-mda test-brickworks-ui   # Also requires the production plugin library
+```
 
-Other focused checks are listed in the [Makefile](Makefile). Set `CHROMIUM` to
-override the browser executable. Tests and generated artifacts live in `build/`;
-use `renders/` for exported audio. Both are ignored. `make clean` preserves
-downloads and local plugin builds; `make -C plugins clean` removes the latter.
-Use one `make -j` invocation for concurrent targets sharing a build directory.
+Prebuild the library for both native and Wasm before `test-mda`.
+`make test` uses local fixtures without an audio device or sibling checkout.
+On Linux, format tests need X11 headers/library, but no display; `test-<format>-ui` needs
+X11 and `test-<format>-editor` also needs Chromium/audio. Focused checks live in
+[Makefile](Makefile) and [test/](test/); set `CHROMIUM` to override the browser.
+Tests/artifacts go in `build/`, exported audio in `renders/`. `make clean` preserves
+`.deps/` and local plugin builds; `make -C plugins clean` removes the latter.
+Use one `make -j` invocation for targets sharing a build directory.
 
-Dependency versions are pinned in [Makefile](Makefile),
-[plugins/library.mk](plugins/library.mk) and [tools/lv2-deps.sh](tools/lv2-deps.sh).
-`MINIAUDIO`, `JANET`, `SPORK`, `WEBUI`, `CLAP`, `VST3`, `PORTMIDI` and `LV2_DEPS` accept explicit paths.
-Fixes live in [patches/](patches/); the build applies them
-to generated copies, leaving downloaded sources intact.
+Dependency pins live in [Makefile](Makefile), [plugins/library.mk](plugins/library.mk),
+[plugins/mda/library.mk](plugins/mda/library.mk) and [tools/lv2-deps.sh](tools/lv2-deps.sh).
+Fixes in [patches/](patches/) apply to generated copies, leaving downloads intact.
 
 ## License
 
-Copyright (C) 2024–2026 Paolo Marrone.
-
-Original code, documentation and original contributions to the examples are
-licensed under **GPL-3.0-only**; see [LICENSE](LICENSE). Third-party code and
-musical material retain their own terms. See [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)
-for attributions and dependency notices, including the optional piano samples.
-Three.js 0.186.1 is vendored from the [npm package](https://www.npmjs.com/package/three/v/0.186.1)
-(`build/` modules and `examples/jsm/controls/OrbitControls.js`) under its
-[MIT license](editor/vendor/three/LICENSE).
-CodeJar 4.3.0 supplies the text editor; its unmodified `dist/codejar.js` comes from
-the [npm package](https://www.npmjs.com/package/codejar/v/4.3.0), with its
-[MIT license](editor/vendor/codejar/LICENSE). Janet highlighting is local.
-
-When distributing native or browser builds, include the license notices and
-provide the corresponding source, dependency versions and local patches under
-their terms. `make web` produces development assets, not a complete release package.
+Copyright (C) 2024–2026 Paolo Marrone. Original code, documentation and original
+example contributions are **GPL-3.0-only**; see [LICENSE](LICENSE).
+Third-party code and musical material retain their terms; credits and notices
+are in [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES), including piano samples,
+Three.js and CodeJar. Distributions must include notices and corresponding source,
+dependency versions and local patches as required by their licenses.

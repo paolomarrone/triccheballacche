@@ -44,14 +44,17 @@ try {
             const opened = await command("open", path);
             assert(!opened.error && opened.text === text, JSON.stringify(opened));
         }
-        await click("#prepare");
-        await wait('!document.querySelector("#audio").disabled');
+        await click("#apply");
+        await wait('document.querySelector("#state").textContent === "Ready" && !document.querySelector("#apply").disabled');
         const prepared = await command("status");
         assert(prepared.state.prepared && prepared.audio, JSON.stringify(prepared));
         await click("#play");
-        await wait('!document.querySelector("#stop").disabled');
-        await click("#stop");
-        await click("#audio");
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Stop"');
+        await click('#play[aria-label="Stop"]');
+        await click("#settings");
+        await click("#settings-audio-tab");
+        await click("#settings-audio-engine");
+        await wait('document.querySelector("#state").textContent === "Audio off"');
         assert.equal(diagnostics.length, 0, JSON.stringify(diagnostics));
         console.log("OK: Windows UTF-8 arguments, scanner, CLI, settings, editor files and audio preparation/play/stop");
         await command("close");

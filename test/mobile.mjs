@@ -77,7 +77,7 @@ try {
             await wait('Number(document.querySelector("#time").value) > .2');
             await tap("#view-score");
             await wait('Number(document.querySelector("#score-canvas").dataset.notes) > 0');
-            await tap("#stop");
+            await tap('#play[aria-label="Stop"]');
             const revision = await evaluate('document.querySelector("#timeline").dataset.revision');
             await tap("#show-routing");
             await painted();
@@ -161,7 +161,7 @@ try {
             await tap("#play");
             await wait('document.querySelector("#state").textContent.startsWith("Playing")');
             assert.equal(await evaluate('document.querySelector("#timeline").dataset.revision'), revision, "View changes do not re-evaluate the score");
-            await tap("#stop");
+            await tap('#play[aria-label="Stop"]');
             await size(844, 390);
             assert.equal((await rect("#timeline")).height, 0, "A phone in landscape still shows one view at a time");
             await tap("#view-score");

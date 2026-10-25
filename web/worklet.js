@@ -9,7 +9,12 @@ registerProcessor("perone-setup", class extends AudioWorkletProcessor {
             try {
                 let result;
                 if (data.type === "close") host.perone?.closeAll();
-                else if (data.type === "control") {
+                else if (data.type === "controls") {
+                    result = data.dsps.map(id => {
+                        try { return host.perone.control("controls", id); }
+                        catch (error) { return {error: String(error)}; }
+                    });
+                } else if (data.type === "control") {
                     result = host.perone.control(...data.args);
                     if (data.player) host._player_sync(data.player);
                 } else if (data.type === "state") {

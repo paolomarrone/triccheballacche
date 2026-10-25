@@ -185,8 +185,8 @@ try {
             await writeFile(`build/test/editor-ui-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
             const revision = await evaluate('document.querySelector("#timeline").dataset.revision');
             await evaluate(`globalThis.retainedUI = ${fixture}`);
-            await click("#stop");
-            await wait('document.querySelector("#stop").disabled');
+            await click('#play[aria-label="Stop"]');
+            await wait('document.querySelector("#play").getAttribute("aria-label") === "Play"');
             assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 2);
             assert.equal(await evaluate("fixtureFreed"), 1);
             await evaluate("fixtureCallbacks.at(-1).set_parameter(1, .6)");
@@ -203,7 +203,7 @@ try {
             assert.equal(await evaluate("fixtureFreed"), 1);
             await wait('!document.querySelector("#play").disabled');
             await key("Enter", "Enter", 2);
-            await wait(`document.querySelector("#timeline").dataset.revision !== ${JSON.stringify(revision)} && !document.querySelector("#prepare").disabled`);
+            await wait(`document.querySelector("#timeline").dataset.revision !== ${JSON.stringify(revision)} && !document.querySelector("#apply").disabled`);
             await wait(`${synthRoot}?.querySelector(".parameter-controls")`);
             assert.equal(await evaluate('document.querySelectorAll("#track-list [data-listen][aria-pressed=true]").length'), 0,
                 "A newly prepared score clears mute/solo");
@@ -245,7 +245,7 @@ try {
             await wait(`${root} === undefined`);
             assert(await evaluate(`${synthRoot}?.querySelector(".parameter-controls")`));
             assert.match(await evaluate('document.querySelector("#errors").textContent'), /Invalid UI parameter/);
-            assert.equal(await evaluate('document.querySelector("#stop").disabled'), false);
+            assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Stop");
             await toggleParameters();
             await wait(`${root}?.querySelector(".parameter-controls")`);
             await toggleParameters();
@@ -264,8 +264,8 @@ try {
             await evaluate(`document.querySelector('.plugin[data-node="0"]').open = false`);
             await wait(`${synthRoot} === undefined`);
             assert(await evaluate(`${root}?.querySelector(".fixture-ui")`), "Collapsing one plugin preserves the other");
-            await click("#stop");
-            await wait('document.querySelector("#stop").disabled');
+            await click('#play[aria-label="Stop"]');
+            await wait('document.querySelector("#play").getAttribute("aria-label") === "Play"');
             // An asynchronous factory can complete while stopped: the prepared project still owns it.
             const freed = await evaluate("fixtureFreed");
             await wait('!document.querySelector("#play").disabled');
@@ -275,8 +275,8 @@ try {
             await evaluate("fixtureWait = true; fixtureResume = undefined");
             await openEffect();
             await wait('typeof fixtureResume === "function"');
-            await click("#stop");
-            await wait('document.querySelector("#stop").disabled');
+            await click('#play[aria-label="Stop"]');
+            await wait('document.querySelector("#play").getAttribute("aria-label") === "Play"');
             await evaluate("fixtureWait = false; fixtureResume()");
             await wait(`fixtureFreed === ${freed + 1}`);
             await wait(`${fixture}?.dataset.helper === "7"`);
@@ -317,8 +317,8 @@ try {
             assert.equal(await evaluate('document.querySelectorAll(".plugin-body > div").length'), 0);
             await evaluate(`document.querySelector('#track-list [data-track="3"]').click()`);
             assert.deepEqual(await evaluate('Array.from(document.querySelectorAll(".plugin"), p => Number(p.dataset.node))'), [7]);
-            await click("#stop");
-            await wait('document.querySelector("#stop").disabled');
+            await click('#play[aria-label="Stop"]');
+            await wait('document.querySelector("#play").getAttribute("aria-label") === "Play"');
             const wet = `document.querySelector('.plugin[data-node="7"] .plugin-body > div')?.shadowRoot.querySelector('.fixture-ui')`;
             await wait(wet);
             const beforeClose = await evaluate('fixtureFreed');
@@ -332,7 +332,7 @@ try {
             await wait(wet);
             await click('.plugin[data-node="7"] button[aria-label="Toggle plugin window"]');
             await key("Enter", "Enter", 2);
-            await wait('!document.querySelector(".plugin-window") && !document.querySelector("#prepare").disabled');
+            await wait('!document.querySelector(".plugin-window") && !document.querySelector("#apply").disabled');
             assert(await evaluate(`fixtureFreed >= ${beforeClose + 2}`), "Replacing a score disposes detached views");
             assert.deepEqual(diagnostics, []);
             // Restore the saved text before leaving, so the draft confirmation is not part of this test.

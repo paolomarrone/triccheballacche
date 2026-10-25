@@ -20,7 +20,7 @@ export function midiSettings(request, fail) {
                 if (node[port.input ? "midiIn" : "midiOut"]) select.add(new Option(`${id + 1} · ${node.label || node.name}`, id));
             select.value = String(port.node);
             select.disabled = !score || loading;
-            select.title = score ? "" : "Prepare a score first";
+            select.title = score ? "" : "Apply code or press Play first";
             select.onchange = () => query("midi-connect", score.controlRevision, port.id, Number(select.value));
             row.append(name, select); list.append(row);
         }

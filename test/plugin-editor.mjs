@@ -43,8 +43,8 @@ try {
         await wait(`${value}.textContent === '0.75'`);
         await evaluate(`(() => { const s = ${slider}; for (let i = 1; i <= 400; i++) { s.value = i / 1000; s.dispatchEvent(new Event('input')); } s.dispatchEvent(new Event('change')); })()`);
         await wait(`${value}.textContent === '0.4'`);
-        await click("#stop");
-        await wait('document.querySelector("#stop").disabled');
+        await click('#play[aria-label="Stop"]');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Play"');
         await evaluate(`(() => { const s = ${slider}; s.value = .6; s.dispatchEvent(new Event('input')); s.dispatchEvent(new Event('change')); })()`);
         await wait(`${value}.textContent === '0.6'`);
         await presets({evaluate, wait, click}, true, directory);
@@ -56,9 +56,9 @@ try {
         await evaluate(`document.querySelector('.plugin[data-node="0"]').open = true`);
         await wait(`${value}?.textContent === '0.625'`);
         await click("#play");
-        await wait('!document.querySelector("#stop").disabled');
-        await click("#stop");
-        await wait('document.querySelector("#stop").disabled');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Stop"');
+        await click('#play[aria-label="Stop"]');
+        await wait('document.querySelector("#play").getAttribute("aria-label") === "Play"');
         assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
         assert.deepEqual(diagnostics, []);
     }, {graphics: true});

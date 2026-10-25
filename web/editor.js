@@ -1,5 +1,6 @@
 import {midiDevices} from "./midi.js";
-import {encodeState, decodeState, download} from "../editor/preset.js";
+import {encodeState, decodeState} from "../editor/preset.js";
+import {download} from "../editor/files.js";
 
 import {createPlayerHost, attachPlayer, closePlayer} from "./player.js";
 import {prepareBackground} from "./prepare.js";
@@ -180,6 +181,8 @@ export async function command(op, ...args) {
             if (op === "watch") {
                 if (!["off", "web"].includes(values[0])) throw Error("Invalid view type");
                 await player.control("watch", node, values[0] === "web");
+            } else if (op === "controls") {
+                result.controls = await player.controls(node);
             } else {
                 result = await player.control(op, node, ...values);
             }
@@ -190,11 +193,7 @@ export async function command(op, ...args) {
         } else if (op === "save") {
             const source = checkedText(args[1]);
             await addFile(host, path, new TextEncoder().encode(source));
-            const url = URL.createObjectURL(new Blob([source], {type: "text/plain;charset=utf-8"}));
-            const link = document.createElement("a");
-            link.href = url; link.download = path.split("/").at(-1);
-            link.click();
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            download(path.split("/").at(-1), source, "text/plain;charset=utf-8");
         } else if (["run", "prepare", "update"].includes(op))
             result = await run(path, checkedText(args[1]), state, op === "update", op === "run" || state.playing);
         else if (op === "sample-rate") {
@@ -271,5 +270,5 @@ export function uiUrl(node) {
 }
 
 export async function exportPreset(request, name, text) {
-    download(name, text);
+    download(name, text, "application/json");
 }
