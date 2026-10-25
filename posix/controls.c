@@ -40,6 +40,16 @@ static int hex(char c) {
 	return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
 }
 
+static int decode(unsigned char *bytes, const char *text, size_t length) {
+	for (size_t i = 0; i < length; ++i) {
+		int a = hex(text[2 * i]), b = hex(text[2 * i + 1]);
+		if (a < 0 || b < 0)
+			return -1;
+		bytes[i] = 16 * a + b;
+	}
+	return 0;
+}
+
 static const char *preset(Session *s, int node, State *state, const char *text, int write) {
 	if (!write) {
 		size_t length = strlen(text);
@@ -49,12 +59,8 @@ static const char *preset(Session *s, int node, State *state, const char *text, 
 		if (!state->data)
 			return "Out of memory";
 		state->length = state->capacity = length / 2;
-		for (size_t i = 0; i < length; i += 2) {
-			int a = hex(text[i]), b = hex(text[i + 1]);
-			if (a < 0 || b < 0)
-				return "Invalid preset data";
-			state->data[i / 2] = 16 * a + b;
-		}
+		if (decode(state->data, text, state->length))
+			return "Invalid preset data";
 	}
 	int result = session_state(s, node, state, write);
 	if (result == STATE_UNSUPPORTED)
@@ -186,33 +192,18 @@ void controls_command(Controls *c, Session *s, unsigned revision, webui_event_t 
 	} else if (!strcmp(op, "parameter")) {
 		double index = number(event, 3), value = number(event, 4);
 		if (!isfinite(index) || index < 0 || index >= config->nparams || index != floor(index) ||
-		    (config->parameters[(int)index].flags & PARAM_OUTPUT) || !isfinite(value)) {
+		    plugin_parameter(config, (size_t)index, &value))
 			error = "Invalid parameter";
-		} else {
-			double adjusted = value;
-			if (plugin_parameter(config, (size_t)index, &adjusted))
-				error = "Invalid parameter";
-			else
-				edit_dsp(dsp, (size_t)index, adjusted);
-		}
+		else
+			edit_dsp(dsp, (size_t)index, value);
 	} else if (!strcmp(op, "message")) {
 		const char *text = webui_get_string_at(event, 3);
 		size_t length = strlen(text);
 		unsigned char bytes[MAX_MESSAGE];
-		if (length % 2 || length / 2 > config->to_dsp || !config->to_dsp) {
+		if (length % 2 || length / 2 > config->to_dsp || !config->to_dsp || decode(bytes, text, length / 2))
 			error = "Invalid message";
-		} else {
-			for (size_t i = 0; i < length; i += 2) {
-				int a = hex(text[i]), b = hex(text[i + 1]);
-				if (a < 0 || b < 0) {
-					error = "Invalid message";
-					break;
-				}
-				bytes[i / 2] = 16 * a + b;
-			}
-			if (!error && send_dsp(dsp, length / 2, bytes))
-				error = "UI message queue full";
-		}
+		else if (send_dsp(dsp, length / 2, bytes))
+			error = "UI message queue full";
 	}
 done:
 	json_print(&json, "\"error\":");

@@ -31,13 +31,6 @@ export function readPreset(product, text) {
     return preset.data;
 }
 
-export function download(name, text) {
-    const url = URL.createObjectURL(new Blob([text], {type: "application/json"}));
-    const link = document.createElement("a");
-    link.href = url; link.download = name; link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 // Native WebViews need an explicit file destination; the browser uses Downloads.
 export function destination(name) {
     return new Promise(resolve => {

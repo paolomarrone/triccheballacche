@@ -59,3 +59,10 @@ export function files(request, open, upload) {
         browse(path.slice(0, path.lastIndexOf("/") + 1) || ".");
     };
 }
+
+export function download(name, text, type) {
+    const url = URL.createObjectURL(new Blob([text], {type}));
+    const link = document.createElement("a");
+    link.href = url; link.download = name; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

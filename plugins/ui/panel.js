@@ -1,4 +1,4 @@
-import {parameterRatio, parameterValue, parameterText} from "./parameters.js";
+import {parameterClamp, parameterRatio, parameterValue, parameterText} from "./parameters.js";
 
 function readout(p, value) {
     if (p.unit === "hz" && Math.abs(value) >= 1000) { p = {...p, unit: "khz"}; value /= 1000; }
@@ -53,9 +53,7 @@ export function panel(element, callbacks, kind, options = {}) {
             end() { if (this.active) { this.active = false; callbacks.set_parameter_end(index, this.value); } },
             write(value) {
                 if (!Number.isFinite(value) || p.direction === "output") return;
-                value = p.integer || p.toggled ?
-                    Math.max(Math.ceil(p.minimum), Math.min(Math.floor(p.maximum), Math.round(value))) :
-                    Math.max(p.minimum, Math.min(p.maximum, value));
+                value = parameterClamp(p, value);
                 this.begin(); this.set(value); callbacks.set_parameter(index, value);
             },
             position(ratio) { this.write(parameterValue(p, ratio)); }

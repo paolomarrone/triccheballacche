@@ -447,13 +447,11 @@ static int render_audio(Session *s, const Score *score, const bw_slew_lim_coeffs
 
 void session_free(Session *s) {
 	session_cancel(s);
-	const Score *score = session_score(s);
 	for (int i = 0; i < s->nnodes; ++i) {
 		close_plugin(s->nodes[i].dsp);
 		close_plugin(s->nodes[i].dsp + 1);
-		if (s->nodes[i].inputs)
-			for (int j = 0; score && j < score->nodes[i].ninputs; ++j)
-				free(s->nodes[i].inputs[j].delay);
+		for (int j = 0; j < s->nodes[i].ninputs; ++j)
+			free(s->nodes[i].inputs[j].delay);
 		free(s->nodes[i].inputs);
 		free(s->nodes[i].midi_in);
 		free(s->nodes[i].midi_out);
@@ -494,6 +492,7 @@ int session_activate(Session *s, Score *score) {
 			goto fail;
 		if (n->ninputs && !(state->inputs = calloc(n->ninputs, sizeof(InputState))))
 			goto fail;
+		state->ninputs = n->ninputs;
 		if (!n->path)
 			continue;
 		int count = n->channels == 2 && n->config.output == 1 ? 2 : 1;
@@ -519,12 +518,6 @@ int session_activate(Session *s, Score *score) {
 	*s = next;
 	return 0;
 fail:
-	for (int i = 0; i < score->nnodes; ++i)
-		if (next.nodes[i].inputs)
-			for (int j = 0; j < score->nodes[i].ninputs; ++j) {
-				free(next.nodes[i].inputs[j].delay);
-				next.nodes[i].inputs[j].delay = NULL;
-			}
 	session_free(&next);
 	sequencer_free(&r->cursor);
 	free(r); // The caller still owns the score.

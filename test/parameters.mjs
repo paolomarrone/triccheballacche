@@ -1,5 +1,17 @@
 import assert from "node:assert/strict";
-import {parameterRatio, parameterValue, parameterText} from "../editor/parameters.js";
+import {parameterClamp, parameterRatio, parameterValue, parameterText} from "../editor/parameters.js";
+
+assert.equal(parameterClamp({minimum: 0, maximum: 1}, -.5), 0);
+assert.equal(parameterClamp({minimum: 0, maximum: 1}, 2), 1);
+assert.equal(parameterClamp({minimum: 0, maximum: 1}, .375), .375);
+const integer = {minimum: -2.2, maximum: 3.8, integer: true};
+assert.equal(parameterClamp(integer, -2.2), -2);
+assert.equal(parameterClamp(integer, 3.8), 3);
+assert.equal(parameterClamp(integer, -.5), -1);
+assert.equal(parameterClamp(integer, .5), 1);
+assert.equal(parameterClamp(integer, .49999999999999994), 0);
+assert.equal(parameterClamp({isBypass: true}, .8), 1);
+assert.equal(parameterClamp({minimum: 0, maximum: 1, toggled: true}, .2), 0);
 
 for (const p of [
     {minimum: -1, maximum: 1},

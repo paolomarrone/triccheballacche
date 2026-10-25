@@ -332,6 +332,8 @@ build/test:
 # Fetch/generate/compile the canonical plugin library independently of the host.
 include plugins/library.mk
 
+MDA_TEST_FLAGS ?= -O1 -g -fwrapv -Wno-multichar -Wno-write-strings
+
 # The mixer shares the library's pinned headers; the host needs no Tibia/Node build.
 MIXER_OBJECTS = build/obj/native/session.o build/obj/web-offline/session.o build/obj/web-player/session.o
 $(MIXER_OBJECTS): override CPPFLAGS += -I$(BW_SOURCE)/include
@@ -508,7 +510,8 @@ build/config/web-player.link: private CONFIG := $(EMCC) | $(CFLAGS) | $(LDFLAGS)
 build/config/web-fixtures: private CONFIG := $(EMCC) | $(WEB_FIXTURE_FLAGS)
 build/config/web-audio: private CONFIG := $(MINIAUDIO)
 build/config/janet: private CONFIG := $(JANET)
-CONFIG_FILES = $(addprefix build/config/,native.compile native.link web-offline.compile web-offline.link web-player.compile web-player.link web-fixtures web-audio janet)
+build/config/mda-test.compile: private CONFIG := $(HOST_CXX) | $(MDA_TEST_FLAGS) | $(MDA_INCLUDES)
+CONFIG_FILES = $(addprefix build/config/,native.compile native.link web-offline.compile web-offline.link web-player.compile web-player.link web-fixtures web-audio janet mda-test.compile)
 quote = '$(subst ','"'"',$(1))'
 .PHONY: FORCE
 FORCE:
@@ -530,9 +533,8 @@ build/generated/web/miniaudio.h: build/config/web-audio
 build/generated/janet.c: build/config/janet
 
 # Run after building the native and Wasm library. HOST_CXX may be clang++ for sanitizers.
-MDA_TEST_FLAGS ?= -O1 -g -fwrapv -Wno-multichar -Wno-write-strings
 MDA_TESTS := $(addprefix build/test/mda/,$(MDA_NAMES))
-build/test/mda/%: test/mda.cpp plugins/mda/plugin_cxx.h plugins/mda/mda.h $(MDA_GEN)/%/Makefile
+build/test/mda/%: test/mda.cpp plugins/mda/plugin_cxx.h plugins/mda/mda.h $(MDA_GEN)/%/Makefile build/config/mda-test.compile
 	mkdir -p "$(@D)"
 	$(HOST_CXX) -std=c++17 $(MDA_TEST_FLAGS) $(MDA_INCLUDES) -I$(MDA_GEN)/$* -I$(MDA_GEN)/$*/src \
 	    $(if $(filter mdaSpecMeter,$*),-DMDA_METER) -MMD -MP -MF "$@.d" $< -o "$@"

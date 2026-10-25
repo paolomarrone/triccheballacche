@@ -1,5 +1,7 @@
 // One UI's parameter/message exchange. The panel owns its factory and lifetime;
 // this object owns edits, gestures and feedback, independently of the DOM or backend.
+import {parameterClamp} from "./parameters.js";
+
 export function pluginControls(product, request, fail) {
     const edits = new Map(), gestures = new Set(), messages = [];
     const changes = product.parameters.map(() => 0), uninitialized = new Set(changes.keys());
@@ -42,10 +44,7 @@ export function pluginControls(product, request, fail) {
         if (!Number.isInteger(index) || !p || p.direction !== "input" || !Number.isFinite(value)) {
             fail(Error("Invalid UI parameter")); return;
         }
-        const low = p.isBypass ? 0 : p.minimum, high = p.isBypass ? 1 : p.maximum;
-        const integer = p.integer || p.toggled || p.isBypass;
-        value = integer ? Math.max(Math.ceil(low), Math.min(Math.floor(high), Math.round(value))) : Math.max(low, Math.min(high, value));
-        send("parameter", index, value);
+        send("parameter", index, parameterClamp(p, value));
     }
 
     return {
