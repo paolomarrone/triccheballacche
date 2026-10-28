@@ -9,7 +9,7 @@ await host.add(path, await readFile(new URL("build/plugin.perone/wasm32/piano.wa
 const bytes = await readFile(new URL("build/reference.f32", import.meta.url));
 const reference = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 const id = host.open({path, sampleRate: 32000, inputChannels: 0, outputChannels: 2, midiBus: 0,
-    parameters: [.6, 11, .32], outputMask: [0, 0], capacity: 512});
+    parameters: [.6, 11, .32], outputParameters: [0, 0, 0], capacity: 512});
 const p = host.instances.get(id), memory = p.wasm.memory.buffer;
 const midi = (...message) => { p.midi.set(message); p.api.midi_msg_in(p.instance, 0, p.midiPointer); };
 let maximum = 0, energy = 0;

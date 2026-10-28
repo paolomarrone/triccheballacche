@@ -101,6 +101,8 @@ export async function withBrowser(run, {graphics = false} = {}) {
         };
         await call("Runtime.enable");
         await call("Page.enable");
+        // Numeric label assertions use English formatting regardless of the desktop locale.
+        await call("Emulation.setLocaleOverride", {locale: "en-US"});
         return await run({call, evaluate, wait, click, set, selectText, key, diagnostics});
     } finally {
         clearTimeout(deadline);
