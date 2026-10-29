@@ -76,7 +76,7 @@
 (defn hit [items t lane pitch velocity]
   (note items t 0.001 (drums lane) pitch velocity))
 (defn gesture [beats node key f]
-  (p/map |[:param node key $] (p/curve beats (* beats 24) f)))
+  (p/curve beats (* beats 24) |[:param node key (f $)]))
 
 # Twelve notated 4/4 bars per voice. Durations are quarter notes, halved for sequencing.
 # Each row below holds two bars; the tenor already sounds an octave below its clef.
@@ -106,9 +106,10 @@
       [50 1.5] [50 0.5] [57 1] [62 1] [60 2] [60 2]
       [53 2] [53 1.5] [53 0.5] [58 3] [58 1]
       [55 1.5] [55 0.5] [57 1] [58 1] [57 2] [50 2]]]))
+(def flattened-parts (map p/flatten parts))
 (defn pitch-at [voice beat]
   (def t (% beat 24))
-  (def event (find (fn [[a b _]] (and (<= a t) (< t b))) (p/flatten (parts voice))))
+  (def event (find (fn [[a b _]] (and (<= a t) (< t b))) (flattened-parts voice)))
   (when event (event 2)))
 (def teeth [0 12 0 7 12 0 19 7 0 12 7 24 0 7 12])
 
@@ -132,7 +133,7 @@
 
   (eachp [v voice] manuals
     (for repeat 0 (math/ceil (/ beats 24))
-      (each [a b pitch] (p/flatten (parts v))
+      (each [a b pitch] (flattened-parts v)
         (def cadence (= kind :amen))
         (def t (if cadence (* 4 (- a 22)) (+ a (* repeat 24))))
         (when (<= 0 t (- beats 0.001))
