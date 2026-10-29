@@ -120,7 +120,7 @@ try {
             await wait('Number(document.querySelector("#time").value) > 20');
             await wait('document.querySelector("#marks").childElementCount > 0');
 
-            // Opening another example must replace the playing live session only after successful preparation.
+            // Opening a readable file releases the previous session before evaluating the new document.
             await evaluate(`(() => {
                 const examples = document.querySelector('#examples');
                 for (const path of ${JSON.stringify([entry, finite, invalid])}) examples.add(new Option(path, path));
@@ -128,21 +128,24 @@ try {
             const open = async path => {
                 await set("#examples", path);
                 await wait(`document.querySelector('#path').value === ${JSON.stringify(path)} && !document.querySelector('#play').disabled`);
+                await wait('document.querySelector("#time").disabled && Number(document.querySelector("#score-canvas").dataset.notes) === 0');
+                assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Play");
+                assert.equal(await evaluate('Number(document.querySelector("#time").value)'), 0);
+                assert.equal(await evaluate('document.querySelectorAll("#plugin-list .plugin").length'), 0);
+                assert(!await evaluate('document.querySelector("#state").textContent.includes("queued")'));
             };
             await open(invalid);
             await click("#apply");
             await wait('document.querySelector("#errors").textContent.includes("new score error")');
-            assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Stop", "A failed new score leaves the old audio running");
+            assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Play", "A new document must never resume the previous score");
             await open(finite);
-            assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Stop", "Browsing another example keeps audio running");
             await click("#apply");
             await wait('!document.querySelector("#play").disabled');
             assert.equal(await evaluate('document.querySelector("#errors").textContent'), "", "A new file starts a session instead of attempting a live update");
             await wait('document.querySelectorAll("#track-list .track").length === 2');
             assert.equal(await evaluate('document.querySelector("#code").textContent'), finiteSource);
             assert(!await evaluate('window.savedUI === document.querySelector(".plugin-body > div")'), "A new score creates its own plugin UI");
-            await wait('document.querySelector("#play").getAttribute("aria-label") === "Stop"');
-            await click('#play[aria-label="Stop"]');
+            assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Play", "Apply prepares the new document without starting it");
             // The finite session retains endpoint restart and invalid-position rejection.
             await seek(2);
             await wait('Number(document.querySelector("#time").value) === 2');
@@ -162,7 +165,7 @@ try {
 
             // A different file also replaces a live session with a revision still queued.
             await open(entry);
-            await click("#apply");
+            await click("#play");
             await wait('!document.querySelector("#play").disabled');
             await key("Enter", "Enter", 2);
             await wait('document.querySelector("#state").textContent.includes("queued")');
@@ -172,7 +175,7 @@ try {
             assert.equal(await evaluate('document.querySelector("#errors").textContent'), "");
             await wait('document.querySelectorAll("#track-list .track").length === 2');
             assert(!await evaluate('document.querySelector("#state").textContent.includes("queued")'));
-            await click('#play[aria-label="Stop"]');
+            assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Play");
             if (mode === "native") {
                 await open(entry);
                 const slow = source.replace("(daw/tempo 120)", "(daw/tempo 60)");

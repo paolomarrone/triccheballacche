@@ -136,7 +136,20 @@ async function action(op, entry = path.value, file) {
             controls.score(result.score, result.nativeAvailable);
             preferences.score(result.score);
         }
-        if (opening) { layout.view("code"); code.load(result.text); }
+        if (opening) {
+            // Reading or importing must succeed before releasing the current document.
+            const cleared = await request("unload");
+            revision = cleared.score.revision;
+            tracedSource = tracedPath = undefined;
+            frames = []; partial = false;
+            projection.score(cleared.score);
+            controls.score(cleared.score);
+            preferences.score(cleared.score);
+            views.checked = false;
+            controls.show(false);
+            layout.view("code");
+            code.load(result.text);
+        }
         if (opening || op === "save") {
             path.value = savedPath = result.path;
             saved = code.value;

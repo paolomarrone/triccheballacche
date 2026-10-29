@@ -348,7 +348,7 @@ WEB_OBJECTS = $(addprefix build/obj/web-offline/,$(WEB_SOURCES:.c=.o) janet.o js
 PLAYER_OBJECTS = $(addprefix build/obj/web-player/,$(WEB_SOURCES:.c=.o) player.o web/player_api.o audio.o janet.o json.o)
 WEB_LINK = -lm --no-entry -sMODULARIZE -sEXPORT_ES6 -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=2097152
 WEB_METHODS = "FS","UTF8ToString","ccall","HEAPU8","HEAPU32","HEAPF32"
-TRANSPORT_EXPORTS = "_transport_new","_transport_free_web","_transport_attach_web","_transport_started","_transport_stopped","_transport_seeked","_transport_collect","_transport_detach","_transport_json_web"
+TRANSPORT_EXPORTS = "_transport_new","_transport_free_web","_transport_attach_web","_transport_started","_transport_stopped","_transport_seeked","_transport_collect","_transport_detach","_transport_clear","_transport_json_web"
 VIEW_EXPORTS = "_score_prepare","_score_describe","_score_pack_web","_score_pack_length","_score_import","_web_score_activate","_malloc","_score_take_view","_view_free","_score_view_json","_free",$(TRANSPORT_EXPORTS)
 SCORE_EXPORTS = "_score_new","_web_score_free","_score_listen","_score_duration","_score_can_seek"
 WEB_EXPORTS = '[$(VIEW_EXPORTS),$(SCORE_EXPORTS),"_score_frames","_score_buffer","_score_render","_score_normalize"]'

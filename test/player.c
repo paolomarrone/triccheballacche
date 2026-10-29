@@ -350,13 +350,19 @@ static void test_live_clock(void) {
 		state = transport_json(&transport, "score", 0, NULL);
 		assert(state && strstr(state, "\"prepared\":false") && strstr(state, "\"revision\":3"));
 		free(state);
+		transport_clear(&transport);
+		assert(!transport.session && !transport.view.nnodes && !transport.queued.nnodes && transport.time == 0);
+		assert(transport.revision == 4 && transport.control_revision == 4);
+		state = transport_json(&transport, "score", 0, NULL);
+		assert(state && strstr(state, "\"nodes\":[]") && strstr(state, "\"tracks\":[]"));
+		free(state);
 		// A fresh session advances both revisions, even though its audio counter starts at zero.
 		initial.sample_rate = rates[i];
 		assert(!prepare_score(&initial, &output, "test/sequence.janet", NULL, NULL, &view));
 		assert(!session_activate(&s, &initial));
 		transport_attach(&transport, &s, &view);
 		transport_started(&transport);
-		assert(transport.revision == 4 && transport.control_revision == 4 && transport.time == 0);
+		assert(transport.revision == 5 && transport.control_revision == 5 && transport.time == 0);
 		transport_stopped(&transport);
 		transport_detach(&transport);
 		session_free(&s);

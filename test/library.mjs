@@ -38,6 +38,14 @@ try {
             url = await native.url;
         }
         await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {
+            const unloaded = async () => {
+                await wait('document.querySelector("#time").disabled && Number(document.querySelector("#score-canvas").dataset.notes) === 0');
+                assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Play");
+                assert.equal(await evaluate('Number(document.querySelector("#time").value)'), 0);
+                assert.equal(await evaluate('document.querySelectorAll("#track-list .track, #plugin-list .plugin, .plugin-window").length'), 0);
+                assert(await evaluate('!document.querySelector("#settings-audio-engine").checked && document.querySelector("#settings-audio-engine").disabled'));
+                assert(!await evaluate('document.querySelector("#catalog-list").textContent.includes("in use")'));
+            };
             const fileButton = name => `[...document.querySelectorAll("#file-list button")].find(button => button.dataset.name === ${JSON.stringify(name)})`;
             const screenshot = async name => writeFile(`build/test/${name}-${mode}.png`,
                 Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
@@ -74,9 +82,23 @@ try {
             assert.equal(await evaluate('document.querySelector("#path").value'), entry);
             assert.equal(await evaluate('document.querySelector("#code").textContent'), draft);
             assert.equal(await evaluate('document.querySelector("#examples").value'), "");
+            await wait('Number(document.querySelector("#timeline").dataset.revision) > 0');
+            const keptRevision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
+            const keptTime = await evaluate('Number(document.querySelector("#time").value)');
+            await wait(`Number(document.querySelector('#time').value) > ${keptTime}`);
             await evaluate('globalThis.confirm = () => true');
+            await set("#path", "examples/missing-score.janet");
+            await evaluate('document.querySelector("#path").focus()');
+            await key("Enter", "Enter");
+            await wait('!document.querySelector("#errors").hidden && !document.querySelector("#play").disabled');
+            assert.equal(await evaluate('document.querySelector("#code").textContent'), draft);
+            assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), keptRevision);
+            assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Stop");
+            const failedTime = await evaluate('Number(document.querySelector("#time").value)');
+            await wait(`Number(document.querySelector('#time').value) > ${failedTime}`);
             await set("#examples", "examples/gui.janet");
             await wait('document.querySelector("#path").value === "examples/gui.janet" && !document.querySelector("#play").disabled');
+            await unloaded();
             const guiSource = await readFile("examples/gui.janet", "utf8");
             assert.equal(await evaluate('document.querySelector("#code").textContent'), guiSource);
             await click("#open");
@@ -91,6 +113,9 @@ try {
             await wait('!document.querySelector("#file-dialog").open && !document.querySelector("#play").disabled');
             assert.equal(await evaluate('document.querySelector("#code").textContent'), original);
             assert.match(await evaluate('document.querySelector("#path").value'), /\/examples\/polpo\.janet$/);
+            await unloaded();
+            await click("#play");
+            await wait('Number(document.querySelector("#time").value) > 0');
             await screenshot("toolbar");
             await click("#open");
             await key("Escape", "Escape");
@@ -101,6 +126,9 @@ try {
             await key("Enter", "Enter");
             await wait('!document.querySelector("#play").disabled');
             assert.equal(await evaluate('document.querySelector("#path").value'), entry);
+            await unloaded();
+            await click("#play");
+            await wait('Number(document.querySelector("#time").value) > 0');
             await click("#open");
             await wait('document.querySelector("#file-list").inert === false');
             if (mode === "native") {
@@ -119,10 +147,13 @@ try {
                 assert.equal(await evaluate('document.querySelector("#code").textContent'), uploadedSource);
                 assert.equal(await evaluate('document.querySelector("#path").value'), "/examples/upload 音.janet");
             }
+            await unloaded();
             await click("#apply");
             await wait(`document.querySelector("#errors").textContent.includes(${JSON.stringify(mode === "native" ? "Selected file imports its neighbor" : "Uploaded file imports pattern")})`);
             await set("#examples", entry);
             await wait('document.querySelector("#path").value === "examples/polpo.janet" && !document.querySelector("#play").disabled');
+            await click("#play");
+            await wait('Number(document.querySelector("#time").value) > 0');
             await click("#open");
             await set("#file-directory", "/no/such/directory");
             await evaluate('document.querySelector("#file-location").requestSubmit()');

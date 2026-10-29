@@ -255,6 +255,14 @@ static void command(Editor *editor, webui_event_t *event) {
 		reply(event, editor, error, NULL, "", 0);
 		return;
 	}
+	if (!strcmp(op, "unload")) {
+		finish(editor);
+		transport_clear(&editor->transport);
+		free(editor->error);
+		editor->error = NULL;
+		reply(event, editor, NULL, NULL, "", 1);
+		return;
+	}
 	if (!strcmp(op, "midi-devices") || !strcmp(op, "midi-refresh") || !strcmp(op, "midi-connect")) {
 		const char *error = NULL;
 		int resume = editor->transport.playing;

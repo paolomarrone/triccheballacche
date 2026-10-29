@@ -28,6 +28,8 @@ int transport_collect(Transport *t);
 int transport_live(const Transport *t);
 // Detach before destroying the borrowed session. Retain the last visible score.
 void transport_detach(Transport *t);
+// Discard the document after stopping audio. Revisions remain monotonic.
+void transport_clear(Transport *t);
 void transport_free(Transport *t);
 // Common reply state and optional score/range/origin/automation/status projection.
 // position is the musical position in seconds; a stopped transport uses its saved time.

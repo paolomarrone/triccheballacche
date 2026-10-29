@@ -205,7 +205,14 @@ export async function command(op, ...args) {
             download(path.split("/").at(-1), source, "text/plain;charset=utf-8");
         } else if (["run", "prepare", "update"].includes(op))
             result = await run(path, checkedText(args[1]), state, op === "update", op === "run" || state.playing);
-        else if (op === "sample-rate") {
+        else if (op === "unload") {
+            await midi.detach();
+            player = undefined;
+            await closePlayer(host);
+            host._transport_clear(transport);
+            failure = "";
+            result = query("score");
+        } else if (op === "sample-rate") {
             const rate = args[0];
             if (state.audio) throw Error("Turn the engine off before changing sample rate");
             if (!Number.isInteger(rate) || rate < 1 || rate > 384000) throw Error("Sample rate must be within 1..384000 Hz");

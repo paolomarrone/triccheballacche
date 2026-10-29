@@ -79,6 +79,13 @@ void transport_detach(Transport *t) {
 	score_view_free(&t->queued);
 }
 
+void transport_clear(Transport *t) {
+	transport_detach(t);
+	score_view_free(&t->view);
+	t->time = 0;
+	t->control_revision = ++t->revision;
+}
+
 void transport_free(Transport *t) {
 	score_view_free(&t->view);
 	score_view_free(&t->queued);
