@@ -7,7 +7,7 @@ import {withBrowser} from "./chromium.mjs";
 const directory = await mkdtemp("build/test/editor-loading-");
 const entry = `${directory}/score.janet`, catalog = `${directory}/project.json`;
 const binary = "build/test/fixture.perone/wasm32/fixture.wasm", missing = `${directory}/missing.wasm`;
-const source = `(def tone (daw/plugin "build/test/fixture.perone" {:gain 0.02}))
+const source = `(def tone (daw/plugin {:format :perone :id "fixture"} {:gain 0.02}))
 (daw/output (daw/track tone))
 (daw/note tone 0 120 60)
 (daw/end 120)
@@ -34,7 +34,15 @@ try {
         assert.equal(await downloads(binary), 1);
         assert.equal(await downloads(missing), 0);
         const revision = await evaluate('Number(document.querySelector("#timeline").dataset.revision)');
-        await set("#code", source.replace("fixture.perone", "missing.perone"));
+        await click("#settings");
+        await click("#settings-plugins-tab");
+        assert.match(await evaluate('document.querySelector(\'.catalog-item[data-path="build/test/fixture.perone"]\').textContent'), /1 in use/);
+        await click('#settings-dialog [data-close]');
+        await set("#code", source.replace(':id "fixture"', ':id "unknown"'));
+        await click("#apply");
+        await wait('document.querySelector("#errors").textContent.includes("plugin not found: unknown")');
+        assert.equal(await evaluate('Number(document.querySelector("#timeline").dataset.revision)'), revision);
+        await set("#code", source.replace(':id "fixture"', ':path "build/test/missing.perone"'));
         await click("#apply");
         await wait('document.querySelector("#errors").textContent.includes("Cannot load")');
         assert.equal(await downloads(missing), 1);

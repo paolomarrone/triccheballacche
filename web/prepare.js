@@ -35,7 +35,7 @@ export function prepareBackground(host, path, source, sampleRate) {
             } catch (error) { finish(error); }
             finally { host._free(pointer); }
         };
-        try { worker.postMessage({files, path, source, sampleRate}, files.map(file => file.bytes.buffer)); }
+        try { worker.postMessage({files, path, source, sampleRate, pluginPaths: host.pluginPaths}, files.map(file => file.bytes.buffer)); }
         catch (error) { finish(error); }
     });
 }

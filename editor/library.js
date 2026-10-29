@@ -89,7 +89,7 @@ export function library(request, open, fail) {
                         const {product} = JSON.parse(file.text);
                         const effect = product.buses.some(bus => bus.type === "audio" && bus.direction === "input" && !bus.sidechain);
                         plugins.push({format: "perone", path: file.path.slice(0, -"/product.json".length), name: product.name || product.bundleName,
-                            kind: effect ? "Effect" : "Instrument"});
+                            id: product.bundleName, kind: effect ? "Effect" : "Instrument"});
                     } else if (file.path.endsWith(".janet") && !file.path.startsWith("examples/sources/")) scores.push(file.path);
                 }
                 data = {...result, plugins: plugins.sort((a, b) => (a.name || a.path).localeCompare(b.name || b.path) || a.path.localeCompare(b.path))};

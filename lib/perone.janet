@@ -49,7 +49,8 @@
       (assert (and (number? value) (<= (math/abs value) 3.4028234663852886e38))
         "Perone parameter is outside float32 range")))
   (def binary (string path "/" host/platform "/" name))
-  {:product product
+  {:id name
+   :product (merge product {:format "perone" :id name})
    :binary (string binary host/binary-suffix)
    :ui-binary (when (product :ui) (string binary "-ui" host/binary-suffix))
    :layout {:input-channels input

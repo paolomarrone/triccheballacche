@@ -24,7 +24,7 @@
             (let [entry (plugin/read path)]
               (assert (= :file (os/stat (entry :binary) :mode)) "Missing native DSP binary")
               [entry])
-            (plugin/scan path)))
+            (plugin/scan format path)))
         (each entry entries
           (array/push plugins {:format (string format) :path (if (= format :perone) path (entry :binary))
             :id (entry :id) :name (or (get-in entry [:product :name]) path)

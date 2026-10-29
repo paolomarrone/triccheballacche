@@ -41,6 +41,8 @@ export async function connect() {
             path: file.path, text: file.path.endsWith(".json") ? host.FS.readFile(host.perone.path(file.path), {encoding: "utf8"}) : undefined
         }));
     library = {sources: [{format: "perone", paths: [url.href]}], editable: false, files: entries};
+    host.pluginPaths = {perone: entries.filter(file => file.path.endsWith(".perone/product.json"))
+        .map(file => file.path.slice(0, -"/product.json".length))};
     transport = host._transport_new();
     if (!transport) throw Error("Out of memory");
 }

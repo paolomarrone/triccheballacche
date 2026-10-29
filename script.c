@@ -41,6 +41,9 @@ JanetTable *script_env(unsigned sample_rate) {
 	janet_def(env, "host/max-inputs", janet_wrap_integer(MAX_INPUTS), NULL);
 	janet_def(env, "host/max-message", janet_wrap_number(dsp_max_message), NULL);
 	janet_def(env, "host/scan", janet_wrap_cfunction(scan), NULL);
+	char *paths = plugin_default_paths();
+	janet_def(env, "host/plugin-paths", paths ? janet_cstringv(paths) : janet_wrap_nil(), NULL);
+	free(paths);
 	char *settings = plugin_settings_path();
 	janet_def(env, "host/settings-path", settings ? janet_cstringv(settings) : janet_wrap_nil(), NULL);
 	free(settings);
@@ -83,6 +86,7 @@ void script_config(Janet bundle, Janet defaults, PluginConfig *config) {
 		config->format = !strcmp(name, "clap") ? PLUGIN_CLAP
 		    : !strcmp(name, "lv2")             ? PLUGIN_LV2
 		    : !strcmp(name, "vst3")            ? PLUGIN_VST3
+		    : !strcmp(name, "perone")          ? PLUGIN_PERONE
 		                                       : -1;
 		config->id = copy_string(janet_getcstring(&id, 0));
 		if (!config->id)

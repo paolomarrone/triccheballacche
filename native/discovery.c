@@ -3,6 +3,10 @@
 #include "host/platform.h"
 #include "thread.h"
 
+char *plugin_default_paths(void) {
+	return NULL;
+}
+
 // Preparation and catalog requests use independent Janet VMs. Cache scans outside
 // those VMs, keyed by the resolved file and its stamp; instances have a separate cache.
 typedef struct Scan {

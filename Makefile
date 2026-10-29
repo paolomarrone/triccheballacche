@@ -430,6 +430,7 @@ test-web: build/web/offline.mjs build/web/player.mjs cli build/test/view_json$(E
 	node test/catalog.mjs
 	node test/request.mjs
 	node test/web.mjs
+	node test/plugin-references.mjs
 	node test/perone-controls.mjs
 	node test/view-json.mjs
 

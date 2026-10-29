@@ -42,29 +42,31 @@
 
 
 (def- plugin/cache @{})
+(def- plugin/host-paths (if host/plugin-paths (json/decode host/plugin-paths true) {}))
 
 (defn plugin/default-paths [format]
-  (distinct
-    (if (= format :perone)
-      ["plugins" (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks")
-       (or (os/getenv "MDA_PERONE") "build/library/mda")
-       (or (os/getenv "ASID_PERONE") "../asid/plugin/perone/build/asid.perone")
-       (or (os/getenv "TIBIA_PERONE") "../tibia/out/perone/c/build/tibia-test.perone")]
-      (do
-        (def variable (case format :clap "CLAP_PATH" :lv2 "LV2_PATH" :vst3 "VST3_PATH" (error "unsupported plugin format")))
-        (def custom (os/getenv variable))
-        (def suffix (string format))
-        (def windows (= (os/which) :windows))
-        (def separator (if windows ";" ":"))
-        (def defaults (if windows
-          [(if (= format :lv2) (string (or (os/getenv "APPDATA") "") "/LV2")
-             (string (or (os/getenv "LOCALAPPDATA") "") "/Programs/Common/" (string/ascii-upper suffix)))
-           (string (or (os/getenv "COMMONPROGRAMFILES") "C:/Program Files/Common Files") "/" (string/ascii-upper suffix))]
-          [(string (or (os/getenv "HOME") "") "/." suffix)
-           (string "/usr/local/lib/" suffix) (string "/usr/lib/" suffix)]))
-        (filter |(> (length $) 0)
-          (if (and (= format :lv2) custom) (string/split separator custom)
-            (array/concat @[] (string/split separator (or custom "")) defaults)))))))
+  (or (plugin/host-paths format)
+    (distinct
+      (if (= format :perone)
+        ["plugins" (or (os/getenv "BRICKWORKS_PERONE") "build/library/brickworks")
+         (or (os/getenv "MDA_PERONE") "build/library/mda")
+         (or (os/getenv "ASID_PERONE") "../asid/plugin/perone/build/asid.perone")
+         (or (os/getenv "TIBIA_PERONE") "../tibia/out/perone/c/build/tibia-test.perone")]
+        (do
+          (def variable (case format :clap "CLAP_PATH" :lv2 "LV2_PATH" :vst3 "VST3_PATH" (error "unsupported plugin format")))
+          (def custom (os/getenv variable))
+          (def suffix (string format))
+          (def windows (= (os/which) :windows))
+          (def separator (if windows ";" ":"))
+          (def defaults (if windows
+            [(if (= format :lv2) (string (or (os/getenv "APPDATA") "") "/LV2")
+               (string (or (os/getenv "LOCALAPPDATA") "") "/Programs/Common/" (string/ascii-upper suffix)))
+             (string (or (os/getenv "COMMONPROGRAMFILES") "C:/Program Files/Common Files") "/" (string/ascii-upper suffix))]
+            [(string (or (os/getenv "HOME") "") "/." suffix)
+             (string "/usr/local/lib/" suffix) (string "/usr/lib/" suffix)]))
+          (filter |(> (length $) 0)
+            (if (and (= format :lv2) custom) (string/split separator custom)
+              (array/concat @[] (string/split separator (or custom "")) defaults))))))))
 
 # Preferences contain only discovery paths; explicit score references are unchanged.
 (defn plugin/check-paths [paths]
@@ -129,23 +131,25 @@
   description)
 
 (def- plugin/descriptions @{})
-(defn plugin/scan [path]
-  (or (plugin/descriptions path)
+(defn plugin/scan [format path]
+  (if (= format :perone)
+    [(perone/read path)]
+    (or (plugin/descriptions path)
       (let [entries (json/decode (host/scan path) true)]
         # Normalize once, before any caller sees or caches the description.
         (each entry entries (unless (entry :error) (plugin/sample-rate entry)))
         (put plugin/descriptions path entries)
-        entries)))
+        entries))))
 
 (defn plugin/find [format id]
-  (assert (string? id) "plugin reference needs :id or :path")
+  (assert (and (string? id) (> (length id) 0)) "plugin reference needs :id or :path")
   (var found nil)
   (each root (plugin/paths format)
     (unless found
       (each path (plugin/files format root)
         (unless found
           (try
-            (set found (find |(= ($ :id) id) (plugin/scan path)))
+            (set found (find |(= ($ :id) id) (plugin/scan format path)))
             ([err] (eprint "Plugin: " path ": " err)))))))
   (or found (error (string "plugin not found: " id "; check Settings or the plugin search path"))))
 
@@ -155,15 +159,17 @@
             (if (string? reference)
               (perone/read reference)
               (do
+                (assert (dictionary? reference) "expected a plugin path or reference")
                 (def format (reference :format))
-                (assert (or (= format :clap) (= format :lv2) (= format :vst3)) "unsupported plugin format")
+                (assert (index-of format [:perone :clap :lv2 :vst3]) "unsupported plugin format")
                 (def path (reference :path))
                 (def id (reference :id))
+                (assert (or (nil? path) (string? path)) "plugin :path must be a string")
+                (assert (or (nil? id) (and (string? id) (> (length id) 0))) "plugin :id must be a nonempty string")
                 (def entry
                   (if path
                     (do
-                      (assert (string? path) "plugin :path must be a string")
-                      (def entries (plugin/scan path))
+                      (def entries (plugin/scan format path))
                       (assert (or id (= 1 (length entries))) "bundle has multiple plugins; specify :id")
                       (or (if id (find |(= ($ :id) id) entries) (entries 0))
                           (error "plugin ID not found")))

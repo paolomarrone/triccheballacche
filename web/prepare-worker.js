@@ -4,7 +4,7 @@ import createModule from "../build/web/player.mjs";
 self.onmessage = async ({data}) => {
     const log = [];
     try {
-        const host = await createModule({printErr: message => log.push(message)});
+        const host = await createModule({printErr: message => log.push(message), pluginPaths: data.pluginPaths});
         for (const {path, bytes} of data.files) {
             host.FS.mkdirTree(path.slice(0, path.lastIndexOf("/")) || "/");
             host.FS.writeFile(path, bytes);

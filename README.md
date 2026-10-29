@@ -236,14 +236,29 @@ import/export are not implemented.
 
 | Format | Reference to `daw/plugin` | Parameters / UI |
 | --- | --- | --- |
-| Perone | `"path/to/plugin.perone"` | `product.json` IDs; native X11 or web UI. Native and Wasm DSP. |
+| Perone | `{:format :perone :id "piano"}` or `"path/to/plugin.perone"` | `product.json` parameter IDs; native X11 or web UI. Native and Wasm DSP. |
 | CLAP | `{:format :clap :id "plugin.id"}` | Native numeric IDs; X11/Win32 UI. |
 | LV2 | `{:format :lv2 :id "urn:plugin:uri"}` | Port symbols; X11/Win32 UI. |
 | VST3 | `{:format :vst3 :id "32-digit-processor-class-id"}` | Native numeric IDs; normalized 0–1 values, integer indices for discrete parameters; X11/Win32 UI. |
 
-CLAP/LV2/VST3 run in the native host only. Add `:path` to select an explicit module or
-bundle; `:id` can be omitted only for a single supported plugin. No Janet wrapper
-is needed. `build/tools/plugin-scan PATH` lists IDs, parameters and rejection reasons.
+References without `:path` search the configured plugin locations. Perone uses
+`product.bundleName` as its ID, independent of the bundle's directory name; the
+browser searches its published catalog. Settings lists the IDs. The first match
+wins in search-path order (catalog order in the browser); IDs do not select versions.
+
+For any format, add `:path` to select an explicit module or bundle, even outside
+the search paths. Relative paths use the host's working directory; absolute paths
+are also accepted. With `:path`, `:id` can be omitted for a single supported plugin;
+when supplied, it must match that bundle. Perone also retains the string shorthand.
+
+```janet
+(def piano (daw/plugin :keys {:format :perone :id "piano"}))
+(def local (daw/plugin {:format :perone :path "./vendor/custom.perone"}))
+```
+
+The optional leading keyword (`:keys`) identifies the instance for live updates.
+CLAP/LV2/VST3 run in the native host only. No Janet wrapper is needed.
+`build/tools/plugin-scan PATH` lists their IDs, parameters and rejection reasons.
 
 Perone bundles contain `product.json`, `<platform>/<bundleName>.so` (`.dll` on
 Windows) or `wasm32/<bundleName>.wasm`, and optional UI assets. Copy the whole bundle.
