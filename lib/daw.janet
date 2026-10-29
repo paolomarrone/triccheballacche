@@ -91,12 +91,14 @@
   [start bpm pattern]
   (assert (and (number? start) (<= 0 start 3600)) "start must be between 0 and 3600 seconds")
   (assert (and (number? bpm) (= (- bpm bpm) 0) (> bpm 0)) "BPM must be finite and positive")
-  (def items (daw-pattern/flatten pattern))
+  (def sources (daw-pattern/streams pattern))
+  (assert (pattern :length) "expected a finite phrase")
   (def unit (/ 60 bpm))
   (def end (+ start (* unit (pattern :length))))
   (assert (<= start end 3600) "pattern end must be within 3600 seconds")
-  (each item items
-    (def [a b command] item)
+  (loop [source :in sources [from to command] :in (source :events)]
+    (def a (+ (source :offset) from))
+    (def b (+ (source :offset) to))
     (daw/check-command command)
     (def time (+ start (* unit a)))
     (def until (+ start (* unit b)))

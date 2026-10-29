@@ -64,6 +64,7 @@ console.log("OK: Janet patterns, validation, stereo/mono DSP, event boundaries a
 
 // Rebuilding initial state preserves C handles and configured defaults, including duplicated mono effects.
 const path = "test/playback.janet", expected = renderScore(host, path, 48000);
+host.perone.modules.clear();
 host.perone.deferred = true;
 const score = host.ccall("score_new", "number", ["string", "number"], [path, 48000]);
 host.perone.deferred = false;
@@ -72,6 +73,22 @@ assert.equal(host.perone.instances.size, 0, "Playback preparation must not creat
 assert.equal(host.perone.planned.size, 3);
 const source = host.perone, destination = new Perone(host);
 try {
+    assert.throws(() => source.releasePrepared(), /Wasm module not preloaded/);
+    assert.equal(source.planned.size, 3, "Missing binaries must not transfer ownership");
+    const loaded = [];
+    await assert.rejects(source.loadPrepared(async path => {
+        loaded.push(path);
+        if (path.includes("effect.perone")) throw Error("injected download failure");
+        await new Promise(resolve => setTimeout(resolve, 20));
+        return host.FS.readFile(path);
+    }), /injected download failure/);
+    assert.equal(source.modules.size, 1, "All downloads must settle before reporting a failure");
+    assert.equal(source.planned.size, 3);
+    await source.loadPrepared(async path => { loaded.push(path); return host.FS.readFile(path); });
+    assert.equal(loaded.filter(path => path.includes("fixture.perone")).length, 1);
+    assert.equal(loaded.filter(path => path.includes("effect.perone")).length, 2,
+        "Retry the failed module once, even for duplicated mono effects");
+    await source.loadPrepared(() => { throw Error("Compiled modules must be reused"); });
     const setup = source.releasePrepared();
     assert.equal(source.instances.size, 0);
     assert.equal(source.planned.size, 0);

@@ -63,13 +63,13 @@ export class Perone {
         const config = {...configuration, path: this.path(configuration.path),
             parameters: new Float32Array(configuration.parameters)};
         const {path, sampleRate, inputChannels, outputChannels, midiBus, parameters, outputParameters, capacity, toDsp = 0, toUi = 0} = config;
-        const module = this.modules.get(path);
-        if (!module) throw Error("Wasm module not preloaded: " + path);
         if (this.deferred) {
             this.planned.set(id, config);
             this.next = Math.max(this.next, id + 1);
             return id;
         }
+        const module = this.modules.get(path);
+        if (!module) throw Error("Wasm module not preloaded: " + path);
         const wasm = new WebAssembly.Instance(module).exports;
         wasm.__wasm_call_ctors();
         const pointer = wasm.perone_get_api(2);
@@ -193,14 +193,28 @@ export class Perone {
         if (errors.length) throw new AggregateError(errors, "Perone cleanup failed: " + errors.map(String).join("; "));
     }
 
+    // Load only the binaries needed by the prepared graph, once per path.
+    async loadPrepared(load) {
+        const paths = new Set([...this.planned.values()].map(config => config.path));
+        const loaded = await Promise.allSettled([...paths].filter(path => !this.modules.has(path))
+            .map(async path => this.add(path, await load(path))));
+        const failed = loaded.find(result => result.status === "rejected");
+        if (failed) throw failed.reason;
+    }
+
     // Transfer descriptions only. Each DSP is instantiated once by its audio owner.
     releasePrepared() {
         if (this.instances.size) throw Error("Only deferred DSPs can be transferred");
         const instances = [...this.planned].map(([id, config]) => ({id, config}));
         const paths = new Set(instances.map(({config}) => config.path));
+        const modules = [...paths].map(path => {
+            const module = this.modules.get(path);
+            if (!module) throw Error("Wasm module not preloaded: " + path);
+            return [path, module];
+        });
         for (const {id} of instances) this.remote.add(id);
         this.planned.clear();
-        return {modules: [...this.modules].filter(([path]) => paths.has(path)), instances};
+        return {modules, instances};
     }
 
     restorePrepared(setup) {

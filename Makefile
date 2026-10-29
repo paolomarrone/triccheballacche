@@ -435,6 +435,7 @@ test-web: build/web/offline.mjs build/web/player.mjs cli build/test/view_json$(E
 
 test-browser: test-web
 	node test/browser.mjs
+	node test/editor-loading.mjs
 
 test-live: gui test-web
 	node test/live-editor.mjs

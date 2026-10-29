@@ -31,10 +31,8 @@ export async function connect() {
     }
     // Finish every preload before exposing the runtime, including on failure.
     const loaded = await Promise.allSettled(files.map(async file => {
-        if (file.asset) return;
-        const response = await fetch(new URL(file.url, url), {cache: "no-store"});
-        if (!response.ok) throw Error("Cannot load " + file.path);
-        await addFile(host, file.path, new Uint8Array(await response.arrayBuffer()));
+        if (file.asset || file.path.endsWith(".wasm")) return;
+        await addFile(host, file.path, await fetchFile(file.path));
     }));
     const failed = loaded.find(result => result.status === "rejected");
     if (failed) throw failed.reason;
@@ -45,6 +43,14 @@ export async function connect() {
     library = {sources: [{format: "perone", paths: [url.href]}], editable: false, files: entries};
     transport = host._transport_new();
     if (!transport) throw Error("Out of memory");
+}
+
+async function fetchFile(path) {
+    const url = assets.get(host.perone.path(path));
+    if (!url) throw Error("File missing from the web catalog: " + path);
+    const response = await fetch(url, {cache: "no-store"});
+    if (!response.ok) throw Error("Cannot load " + path);
+    return new Uint8Array(await response.arrayBuffer());
 }
 
 function query(op = "", args = []) {
@@ -91,12 +97,13 @@ async function run(path, source, state, live, playing) {
             nextScore = 0;
             return {};
         }
-        await pause();
-        await midi.detach();
         host.perone.deferred = true;
         try {
             if (host._web_score_activate(nextScore)) throw Error("Cannot activate plugin graph");
         } finally { host.perone.deferred = false; }
+        await host.perone.loadPrepared(fetchFile);
+        await pause();
+        await midi.detach();
         replacing = true;
         player = undefined;
         await closePlayer(host);

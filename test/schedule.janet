@@ -14,7 +14,8 @@
 (each bad [-1 3601 nil "0" math/inf (/ 0 0)]
   (rejects (fn [] (daw/schedule bad 120 empty))))
 (each bad [nil {} {:length math/inf :streams []} {:length -1 :streams []}
-           {:length 1 :streams nil} {:length 1 :events []}]
+           {:length 1 :streams nil} {:length 1 :events []}
+           (p/loop (p/events 1 []))]
   (rejects (fn [] (daw/schedule 0 120 bad))))
 (each items [nil [[0 1]]
              [[0 1 [:param synth :gain 0.5]]]
@@ -38,5 +39,7 @@
   (p/events 1 [[-0.25 0.25 60] [0.5 1.5 64] [1.5 1.75 67]])))
 (def controls (p/map |[:param synth :gain $]
   (p/events 1 [[0.5 0.5 0.5] [0 0 0.25] [0.5 0.5 0.75] [1.5 1.5 0.5]])))
-(assert (= (daw/schedule 0.5 120 (p/parallel [notes controls])) 1))
+# Resolving offsets directly must agree with scheduling the flattened phrase.
+(def phrase (p/serial [(p/events 0.25 []) (p/parallel [notes controls])]))
+(assert (= (daw/schedule 0.375 120 phrase) 1))
 (daw/end 1.5)

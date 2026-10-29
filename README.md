@@ -70,6 +70,9 @@ editing and audio work without it. Pass absolute `EMCC`/`EMXX` paths if needed.
 `make web WEB_CONTENT="lib examples build/library/brickworks"`.
 `?project=URL` selects another catalog. These are development assets, not a
 complete release package.
+The editor loads scripts and metadata at startup, then downloads and compiles
+only the DSP modules needed by an applied score. Compiled modules are reused
+throughout the session.
 
 ### Windows x64
 
