@@ -21,7 +21,7 @@ export function prepareBackground(host, path, source, sampleRate) {
             worker.terminate();
             error ? reject(error) : resolve(value);
         };
-        const timeout = setTimeout(() => finish(Error("Score preparation exceeded the time limit")), 5000);
+        const timeout = setTimeout(() => finish(Error("Score preparation exceeded the time limit")), 60000);
         worker.onerror = event => finish(Error(event.message));
         worker.onmessage = ({data}) => {
             if (data.error) return finish(Error(data.error));

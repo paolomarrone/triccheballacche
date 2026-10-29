@@ -177,6 +177,7 @@ playback, Apply queues `daw/score` revisions on the next beat grid (`:quantum`,
 default 4). Use stable keyword identities for plugins. Graph, identities, tempo,
 duration and plugin configurations must match; stop before changing them.
 Errors leave current music running; stop or seek cancels queued revisions.
+Score preparation has a one-minute time limit in both native and web editors.
 
 In 2D, drag or Shift+wheel pans time, wheel zooms time, and Ctrl/Command+wheel
 resizes tracks. Wheel over names scrolls tracks. Touch supports drag and pinch.

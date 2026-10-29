@@ -48,7 +48,7 @@ int prepare_background(
 	}
 	mutex_lock(&p.mutex);
 	while (!p.done) {
-		if (condition_wait_ms(&p.ready, &p.mutex, 5000) == 1 && p.vm && !p.done)
+		if (condition_wait_ms(&p.ready, &p.mutex, 60000) == 1 && p.vm && !p.done)
 			janet_interpreter_interrupt(p.vm);
 	}
 	mutex_unlock(&p.mutex);

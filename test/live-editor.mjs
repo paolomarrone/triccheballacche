@@ -33,7 +33,7 @@ try {
     for (const mode of ["native", "web"]) {
         let url = `http://127.0.0.1:${server.address().port}/editor/index.html?score=${entry}&project=../${catalog}`;
         if (mode === "native") {
-            app = nativeEditor(entry);
+            app = nativeEditor(entry, {}, {timeout: 120000});
             url = await app.url;
         }
         await withBrowser(async ({call, evaluate, wait, click, set, key, diagnostics}) => {
@@ -74,8 +74,10 @@ try {
             await wait('document.querySelector("#errors").textContent.includes("live error")');
             assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Stop", "Evaluation failure leaves audio running");
             await set("#code", '(gccollect) (while true nil)');
+            const preparationStart = performance.now();
             await click("#apply");
-            await wait('!document.querySelector("#play").disabled');
+            await wait('!document.querySelector("#play").disabled', 70000);
+            assert(performance.now() - preparationStart >= 59000, "Preparation gets a full minute before interruption");
             assert(await evaluate('!document.querySelector("#errors").hidden'), "Runaway evaluation is interrupted");
             assert.equal(await evaluate('document.querySelector("#play").getAttribute("aria-label")'), "Stop");
             await set("#code", source);
@@ -193,7 +195,7 @@ try {
             }
             assert.deepEqual(diagnostics, []);
             console.log(`OK: ${mode} Play/Stop, Apply, live-to-finite file switches, pending revisions, seek, UI continuity, errors and timeout`);
-        }, {graphics: true});
+        }, {graphics: true, timeout: 120000});
         await app?.close();
         app = undefined;
     }

@@ -79,19 +79,31 @@ for (const path of ["test/schedule.janet", "test/playback.janet"]) {
     assert.deepEqual(renderScore(host, entry, 48000), plain);
 }
 
-// Score annotations use template seconds, including source offsets and the score tempo.
-const looping = await traceScore(host, "test/trace-loop.janet", `
+// Origins follow event order even when transforms move times and loop joins sources.
+const loopPath = "test/trace-loop.janet", loopSource = `
 (import ../lib/pattern :as p)
 (def tone (daw/plugin "build/test/fixture.perone"))
 (daw/output (daw/track tone))
 (daw/tempo 240)
+(def notes (p/events 2 [[0 1 [:note tone 60 100]]])) # note origin
+(def controls (p/events 2 [[0 0 [:param tone :gain 0.5]]])) # control origin
+(def phrase (p/serial [notes (p/events 0 []) controls]))
 (daw/score (p/serial [(p/events 3 [])
-  (p/parallel [(p/loop (p/events 4 [[0 1 [:note tone 60 100]]]))
-               (p/events 0 [[1 1 [:param tone :gain 0.5]]])])]) {:duration 2})
-`);
-renderScore(host, looping, 48000);
-assert.deepEqual(readTrace(host).events.map(event => [event[0], event[1], event[3], event[5]]),
-    [[.75, 1, "note", 0], [1, 1, "param", 1]]);
+  (p/parallel [(p/loop (p/events 1 []))
+               (p/loop (p/stretch 2 (p/reverse phrase)))
+               (p/events 0 [[1 1 [:param tone :gain 0.25]]])])]) {:duration 4})
+`;
+const looping = await traceScore(host, loopPath, loopSource);
+assert.deepEqual(renderScore(host, looping, 48000), renderScore(host, loopPath, 48000));
+const loopTrace = readTrace(host);
+assert.deepEqual(loopTrace.events.map(event => [event[0], event[1], event[3], event[5]]),
+    [[2.25, 2.75, "note", 0], [1.75, 1.75, "param", 1], [1, 1, "param", 2]]);
+for (const [event, label] of [[0, "# note origin"], [1, "# control origin"]]) {
+    const line = loopSource.split("\n").findIndex(row => row.includes(label)) + 1;
+    assert.equal(loopTrace.events[event][2].length, 1);
+    assert(loopTrace.locations[loopTrace.events[event][2][0]]
+        .some(frame => frame.file === loopPath && frame.line === line));
+}
 
 // Failure, including a second installation, must not leave a report or poison ordinary playback.
 for (const failure of ['(error "trace failure")', '(trace/install (curenv) (dyn :current-file))']) {

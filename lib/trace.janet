@@ -22,9 +22,6 @@
   (var fallback-events 0)
   (var pushed-events 0)
 
-  (defn values [pattern]
-    (seq [source :in (streams pattern) [_ _ value] :in (source :events)] value))
-
   (defn origin [&opt fiber]
     (def stack (debug/stack (or fiber (fiber/current))))
     (++ captures)
@@ -60,12 +57,19 @@
   (put root-env 'array/push push-binding)
   (put env 'array/push push-binding)
 
+  # Store location IDs by source and event, without duplicating musical times or values.
+  # map, stretch and reverse keep this order, while loop joins all sources.
+  (defn uniform [pattern source]
+    (seq [stream :in (pattern :streams)]
+      (map (fn [_] [source]) (stream :events))))
+
   (defn provenance [pattern fallback]
     (if-let [stored (annotations pattern)]
       stored
       (do
-        (+= fallback-events (length (values pattern)))
-        ((originals 'map) (fn [_] [fallback]) pattern))))
+        (each stream (pattern :streams)
+          (+= fallback-events (length (stream :events))))
+        (uniform pattern fallback))))
 
   (eachp [name f] originals
     (def wrapped
@@ -74,31 +78,26 @@
         (def source (origin))
         (def result (f ;args))
         (def trace
-          (case name
-            'events ((originals 'events) (result :length)
-                      (seq [[i [a b value]] :pairs (args 1)]
-                        (def slot (get-in appended [(args 1) i]))
-                        (def saved (and slot (= (slot 0) ((args 1) i))))
-                        (when saved (++ pushed-events))
-                        [a b [(if saved (slot 1) source)]]))
-            'serial (f (map |(provenance $ source) (args 0)))
-            'parallel (f (map |(provenance $ source) (args 0)))
-            'map (provenance (args 1) source)
-            'stretch (f (args 0) (provenance (args 1) source))
-            'reverse (f (provenance (args 0) source))
-            'loop (f (provenance (args 0) source))
-            ((originals 'map) (fn [_] [source]) result)))
-        (def previous (when (annotations result) (values (annotations result))))
+          (cond
+            (= name 'events)
+              (if (empty? (args 1)) []
+                [(seq [[i item] :pairs (args 1)]
+                  (def slot (get-in appended [(args 1) i]))
+                  (def saved (and slot (= (slot 0) item)))
+                  (when saved (++ pushed-events))
+                  [(if saved (slot 1) source)])])
+            (or (= name 'serial) (= name 'parallel))
+              (seq [pattern :in (args 0) stream :in (provenance pattern source)] stream)
+            (or (= name 'map) (= name 'stretch)) (provenance (args 1) source)
+            (= name 'reverse) (provenance (args 0) source)
+            (= name 'loop) [(seq [stream :in (provenance (args 0) source) origins :in stream] origins)]
+            (uniform result source)))
+        (def previous (annotations result))
         (put annotations result
           (if previous
-            (do
-              (var i 0)
-              ((originals 'map)
-                (fn [sources]
-                  (def combined (distinct (tuple ;(previous i) ;sources)))
-                  (++ i)
-                  combined)
-                trace))
+            (seq [[si stream] :pairs trace]
+              (seq [[ei origins] :pairs stream]
+                (distinct (tuple ;((previous si) ei) ;origins))))
             trace))
         result))
     (put module name (table/setproto @{:value wrapped} (module name))))
@@ -112,7 +111,7 @@
   (defn scheduled [f args pattern start bpm]
     (def source (origin))
     (def sources (streams pattern))
-    (def traces (streams (provenance pattern source)))
+    (def traces (provenance pattern source))
     (def orders @{})
     (each stream sources
       (each [_ _ command] (stream :events)
@@ -127,7 +126,7 @@
         (array/push emitted
           [(+ start (* unit (+ (stream :offset) a)))
            (+ start (* unit (+ (stream :offset) b)))
-           ((((traces si) :events) ei) 2) (command 0) node order])
+           ((traces si) ei) (command 0) node order])
         (put orders node (+ order 1))))
     result)
 
