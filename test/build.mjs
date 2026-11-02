@@ -4,7 +4,7 @@ import {mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFi
 import {resolve, join, relative} from "node:path";
 
 // Exercise the actual Makefile in an isolated build tree, without touching working binaries.
-const [make = "make", cc = "cc", miniaudio = ".deps/miniaudio.h", emcc] = process.argv.slice(2);
+const [make = "make", cc = "cc", miniaudio = ".deps/miniaudio-0.11.26/miniaudio.h", emcc] = process.argv.slice(2);
 const root = process.cwd(), directory = mkdtempSync("build/test/build-"), work = join(directory, "repo");
 mkdirSync(work);
 const env = {...process.env};
@@ -37,7 +37,7 @@ try {
     // An unrelated sibling header must never override the pinned default.
     writeFileSync(join(directory, "miniaudio.h"), "#error Wrong miniaudio header\n");
     build(targets);
-    assert(readFileSync(join(work, "build/config/native.compile"), "utf8").includes(".deps/miniaudio.h"));
+    assert.match(readFileSync(join(work, "build/config/native.compile"), "utf8"), /\.deps\/miniaudio-[^/]+\/miniaudio\.h/);
     let before = times(targets);
     build([...targets].reverse());
     assert.deepEqual(times(targets), before, "An unchanged build or target order recompiled objects");
@@ -81,14 +81,17 @@ try {
     }
 
     const header = readFileSync(miniaudio, "utf8");
+    const audio = ["build/obj/native/audio.o", ...(emcc ? ["build/obj/web-player/audio.o"] : [])];
     for (const name of ["first", "second"]) {
         const source = join(directory, name, "miniaudio.h");
         mkdirSync(join(directory, name));
         writeFileSync(source, header + `\n/* ${name} explicit override */\n`);
         utimesSync(source, 1, 1);
-        build(["build/generated/web/miniaudio.h"], {MINIAUDIO: relative(work, source).replaceAll("\\", "/")});
-        assert(readFileSync(join(work, "build/generated/web/miniaudio.h"), "utf8").includes(`${name} explicit override`),
-            "An older dependency at a new path did not regenerate its patched copy");
+        const dependency = relative(work, source).replaceAll("\\", "/");
+        build(audio, {MINIAUDIO: dependency});
+        for (const object of audio)
+            assert(readFileSync(join(work, object.slice(0, -2) + ".d"), "utf8").includes(dependency),
+                "An older dependency at a new path did not rebuild with the selected header");
     }
     console.log(`OK: ${emcc ? "native/Wasm" : "native"} incremental builds, flag/compiler changes, link-only changes, assertion preservation, failure recovery and dependency overrides`);
 } finally {

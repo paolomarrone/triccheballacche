@@ -5,7 +5,8 @@ CFLAGS ?= -O2 -Wall -Wextra
 TARGET_OS ?= $(shell uname -s)
 PLATFORM := $(if $(filter MINGW% MSYS% Windows,$(TARGET_OS)),win32,posix)
 override CPPFLAGS += -I$(PLATFORM) -Ibuild/generated
-MINIAUDIO ?= .deps/miniaudio.h
+MINIAUDIO_VERSION = 0.11.26
+MINIAUDIO ?= .deps/miniaudio-$(MINIAUDIO_VERSION)/miniaudio.h
 JANET_VERSION = 1.42.1
 JANET ?= .deps/janet-$(JANET_VERSION)
 JANET_INCLUDES = -I$(JANET)/src/include -I$(JANET)/src/conf
@@ -53,9 +54,9 @@ format-check:
 	clang-format --dry-run --Werror $(FORMAT_SOURCES)
 
 # Downloads are cached independently of generated files and build products.
-.deps/miniaudio.h:
-	mkdir -p .deps
-	curl -fL --retry 2 https://raw.githubusercontent.com/mackron/miniaudio/0.11.25/miniaudio.h -o $@.tmp
+.deps/miniaudio-$(MINIAUDIO_VERSION)/miniaudio.h:
+	mkdir -p $(dir $@)
+	curl -fL --retry 2 https://raw.githubusercontent.com/mackron/miniaudio/$(MINIAUDIO_VERSION)/miniaudio.h -o $@.tmp
 	mv $@.tmp $@
 
 
@@ -373,7 +374,7 @@ build/obj/web-player/%.o: %.c Makefile | $(JANET)/Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(CPPFLAGS) $(CFLAGS) $(WEB_FLAGS) -MMD -MP -c $< -o $@
 
-$(PLAYER_OBJECTS): override WEB_FLAGS += $(PLAYER_FLAGS) -Ibuild/generated/web
+$(PLAYER_OBJECTS): override WEB_FLAGS += $(PLAYER_FLAGS) -I$(dir $(MINIAUDIO))
 build/obj/web-offline/score_janet.o build/obj/web-player/score_janet.o: build/generated/daw.inc
 build/obj/web-offline/script.o build/obj/web-player/script.o: build/generated/perone.inc build/generated/plugin.inc
 
@@ -390,15 +391,7 @@ build/web/offline.mjs: $(WEB_OBJECTS) Makefile
 	$(EMCC) $(CFLAGS) $(LDFLAGS) $(WEB_OBJECTS) $(WEB_LINK) -sENVIRONMENT=web,worker,node \
 	    -sEXPORTED_FUNCTIONS=$(WEB_EXPORTS) -sEXPORTED_RUNTIME_METHODS='[$(WEB_METHODS)]' -o $@
 
-# Miniaudio 0.11.25 loses its worklet stack pointer and uses the unaligned deallocator.
-# Patch only the generated web copy; keep the downloaded/native header intact.
-build/generated/web/miniaudio.h: $(MINIAUDIO) patches/miniaudio.patch
-	mkdir -p $(dir $@)
-	cp $< $@.tmp
-	patch --silent $@.tmp patches/miniaudio.patch
-	mv $@.tmp $@
-
-build/obj/web-player/audio.o build/obj/web-player/player.o build/obj/web-player/web/player_api.o: build/generated/web/miniaudio.h
+build/obj/web-player/audio.o build/obj/web-player/player.o build/obj/web-player/web/player_api.o: $(MINIAUDIO)
 build/web/player.mjs: $(PLAYER_OBJECTS) web/runtime.js patches/emscripten.js Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(CFLAGS) $(LDFLAGS) $(PLAYER_FLAGS) $(PLAYER_OBJECTS) $(WEB_LINK) -sAUDIO_WORKLET -sASYNCIFY \
@@ -501,10 +494,9 @@ build/config/web-player.compile: private CONFIG := $(EMCC) | $(CPPFLAGS) | $(CFL
 build/config/web-offline.link: private CONFIG := $(EMCC) | $(CFLAGS) | $(LDFLAGS) | $(WEB_LINK) | $(WEB_EXPORTS) | $(WEB_METHODS)
 build/config/web-player.link: private CONFIG := $(EMCC) | $(CFLAGS) | $(LDFLAGS) | $(WEB_LINK) | $(PLAYER_FLAGS) | $(PLAYER_EXPORTS) | $(WEB_METHODS)
 build/config/web-fixtures: private CONFIG := $(EMCC) | $(WEB_FIXTURE_FLAGS)
-build/config/web-audio: private CONFIG := $(MINIAUDIO)
 build/config/janet: private CONFIG := $(JANET)
 build/config/mda-test.compile: private CONFIG := $(HOST_CXX) | $(MDA_TEST_FLAGS) | $(MDA_INCLUDES)
-CONFIG_FILES = $(addprefix build/config/,native.compile native.link web-offline.compile web-offline.link web-player.compile web-player.link web-fixtures web-audio janet mda-test.compile)
+CONFIG_FILES = $(addprefix build/config/,native.compile native.link web-offline.compile web-offline.link web-player.compile web-player.link web-fixtures janet mda-test.compile)
 quote = '$(subst ','"'"',$(1))'
 .PHONY: FORCE
 FORCE:
@@ -523,7 +515,6 @@ $(PLAYER_OBJECTS): build/config/web-player.compile
 build/web/offline.mjs: build/config/web-offline.link
 build/web/player.mjs: build/config/web-player.link
 $(WEB_FIXTURES): build/config/web-fixtures
-build/generated/web/miniaudio.h: build/config/web-audio
 build/generated/janet.c: build/config/janet
 
 # Run after building the native and Wasm library. HOST_CXX may be clang++ for sanitizers.
