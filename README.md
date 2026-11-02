@@ -262,8 +262,12 @@ CLAP/LV2/VST3 run in the native host only. No Janet wrapper is needed.
 
 Perone bundles contain `product.json`, `<platform>/<bundleName>.so` (`.dll` on
 Windows) or `wasm32/<bundleName>.wasm`, and optional UI assets. Copy the whole bundle.
-Tibia supplies DSP ABI v2 and native UI ABI v1; web UIs declare `product.ui.web`
-and may load their own Wasm. Perone transport supplies play state, BPM and beat.
+The host supports DSP ABI v3 and existing ABI v2 audio plugins, plus native UI
+ABI v1; web UIs declare `product.ui.web` and may load their own Wasm.
+Perone transport supplies play state, BPM and beat. A Perone plugin may have one
+MIDI input and one MIDI output, with parameters and no audio buses. Connect it
+with `daw/midi-through` and automate its parameters normally. MIDI output uses
+short messages with sample offsets; SysEx is outside the Perone ABI.
 
 | Discovery override | Default |
 | --- | --- |

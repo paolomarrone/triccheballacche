@@ -94,6 +94,16 @@ static void midi(DSP *dsp, size_t bus, const uint8_t *message, size_t size) {
 	}
 }
 
+static void midi_output(void *handle, size_t bus, const uint8_t *data, size_t offset) {
+	DSP *dsp = handle;
+	if (!dsp->config.midi_output || bus != (size_t)(dsp->config.midi_output - 1) || offset >= dsp->midi_frames ||
+	    offset > UINT32_MAX || !data) {
+		dsp->midi_output.failed = 1;
+		return;
+	}
+	dsp_midi_output(dsp, offset, data, midi_size(data[0]));
+}
+
 static void message(DSP *dsp, size_t size, const void *data) {
 	Perone *p = dsp->instance;
 	p->api->msg_in(p->instance, size, data);
@@ -208,9 +218,10 @@ int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity) {
 	const perone_api *(*get_api)(uint32_t) = library_symbol(module->library, "perone_get_api");
 	const perone_api *a = get_api ? get_api(PERONE_ABI_VERSION) : NULL;
 	const PluginConfig *config = &dsp->config;
-	if (config->midi_output || !a || !a->alloc || !a->free || !a->init || !a->fini || !a->set_sample_rate ||
-	    !a->mem_req || !a->mem_set || !a->reset || !a->process || (config->midi >= 0 && !a->midi_msg_in) ||
-	    (config->to_dsp && !a->msg_in))
+	if (!a && get_api && !config->midi_output)
+		a = get_api(2);
+	if (!a || !a->alloc || !a->free || !a->init || !a->fini || !a->set_sample_rate || !a->mem_req || !a->mem_set ||
+	    !a->reset || !a->process || (config->midi >= 0 && !a->midi_msg_in) || (config->to_dsp && !a->msg_in))
 		return -1;
 	for (int i = 0; i < config->nparams; ++i)
 		if ((config->parameters[i].flags & PARAM_OUTPUT) ? !a->get_parameter : !a->set_parameter)
@@ -222,7 +233,7 @@ int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity) {
 	dsp->instance = p;
 	p->api = a;
 	p->rate = sample_rate;
-	perone_callbacks callbacks = {dsp, bindir, datadir, dsp_message};
+	perone_callbacks callbacks = {dsp, bindir, datadir, dsp_message, midi_output};
 	if (!(p->instance = a->alloc()) || a->init(p->instance, &callbacks))
 		return -1;
 	p->initialized = 1;
@@ -235,8 +246,8 @@ int perone_open(DSP *dsp, unsigned sample_rate, size_t capacity) {
 	if (size) {
 		if (!(p->memory = malloc(size)))
 			return -1;
-		a->mem_set(p->instance, p->memory);
 	}
+	a->mem_set(p->instance, p->memory);
 	a->reset(p->instance);
 	return 0;
 }

@@ -7,11 +7,11 @@ const size_t dsp_max_message = 4096;
 
 // clang-format off
 EM_JS(int, wasm_open,
-    (const char *path, unsigned rate, int inputs, int output, int midi, int nparams, const float *defaults,
+    (const char *path, unsigned rate, int inputs, int output, int midi, int midi_output, int nparams, const float *defaults,
         const uint8_t *flags, const double *limits, size_t capacity, size_t to_ui, size_t to_dsp), {
 	try {
 		return Module.perone.open({path: UTF8ToString(path), sampleRate: rate,
-		    inputChannels: inputs, outputChannels: output, midiBus: midi,
+		    inputChannels: inputs, outputChannels: output, midiBus: midi, midiOutputBus: midi_output - 1,
 		    parameters: HEAPF32.subarray(defaults / 4, defaults / 4 + nparams),
 		    flags: Uint8Array.from(HEAPU8.subarray(flags, flags + nparams)),
 		    outputParameters: Uint8Array.from(HEAPU8.subarray(flags, flags + nparams), flag => flag & 1),
@@ -33,10 +33,11 @@ EM_JS(void, wasm_midi, (void *id, size_t bus, const uint8_t *message), { Module.
 EM_JS(void, wasm_transport, (void *id, int playing, float bpm, double beat), {
 	Module.perone.transport(id, playing, bpm, beat);
 });
-EM_JS(void, wasm_process, (void *id, const float **inputs, float **outputs, size_t frames, int playing, float bpm, double beat), {
+EM_JS(int, wasm_process, (void *id, const float **inputs, float **outputs, size_t frames, int playing, float bpm, double beat), {
 	Module.perone.transport(id, playing, bpm, beat);
-	Module.perone.process(id, inputs, outputs, frames);
+	return Module.perone.process(id, inputs, outputs, frames);
 });
+EM_JS(MidiBuffer *, wasm_midi_output, (DSP *id), { return Module.perone.instances.get(id)?.midiOutput || 0; });
 // clang-format on
 
 void modules_free(Modules *modules) {
@@ -62,8 +63,8 @@ DSP *open_dsp(Modules *modules, const char *path, const PluginConfig *c, unsigne
 		limits[i] = c->parameters[i].minimum;
 		limits[c->nparams + i] = c->parameters[i].maximum;
 	}
-	DSP *dsp = (DSP *)(uintptr_t)wasm_open(path, sample_rate, c->inputs, c->output, c->midi, c->nparams, defaults,
-	    flags, limits, capacity, c->to_ui, c->to_dsp);
+	DSP *dsp = (DSP *)(uintptr_t)wasm_open(path, sample_rate, c->inputs, c->output, c->midi, c->midi_output, c->nparams,
+	    defaults, flags, limits, capacity, c->to_ui, c->to_dsp);
 	free(defaults);
 	free(flags);
 	free(limits);
@@ -92,13 +93,25 @@ void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message, size_t size) {
 }
 
 const MidiBuffer *midi_output_dsp(DSP *dsp) {
-	(void)dsp;
-	return NULL;
+	return wasm_midi_output(dsp);
+}
+
+// JavaScript owns this host-heap buffer with the DSP; the C router reads it after process.
+EMSCRIPTEN_KEEPALIVE MidiBuffer *web_midi_buffer(void) {
+	return calloc(1, sizeof(MidiBuffer));
+}
+EMSCRIPTEN_KEEPALIVE int web_midi_emit(MidiBuffer *buffer, uint32_t frame, uint32_t message) {
+	const uint8_t bytes[] = {message & 255, (message >> 8) & 255, (message >> 16) & 255};
+	return midi_add(buffer, frame, bytes, midi_size(bytes[0]));
 }
 
 int process_dsp(DSP *dsp, const float **inputs, float **outputs, size_t frames, const ProcessTime *time) {
-	wasm_process(dsp, inputs, outputs, frames, time ? time->playing : -1, time ? time->bpm : 0, time ? time->beat : 0);
-	return 0;
+	MidiBuffer *midi = wasm_midi_output(dsp);
+	if (midi)
+		midi_clear(midi);
+	int result = wasm_process(
+	    dsp, inputs, outputs, frames, time ? time->playing : -1, time ? time->bpm : 0, time ? time->beat : 0);
+	return result || (midi && midi->failed) ? -1 : 0;
 }
 
 int poll_dsp(DSP *dsp) {

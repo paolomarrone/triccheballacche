@@ -38,7 +38,7 @@ PLUGIN_OBJECTS = $(HOST_OBJECTS) $(addprefix build/obj/native/,midi.o plugin.o s
 SCORE_OBJECTS = $(addprefix build/obj/native/,score_janet.o score.o score_view.o score_automation.o session.o sequence.o) $(PLUGIN_OBJECTS)
 VIEW_OBJECTS = $(VIEW_SOURCES:%.c=build/obj/native/%.o)
 NATIVE_PROGRAMS = build/cli$(EXE) build/gui$(EXE) build/tools/perone-host$(EXE) build/tools/plugin-scan$(EXE)
-NATIVE_TESTS = $(addsuffix $(EXE),$(addprefix build/test/,platform dsp daw player routing score_view plugins ui view_json sequence clap lv2 vst3 midi midi_devices))
+NATIVE_TESTS = $(addsuffix $(EXE),$(addprefix build/test/,platform dsp daw player routing score_view plugins ui view_json sequence clap lv2 vst3 midi midi_devices perone_midi))
 FORMAT_SOURCES = $(filter-out perone.h perone_ui.h,$(wildcard *.c *.h host/*.c host/*.h native/*.c native/*.h win32/*.c win32/*.h test/posix/*.c test/posix/*.h test/x11/*.c test/x11/*.h test/win32/*.c test/win32/*.h posix/*.c posix/*.h gtk/*.c x11/*.c x11/*.h tools/*.c test/*.c test/*.cpp test/*.h test/perone/*.c test/clap/*.c test/lv2/*.c test/vst3/*.c web/*.c web/*.h plugins/*/*.h plugins/*/*.cpp plugins/*/test.c))
 
 .PHONY: all cli gui tools clean format format-check
@@ -203,10 +203,20 @@ build/test/score_view$(EXE): build/obj/native/score_view.o build/obj/native/scor
 build/test/view_json$(EXE): $(VIEW_OBJECTS)
 build/test/player$(EXE): $(VIEW_OBJECTS)
 build/test/sequence$(EXE): build/obj/native/snapshot.o
+build/test/perone_midi$(EXE): $(SCORE_OBJECTS)
 
 TEST_BUNDLE = build/test/fixture.perone
 TEST_EFFECT = build/test/effect.perone
-NATIVE_FIXTURES = $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/product.json
+TEST_MIDI = build/test/midi.perone
+NATIVE_FIXTURES = $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_EFFECT)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX) $(TEST_BUNDLE)/product.json $(TEST_EFFECT)/product.json $(TEST_MIDI)/$(PERONE_PLATFORM)/midi$(PERONE_SUFFIX) $(TEST_MIDI)/product.json
+$(TEST_MIDI)/$(PERONE_PLATFORM)/midi$(PERONE_SUFFIX): test/perone/midi.c perone.h Makefile
+	mkdir -p $(dir $@)
+	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -fPIC -fvisibility=hidden -shared $< -o $@
+
+$(TEST_MIDI)/product.json: test/perone/midi.json
+	mkdir -p $(dir $@)
+	cp $< $@
+
 $(TEST_BUNDLE)/$(PERONE_PLATFORM)/fixture$(PERONE_SUFFIX): test/perone/plugin.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) -UNDEBUG -I. -fPIC -fvisibility=hidden -shared $< -o $@
@@ -288,7 +298,7 @@ test-midi-ui: gui test-web
 	node test/midi-ui.mjs
 
 .PHONY: test test-plugins test-ui test-editor test-polpo test-brickworks check-plugins polpo
-test: $(addsuffix $(EXE),$(addprefix build/test/,platform dsp daw player routing score_view sequence)) $(NATIVE_FIXTURES) $(MIXER_FIXTURE)
+test: $(addsuffix $(EXE),$(addprefix build/test/,platform dsp daw player routing score_view sequence perone_midi)) $(NATIVE_FIXTURES) $(MIXER_FIXTURE)
 	./build/test/platform$(EXE)
 	./build/test/dsp$(EXE)
 	./build/test/daw$(EXE)
@@ -296,6 +306,7 @@ test: $(addsuffix $(EXE),$(addprefix build/test/,platform dsp daw player routing
 	./build/test/player$(EXE)
 	./build/test/score_view$(EXE)
 	./build/test/sequence$(EXE)
+	./build/test/perone_midi$(EXE)
 
 TEST_PLUGINS = $(addsuffix /build/plugin.perone,$(addprefix plugins/,synth_mono fx_svf tibia_test shape echo drums))
 check-plugins:
@@ -402,7 +413,11 @@ build/web/player.mjs: $(PLAYER_OBJECTS) web/runtime.js patches/emscripten.js Mak
 
 # Test fixtures implement the same standalone ABI, without a Tibia checkout.
 WEB_FIXTURE_FLAGS = -O2 -UNDEBUG -I. --no-entry -sSTANDALONE_WASM -sPURE_WASI -sMALLOC=emmalloc -sALLOW_MEMORY_GROWTH -Wl,--export=__wasm_call_ctors,--export=perone_get_api,--export=malloc,--export=free,--export=calloc,--export=realloc,--export-table,--growable-table
-WEB_FIXTURES = $(TEST_BUNDLE)/wasm32/fixture.wasm $(TEST_EFFECT)/wasm32/fixture.wasm
+WEB_FIXTURES = $(TEST_BUNDLE)/wasm32/fixture.wasm $(TEST_EFFECT)/wasm32/fixture.wasm $(TEST_MIDI)/wasm32/midi.wasm
+$(TEST_MIDI)/wasm32/midi.wasm: test/perone/midi.c perone.h Makefile
+	mkdir -p $(dir $@)
+	$(EMCC) $(WEB_FIXTURE_FLAGS) $< -o $@
+
 $(TEST_BUNDLE)/wasm32/fixture.wasm: test/perone/plugin.c perone.h Makefile
 	mkdir -p $(dir $@)
 	$(EMCC) $(WEB_FIXTURE_FLAGS) $< -o $@
@@ -425,6 +440,7 @@ test-web: build/web/offline.mjs build/web/player.mjs cli build/test/view_json$(E
 	node test/web.mjs
 	node test/plugin-references.mjs
 	node test/perone-controls.mjs
+	node test/perone-midi.mjs
 	node test/view-json.mjs
 
 test-browser: test-web

@@ -50,7 +50,11 @@ static int init(void *p, const perone_callbacks *callbacks) {
 	if (fails("init"))
 		return -7;
 	Instance *i = p;
-	i->callbacks = *callbacks;
+	// Preserve an ABI 2-only fixture to exercise old binaries in the new host.
+	i->callbacks = (perone_callbacks){.handle = callbacks->handle,
+	    .get_bindir = callbacks->get_bindir,
+	    .get_datadir = callbacks->get_datadir,
+	    .msg_write = callbacks->msg_write};
 	i->initialized = 1;
 	++initialized;
 	return 0;
@@ -198,7 +202,7 @@ __attribute__((visibility("default"))) const perone_api *perone_get_api(uint32_t
 #endif
 	};
 	static const perone_api missing = {0};
-	return version != PERONE_ABI_VERSION || fails("abi") ? NULL : fails("function") ? &missing : &api;
+	return version != 2 || fails("abi") ? NULL : fails("function") ? &missing : &api;
 }
 
 __attribute__((destructor)) static void unloaded(void) {

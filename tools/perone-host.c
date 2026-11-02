@@ -56,6 +56,10 @@ int main(int argc, char **argv) {
 		fputs("Plugin initialization failed\n", stderr);
 		goto done;
 	}
+	if (!e->config.output) {
+		fputs("This audio demo requires an audio output; route MIDI-only plugins through a score\n", stderr);
+		goto done;
+	}
 	if (capture && !e->config.input) {
 		fputs("Plugin has no audio input\n", stderr);
 		goto done;

@@ -13,6 +13,7 @@
   (var input 0)
   (var output 0)
   (var midi -1)
+  (var midi-output nil)
   (var offset 0)
   (var slots 0)
   (def ids @{})
@@ -24,9 +25,13 @@
     (def out (= (b :direction) "output"))
     (assert (or out (= (b :direction) "input")) "invalid bus direction")
     (if (= (b :type) "midi")
-      (do
-        (assert (and (not out) (= midi -1)) "expected at most one MIDI input")
-        (set midi i))
+      (if out
+        (do
+          (assert (nil? midi-output) "expected at most one MIDI output")
+          (set midi-output i))
+        (do
+          (assert (= midi -1) "expected at most one MIDI input")
+          (set midi i)))
       (do
         (def channels (get {"mono" 1 "stereo" 2} (b :channels)))
         (assert (and (= (b :type) "audio") channels (not (b :cv))) "unsupported audio bus")
@@ -41,7 +46,7 @@
               (set input channels)
               (set offset slots))))
         (unless out (+= slots channels)))))
-  (assert (and (> output 0) (<= slots host/max-inputs)) "unsupported audio layout")
+  (assert (and (or (> output 0) midi-output) (<= slots host/max-inputs)) "unsupported audio layout")
   # Perone controls use float32; the common host control domain is double.
   (each p (product :parameters)
     (each key [:minimum :maximum :defaultValue]
@@ -56,6 +61,7 @@
    :layout {:input-channels input
             :output-channels output
             :midi-bus midi
+            :midi-output-bus midi-output
             :input-offset offset
             :input-slots slots
             :dsp-to-ui-size (or (get-in product [:messaging :dspToUiSize]) 0)

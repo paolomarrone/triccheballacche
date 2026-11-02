@@ -1,6 +1,7 @@
 import {callback, peroneState} from "./perone-state.js";
 
-// Perone ABI 2 host. Buffer transfer follows Tibia's web processor;
+// Perone ABI 3 host, with ABI 2 fallback for existing audio plugins.
+// Buffer transfer follows Tibia's web processor;
 // typed callbacks follow tibia/test/perone_wasm.js (GPL-3.0-or-later).
 // No product metadata is parsed here.
 const names = ["alloc", "free", "init", "fini", "set_sample_rate", "mem_req", "mem_set", "reset", "process",
@@ -62,7 +63,8 @@ export class Perone {
         if (this.instances.has(id) || this.planned.has(id) || this.remote.has(id)) throw Error("Perone handle already in use");
         const config = {...configuration, path: this.path(configuration.path),
             parameters: new Float32Array(configuration.parameters)};
-        const {path, sampleRate, inputChannels, outputChannels, midiBus, parameters, outputParameters, capacity, toDsp = 0, toUi = 0} = config;
+        const {path, sampleRate, inputChannels, outputChannels, midiBus, midiOutputBus = -1,
+            parameters, outputParameters, capacity, toDsp = 0, toUi = 0} = config;
         if (this.deferred) {
             this.planned.set(id, config);
             this.next = Math.max(this.next, id + 1);
@@ -72,7 +74,7 @@ export class Perone {
         if (!module) throw Error("Wasm module not preloaded: " + path);
         const wasm = new WebAssembly.Instance(module).exports;
         wasm.__wasm_call_ctors();
-        const pointer = wasm.perone_get_api(2);
+        const pointer = wasm.perone_get_api(3) || (midiOutputBus < 0 ? wasm.perone_get_api(2) : 0);
         if (!pointer) throw Error("Unsupported Perone ABI");
         const table = wasm.__indirect_function_table;
         const api = Object.fromEntries(Array.from(new Uint32Array(wasm.memory.buffer, pointer, names.length),
@@ -87,7 +89,8 @@ export class Perone {
         const owned = [];
         const p = {wasm, api, owned, config, instance: 0, initialized: false,
             watching: false, pending: false, dirty: new Uint8Array(parameters.length), wanted: new Float32Array(parameters.length),
-            toUi: new Messages(toUi), toDsp: new Messages(toDsp), overflow: false};
+            toUi: new Messages(toUi), toDsp: new Messages(toDsp), overflow: false,
+            midiOutput: 0, midiFrames: 0, midiFailed: false};
         const allocate = size => {
             const pointer = wasm.malloc(size) >>> 0;
             if (!pointer) throw Error("Perone allocation failed");
@@ -114,20 +117,35 @@ export class Perone {
                 try { p.toUi.push(new Uint8Array(wasm.memory.buffer, pointer, size)); }
                 catch { p.overflow = true; }
             });
-            const callbacks = words([0, directory(bin), directory(data), message]);
+            let midiOut = 0;
+            if (midiOutputBus >= 0) {
+                p.midiOutput = this.host._web_midi_buffer();
+                if (!p.midiOutput) throw Error("MIDI buffer allocation failed");
+                midiOut = callback(table, [0x7f, 0x7f, 0x7f, 0x7f], 0, (_, bus, pointer, offset) => {
+                    pointer >>>= 0; offset >>>= 0;
+                    if (bus !== midiOutputBus || offset >= p.midiFrames || !pointer || pointer > p.bytes.length - 3) {
+                        p.midiFailed = true;
+                        return;
+                    }
+                    const bytes = p.bytes;
+                    if (this.host._web_midi_emit(p.midiOutput, offset,
+                        bytes[pointer] | bytes[pointer + 1] << 8 | bytes[pointer + 2] << 16)) p.midiFailed = true;
+                });
+            }
+            const callbacks = words([0, directory(bin), directory(data), message, midiOut]);
             p.instance = api.alloc() >>> 0;
             if (!p.instance || api.init(p.instance, callbacks)) throw Error("Perone initialization failed");
             p.initialized = true;
             api.set_sample_rate(p.instance, sampleRate);
             parameters.forEach((value, i) => { if (!isOutput(i)) api.set_parameter(p.instance, i, value); });
             const size = api.mem_req(p.instance) >>> 0;
-            if (size) api.mem_set(p.instance, allocate(size));
+            api.mem_set(p.instance, size ? allocate(size) : 0);
             api.reset(p.instance);
             // Fixed capacity matches the C engine. Allocate before caching memory views.
             const x = Array.from({length: inputChannels}, () => allocate(capacity * 4));
             const y = Array.from({length: outputChannels}, () => allocate(capacity * 4));
             p.inputs = inputChannels ? words(x) : 0;
-            p.outputs = words(y);
+            p.outputs = outputChannels ? words(y) : 0;
             const midi = allocate(3);
             p.transportPointer = api.set_transport ? allocate(64) : 0;
             p.messagePointer = toDsp ? allocate(toDsp) : 0;
@@ -147,6 +165,7 @@ export class Perone {
     views(p) {
         const {capacity, inputChannels, toDsp = 0} = p.config;
         p.memory = p.wasm.memory.buffer;
+        p.bytes = new Uint8Array(p.memory);
         p.x = p.addresses.map(pointer => new Float32Array(p.memory, pointer, capacity));
         p.y = p.outputAddresses.map(pointer => new Float32Array(p.memory, pointer, capacity));
         p.pointers = new Uint32Array(p.memory, p.inputs, inputChannels);
@@ -170,6 +189,7 @@ export class Perone {
         try {
             if (p.initialized) p.api.fini(p.instance);
         } finally {
+            if (p.midiOutput) this.host._free(p.midiOutput);
             for (const pointer of p.owned) p.wasm.free(pointer);
             if (p.instance) p.api.free(p.instance);
         }
@@ -309,7 +329,7 @@ export class Perone {
     transport(id, playing, bpm, beat) {
         const p = this.instances.get(id);
         if (!p?.transport || playing < 0) return;
-        // Perone ABI v2, wasm32 layout. Only playing, BPM and quarter position are valid.
+        // Perone transport wasm32 layout. Only playing, BPM and quarter position are valid.
         const t = p.transport;
         t.setUint32(0, 13, true); t.setUint32(4, 13, true);
         t.setUint8(8, playing ? 1 : 0);
@@ -325,11 +345,15 @@ export class Perone {
             p.pointers[c] = pointer ? p.addresses[c] : 0;
             if (pointer) for (let i = 0; i < frames; i++) p.x[c][i] = heap[pointer / 4 + i];
         }
-        p.api.process(p.instance, p.inputs, p.outputs, frames);
+        p.midiFailed = false;
+        p.midiFrames = frames;
+        try { p.api.process(p.instance, p.inputs, p.outputs, frames); }
+        finally { p.midiFrames = 0; }
         if (p.memory !== p.wasm.memory.buffer) throw Error("DSP grew memory during processing");
         for (let c = 0; c < p.y.length; c++) {
             const pointer = pointers[outputs / 4 + c] / 4;
             for (let i = 0; i < frames; i++) heap[pointer + i] = p.y[c][i];
         }
+        return p.midiFailed ? -1 : 0;
     }
 }

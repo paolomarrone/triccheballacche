@@ -1,16 +1,23 @@
-/* Perone ABI v2. GPL-3.0-or-later. */
+/* Perone ABI v3. GPL-3.0-or-later. */
 #ifndef PERONE_H
 #define PERONE_H
 #include <stddef.h>
 #include <stdint.h>
 
-#define PERONE_ABI_VERSION 2
+#define PERONE_ABI_VERSION 3
 
 typedef struct {
 	void *handle;
 	const char *(*get_bindir)(void *handle);
 	const char *(*get_datadir)(void *handle);
 	void (*msg_write)(void *handle, size_t size, const void *data);
+	/* MIDI 1.0 short message, three bytes with unused bytes zero-padded.
+	 * bus indexes product.buses. Called synchronously only during process;
+	 * offset is in sample frames from the start of that call, 0 <= offset < frames.
+	 * No emission on zero-frame calls. Copy data before returning if retaining it.
+	 * No SysEx/running status. Required when the product has MIDI output buses.
+	 */
+	void (*midi_msg_out)(void *handle, size_t bus, const uint8_t *data, size_t offset);
 } perone_callbacks;
 
 typedef struct {
@@ -70,6 +77,7 @@ typedef struct {
  * The host sets defaults and sample rate, supplies DSP memory, then calls reset.
  * The host owns that memory and handles reconfiguration and synchronization.
  * Callback structures have a fixed layout. init supplies format = "perone".
+ * init fails if the product has MIDI outputs and midi_msg_out is NULL.
  * Pass valid structures; callback functions and handles must outlive their use.
  * Optional entries are NULL when their source API capability is not declared.
  * Indices, units and channel order follow product.json; arguments are unfiltered.
@@ -77,7 +85,9 @@ typedef struct {
  * state_load has no instance argument, matching plugin_state_load.
  * The API table belongs to the library; keep it loaded until all instances die.
  * Metadata is exclusively in the external product.json.
- * Unsupported ABI versions return NULL.
+ * ABI 3 appends midi_msg_out to perone_callbacks; the API table is unchanged.
+ * ABI 2 remains available only for products without MIDI outputs, whose init
+ * never reads the appended field. Other unsupported ABI versions return NULL.
  */
 #ifdef __cplusplus
 extern "C" {
