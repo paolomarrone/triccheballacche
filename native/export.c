@@ -38,6 +38,11 @@ int write_score(Session *s, const Output *cfg, const char *path) {
 		s->error = "export requires a fresh, finite session; set :duration for a repeating score";
 		return -1;
 	}
+	// The RIFF chunk contains 36 header bytes followed by stereo sample data.
+	if (s->frames > (UINT32_MAX - 36u) / (cfg->pcm16 ? 4u : 8u)) {
+		s->error = "score exceeds the RIFF WAV size limit";
+		return -1;
+	}
 	s->error = NULL;
 	char *temporary = malloc(strlen(path) + sizeof(".XXXXXX"));
 	if (!temporary) {

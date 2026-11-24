@@ -150,6 +150,7 @@ the timeline stopped. WAV export requires a positive duration.
   absolute timeline. `daw/schedule start bpm pattern` places a finite pattern in it.
 - **Export:** stereo float32 WAV by default, without clipping or normalization.
   `(daw/end 30 {:format :pcm16 :normalize 0.94})` selects PCM16 and a target peak.
+  Native exports must fit in a RIFF WAV file (approximately 4 GiB).
   Leave time for release and effect tails. Playback ignores export normalization.
   CLI defaults to 44100 Hz (last argument overrides); editors start at 48000 Hz.
 
@@ -175,7 +176,9 @@ files. A web reload restores published files.
 | Plugin window icon | Detach controls/web UI into a floating window, fullscreen on small screens. Native-only UIs open their original window. Closing returns web controls to the panel. |
 | Plugin ↓ / ↑ | Import/export `.tbpreset.json` (up to 16 MiB). Both pause playback. |
 
-Opening a file keeps the current music running; Apply switches scores. During
+Opening a file stops playback and unloads the previous score once the new file
+has been read. Cancelling the picker or failing to read the file preserves the
+current session. Apply prepares the new score, and Play starts it. During
 playback, Apply queues `daw/score` revisions on the next beat grid (`:quantum`,
 default 4). Use stable keyword identities for plugins. Graph, identities, tempo,
 duration and plugin configurations must match; stop before changing them.
@@ -227,10 +230,10 @@ Device input enters at the next audio block; output follows the audio clock with
 OS/browser timer precision. Offline rendering excludes devices.
 
 CLAP/LV2/VST3 expose at most one MIDI input/output, with MIDI 1.0 and SysEx up to
-1 KiB (256 events / 16 KiB per stream; overflow stops playback). Perone accepts
-short input messages only. CLAP controllers require the MIDI dialect; VST3 uses
-plugin MIDI mappings. MIDI 2.0, per-note expression, recording and `.mid`
-import/export are not implemented.
+1 KiB (256 events / 16 KiB per stream; overflow stops playback). Perone supports
+short MIDI messages on input and, with DSP ABI v3, on output. CLAP controllers
+require the MIDI dialect. VST3 uses plugin MIDI mappings. MIDI 2.0, per-note
+expression, recording and `.mid` import/export are not implemented.
 
 ## Plugins
 
@@ -319,6 +322,10 @@ This builds `synth_mono`, `fx_svf`, `tibia_test`, `drums`, `shape` and `echo` un
 hat, crash, high tom, low tom. The optional piano needs Python 3:
 `python3 plugins/piano/fetch.py`, then `make -C plugins/piano` with the same Tibia
 setting. Build A-SID and Tibia's original DSP/UI bundles in their own repositories.
+
+In Brickworks revision `f412e503`, sending a centered pitch bend to `synth_mono`
+lowers the note by an octave. Its filter envelope also produces different samples
+at different processing block sizes. `make test-plugins` checks both behaviors.
 
 ## Examples
 

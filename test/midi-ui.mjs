@@ -13,12 +13,14 @@ try {
     await once(server, "listening");
     await writeFile(entry, `(import ../../../lib/pattern :as p)
 (def keys (daw/midi :keys))
+(def echo (daw/plugin "build/test/midi.perone" {:transpose 0}))
 (def synth (daw/plugin :synth "build/test/fixture.perone" {:gain 0.01}))
-(daw/midi-through keys synth)
+(daw/midi-through keys echo)
+(daw/midi-through echo synth)
 (daw/midi-output keys)
 (daw/output (daw/track synth {:name "Keys"}))
 (daw/score (p/loop (p/events 4 [])))`);
-    execFileSync("node", ["web/catalog.mjs", catalog, entry, "lib", "build/test/fixture.perone"]);
+    execFileSync("node", ["web/catalog.mjs", catalog, entry, "lib", "build/test/fixture.perone", "build/test/midi.perone"]);
     for (const mode of ["web", "native"]) {
         const url = mode === "web" ? `http://127.0.0.1:${server.address().port}/editor/index.html?score=${entry}&project=../${catalog}` :
             await (app = nativeEditor(entry)).url;
@@ -48,7 +50,10 @@ Object.defineProperty(navigator, "requestMIDIAccess", {value: async () => ({
                     await evaluate(`(() => { const s = document.querySelector('select[aria-label="${name}"]'); s.value = "0"; s.dispatchEvent(new Event("change")); })()`);
                     await wait(`!document.querySelector('select[aria-label="${name}"]').disabled`);
                 }
-                await evaluate('midiSent.length = 0; midiInput.onmidimessage({data: new Uint8Array([0x93, 65, 95])})');
+                // SysEx reaches the direct device output while the Perone branch skips it.
+                await evaluate('midiSent.length = 0; midiInput.onmidimessage({data: new Uint8Array([0xf0, 0x7d, 0xf7])})');
+                assert.deepEqual(await wait('midiSent.find(p => p.data[0] === 0xf0)?.data'), [0xf0, 0x7d, 0xf7]);
+                await evaluate('midiInput.onmidimessage({data: new Uint8Array([0x93, 65, 95])})');
                 await wait('midiSent.some(p => p.data[0] === 0x93 && p.data[1] === 65 && p.data[2] === 95)');
                 assert(await evaluate('midiSent.some(p => Number.isFinite(p.time))'));
             } else await wait('document.querySelector("#midi-devices").children.length || document.querySelector("#midi-empty").textContent');

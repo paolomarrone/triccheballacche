@@ -85,7 +85,7 @@ void reset_dsp(DSP *dsp) {
 }
 
 void midi_dsp(DSP *dsp, size_t bus, const uint8_t *message, size_t size) {
-	if (size <= 3 && midi_valid(message, size)) {
+	if (size <= 3 && midi_valid(message, size) && message[0] != 0xf0) {
 		uint8_t bytes[3] = {0};
 		memcpy(bytes, message, size);
 		wasm_midi(dsp, bus, bytes);

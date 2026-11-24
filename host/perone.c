@@ -87,7 +87,7 @@ static void reset(DSP *dsp) {
 
 static void midi(DSP *dsp, size_t bus, const uint8_t *message, size_t size) {
 	Perone *p = dsp->instance;
-	if (size <= 3) {
+	if (size <= 3 && message[0] != 0xf0) {
 		uint8_t bytes[3] = {0};
 		memcpy(bytes, message, size);
 		p->api->midi_msg_in(p->instance, bus, bytes);

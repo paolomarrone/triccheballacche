@@ -11,6 +11,8 @@ static void messages(void) {
 	assert(!p.config.input && !p.config.output && p.config.midi == 1 && p.config.midi_output == 1);
 	MidiBuffer in = {0}, out = {0};
 	assert(!midi_add(&in, 3, (uint8_t[]){0x92, 60, 100}, 3));
+	assert(!midi_add(&in, 4, (uint8_t[]){0xf0, 0xf7}, 2));
+	assert(!midi_add(&in, 4, (uint8_t[]){0xf0, 0x7d, 0xf7}, 3));
 	assert(!midi_add(&in, 5, (uint8_t[]){0xc2, 12}, 2));
 	assert(!midi_add(&in, 5, (uint8_t[]){0xf8}, 1));
 	assert(!midi_add(&in, 17, (uint8_t[]){0x82, 60, 0}, 3));

@@ -10,7 +10,7 @@ import {serve} from "./server.mjs";
 const directory = await mkdtemp("build/test/settings-"), entry = `${directory}/score.janet`;
 const config = resolve(directory, "config"), preferences = `${config}/triccheballacche/settings.json`;
 const folder = resolve(directory, "plugins"), missing = `${directory}/missing`;
-const initial = {perone: ["build/test/fixture.perone", folder], clap: [], lv2: [`${folder}/.lv2`], vst3: [`${folder}/.vst3`]};
+const initial = {perone: ["build/test/fixture.perone", "build/test/midi.perone", folder], clap: [], lv2: [`${folder}/.lv2`], vst3: [`${folder}/.vst3`]};
 const env = {XDG_CONFIG_HOME: config, CLAP_PATH: `${folder}:${folder}`};
 const source = '(def p (daw/plugin "build/test/fixture.perone" {:gain 0.01})) (daw/output (daw/track p)) (daw/end (/ host/sample-rate 800))';
 await mkdir(`${config}/triccheballacche`, {recursive: true});
@@ -22,7 +22,7 @@ await symlink(resolve("build/test/fixture.clap"), `${folder}/fixture.clap`);
 await writeFile(preferences, JSON.stringify({"plugin-paths": initial}));
 await writeFile(entry, source);
 const catalog = `${directory}/project.json`;
-execFileSync("node", ["web/catalog.mjs", catalog, entry, "lib", "build/test/fixture.perone"]);
+execFileSync("node", ["web/catalog.mjs", catalog, entry, "lib", "build/test/fixture.perone", "build/test/midi.perone"]);
 const server = serve(0);
 let app;
 try {
@@ -129,7 +129,8 @@ try {
             await click("#settings");
             await writeFile(`build/test/settings-audio-${mode}.png`, Buffer.from((await call("Page.captureScreenshot", {format: "png"})).data, "base64"));
             await click("#settings-plugins-tab");
-            await wait('document.querySelectorAll(".catalog-item").length === 1');
+            await wait('document.querySelectorAll(".catalog-item").length === 2');
+            assert.equal(await evaluate(`document.querySelector('[data-path$="/midi.perone"] .catalog-heading small').textContent`), "Perone · MIDI");
             if (mode === "native") {
                 await click('#settings-dialog [data-close]');
                 const position = await evaluate('Number(document.querySelector("#time").value)');

@@ -87,9 +87,12 @@ export function library(request, open, fail) {
                 for (const file of result.files) {
                     if (file.path.endsWith(".perone/product.json")) {
                         const {product} = JSON.parse(file.text);
-                        const effect = product.buses.some(bus => bus.type === "audio" && bus.direction === "input" && !bus.sidechain);
+                        const audio = product.buses.filter(bus => bus.type === "audio" && !bus.sidechain);
+                        let kind = "MIDI";
+                        if (audio.some(bus => bus.direction === "output"))
+                            kind = audio.some(bus => bus.direction === "input") ? "Effect" : "Instrument";
                         plugins.push({format: "perone", path: file.path.slice(0, -"/product.json".length), name: product.name || product.bundleName,
-                            id: product.bundleName, kind: effect ? "Effect" : "Instrument"});
+                            id: product.bundleName, kind});
                     } else if (file.path.endsWith(".janet") && !file.path.startsWith("examples/sources/")) scores.push(file.path);
                 }
                 data = {...result, plugins: plugins.sort((a, b) => (a.name || a.path).localeCompare(b.name || b.path) || a.path.localeCompare(b.path))};

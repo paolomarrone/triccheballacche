@@ -145,18 +145,17 @@ int session_seek(Session *s, uint64_t from) {
 	HeldNote(*notes)[16 * 128] = from ? calloc(s->nnodes, sizeof(*notes)) : NULL;
 	if (from && !notes)
 		return fail(s, "out of memory");
+	Revision *r = s->active;
+	const Score *score = &r->score;
 	size_t total = 0;
-	const Score *description = session_score(s);
 	for (int i = 0; i < s->nnodes; ++i)
-		total += description->nodes[i].config.nparams;
+		total += score->nodes[i].config.nparams;
 	double *storage = total ? malloc(total * sizeof(double)) : NULL, *values[MAX_NODES];
 	if (total && !storage) {
 		free(notes);
 		return fail(s, "out of memory");
 	}
 	size_t offset = 0;
-	Revision *r = s->active;
-	const Score *score = &r->score;
 	Sequencer *cursor = &r->cursor;
 	session_cancel(s);
 	r->at = 0;

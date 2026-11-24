@@ -549,9 +549,15 @@ static void test_atomic_export(void) {
 	session_free(&s);
 	assert(!rmdir(path)); // Failed rename preserves the existing directory.
 	snprintf(path, sizeof(path), "%s/missing/score.wav", directory);
-	export_session(&s, 2, 0);
-	assert(write_score(&s, &(Output){0}, path) < 0 && s.time == 0 && s.error);
-	session_free(&s);
+	for (int pcm16 = 0; pcm16 < 2; ++pcm16) {
+		size_t frames = (UINT32_MAX - 36u) / (pcm16 ? 4u : 8u);
+		for (size_t extra = 0; extra <= 1; ++extra) {
+			export_session(&s, frames + extra, 0);
+			assert(write_score(&s, &(Output){.pcm16 = pcm16}, path) < 0 && !s.time && s.error);
+			assert(!strcmp(s.error, extra ? "score exceeds the RIFF WAV size limit" : "cannot write WAV"));
+			session_free(&s);
+		}
+	}
 	assert(!rmdir(directory));
 	puts("OK: failed render/write/finalization/rename preserves the destination and removes temporary files");
 }
